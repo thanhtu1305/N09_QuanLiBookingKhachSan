@@ -1,0 +1,2 @@
+-- Du lieu mau cho he thong quan ly dat phong khach san
+-- Bo sung cac lenh INSERT vao day khi can chia se du lieu demo.

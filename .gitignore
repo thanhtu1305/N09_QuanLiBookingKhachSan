@@ -1,0 +1,35 @@
+# Java build output
+out/
+bin/
+build/
+dist/
+*.class
+*.jar
+*.war
+*.ear
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Eclipse
+.apt_generated/
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db

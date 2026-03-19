@@ -1,0 +1,14 @@
+-- Danh sach bang du kien cho he thong quan ly khach san
+-- TAIKHOAN
+-- NHANVIEN
+-- KHACHHANG
+-- LOAIPHONG
+-- PHONG
+-- BANGGIA
+-- DATPHONG
+-- LUUTRU
+-- DICHVU
+-- SUDUNGDICHVU
+-- HOADON
+-- THANHTOAN
+-- TIENNGHI

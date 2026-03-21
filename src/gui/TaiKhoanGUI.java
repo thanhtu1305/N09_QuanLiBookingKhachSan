@@ -65,6 +65,7 @@ public class TaiKhoanGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<AccountRecord> allAccounts = new ArrayList<AccountRecord>();
     private final List<AccountRecord> filteredAccounts = new ArrayList<AccountRecord>();
 
@@ -100,7 +101,6 @@ public class TaiKhoanGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý tài khoản - Hotel PMS");
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -118,6 +118,7 @@ public class TaiKhoanGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.TAI_KHOAN, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -788,7 +789,6 @@ public class TaiKhoanGUI extends JFrame {
         protected BaseAccountDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1398,4 +1398,13 @@ public class TaiKhoanGUI extends JFrame {
             permBaoCao = true;
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

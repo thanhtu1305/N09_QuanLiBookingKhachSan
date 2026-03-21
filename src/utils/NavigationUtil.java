@@ -13,13 +13,16 @@ import gui.PhongGUI;
 import gui.TaiKhoanGUI;
 import gui.ThanhToanGUI;
 import gui.TienNghiGUI;
+import gui.common.AppFrame;
 
-import javax.swing.JFrame;
 import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import java.util.EnumMap;
 import java.util.Map;
 
 public final class NavigationUtil {
+
     private static final Map<ScreenKey, String> SCREEN_TITLES = new EnumMap<>(ScreenKey.class);
 
     static {
@@ -28,8 +31,7 @@ public final class NavigationUtil {
         }
     }
 
-    private NavigationUtil() {
-    }
+    private NavigationUtil() {}
 
     public enum ScreenKey {
         DASHBOARD("Tổng quan"),
@@ -47,113 +49,68 @@ public final class NavigationUtil {
         BAO_CAO("Báo cáo thống kê");
 
         private final String label;
-
-        ScreenKey(String label) {
-            this.label = label;
-        }
-
-        public String getLabel() {
-            return label;
-        }
+        ScreenKey(String label) { this.label = label; }
+        public String getLabel() { return label; }
 
         public static ScreenKey fromLabel(String label) {
-            for (ScreenKey key : values()) {
-                if (key.label.equals(label)) {
-                    return key;
-                }
-            }
+            for (ScreenKey k : values()) if (k.label.equals(label)) return k;
             return null;
         }
     }
 
-    public static void navigate(JFrame currentFrame, ScreenKey currentScreen, ScreenKey targetScreen, String username, String role) {
-        if (targetScreen == null) {
-            return;
-        }
-        if (currentScreen != null && currentScreen == targetScreen) {
-            return;
-        }
+    /**
+     * Chuyển màn hình: swap panel vào AppFrame duy nhất — không tạo/hủy cửa sổ, không nháy.
+     * Tham số currentFrame giữ nguyên để không cần sửa code gọi ở các GUI.
+     */
+    public static void navigate(Object currentFrame, ScreenKey currentScreen,
+                                ScreenKey targetScreen, String username, String role) {
+        if (targetScreen == null) return;
+        if (currentScreen != null && currentScreen == targetScreen) return;
 
-        JFrame nextFrame = createFrame(targetScreen, username, role);
-        if (nextFrame == null) {
-            JOptionPane.showMessageDialog(
-                    currentFrame,
-                    "Không mở được màn hình: " + SCREEN_TITLES.getOrDefault(targetScreen, targetScreen.name()),
-                    "Thông báo",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-            return;
-        }
+        SwingUtilities.invokeLater(() -> {
+            JPanel panel = createPanel(targetScreen, username, role);
+            if (panel == null) {
+                JOptionPane.showMessageDialog(
+                        AppFrame.get(),
+                        "Không mở được màn hình: " + SCREEN_TITLES.getOrDefault(targetScreen, targetScreen.name()),
+                        "Thông báo",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+                return;
+            }
+            String title = "Hotel PMS - " + SCREEN_TITLES.getOrDefault(targetScreen, targetScreen.name());
+            AppFrame.get().swapTo(targetScreen.name(), panel, title);
+        });
+    }
 
-        nextFrame.setVisible(true);
-        if (currentFrame != null) {
-            currentFrame.dispose();
+    public static void refresh(Object currentFrame, ScreenKey currentScreen,
+                               String username, String role) {
+        if (currentScreen == null) return;
+        navigate(currentFrame, null, currentScreen, username, role);
+    }
+
+    private static JPanel createPanel(ScreenKey key, String username, String role) {
+        String u = safe(username, "guest");
+        String r = safe(role, "Lễ tân");
+        switch (key) {
+            case DASHBOARD:    return new DashboardGUI(u, r).buildPanel();
+            case TAI_KHOAN:    return new TaiKhoanGUI(u, r).buildPanel();
+            case PHONG:        return new PhongGUI(u, r).buildPanel();
+            case LOAI_PHONG:   return new LoaiPhongGUI(u, r).buildPanel();
+            case BANG_GIA:     return new BangGiaGUI(u, r).buildPanel();
+            case DAT_PHONG:    return new DatPhongGUI(u, r).buildPanel();
+            case CHECK_IN_OUT: return new CheckInOutGUI(u, r).buildPanel();
+            case DICH_VU:      return new DichVuGUI(u, r).buildPanel();
+            case TIEN_NGHI:    return new TienNghiGUI(u, r).buildPanel();
+            case THANH_TOAN:   return new ThanhToanGUI(u, r).buildPanel();
+            case KHACH_HANG:   return new KhachHangGUI(u, r).buildPanel();
+            case NHAN_VIEN:    return new NhanVienGUI(u, r).buildPanel();
+            case BAO_CAO:      return new BaoCaoGUI(u, r).buildPanel();
+            default:           return null;
         }
     }
 
-    public static void refresh(JFrame currentFrame, ScreenKey currentScreen, String username, String role) {
-        if (currentScreen == null) {
-            return;
-        }
-
-        JFrame nextFrame = createFrame(currentScreen, username, role);
-        if (nextFrame == null) {
-            JOptionPane.showMessageDialog(
-                    currentFrame,
-                    "Không làm mới được màn hình: " + SCREEN_TITLES.getOrDefault(currentScreen, currentScreen.name()),
-                    "Thông báo",
-                    JOptionPane.INFORMATION_MESSAGE
-            );
-            return;
-        }
-
-        nextFrame.setVisible(true);
-        if (currentFrame != null) {
-            currentFrame.dispose();
-        }
-    }
-
-    private static JFrame createFrame(ScreenKey screenKey, String username, String role) {
-        String safeUsername = safeUsername(username);
-        String safeRole = safeRole(role);
-
-        switch (screenKey) {
-            case DASHBOARD:
-                return new DashboardGUI(safeUsername, safeRole);
-            case TAI_KHOAN:
-                return new TaiKhoanGUI(safeUsername, safeRole);
-            case PHONG:
-                return new PhongGUI(safeUsername, safeRole);
-            case LOAI_PHONG:
-                return new LoaiPhongGUI(safeUsername, safeRole);
-            case BANG_GIA:
-                return new BangGiaGUI(safeUsername, safeRole);
-            case DAT_PHONG:
-                return new DatPhongGUI(safeUsername, safeRole);
-            case CHECK_IN_OUT:
-                return new CheckInOutGUI(safeUsername, safeRole);
-            case DICH_VU:
-                return new DichVuGUI(safeUsername, safeRole);
-            case TIEN_NGHI:
-                return new TienNghiGUI(safeUsername, safeRole);
-            case THANH_TOAN:
-                return new ThanhToanGUI(safeUsername, safeRole);
-            case KHACH_HANG:
-                return new KhachHangGUI(safeUsername, safeRole);
-            case NHAN_VIEN:
-                return new NhanVienGUI(safeUsername, safeRole);
-            case BAO_CAO:
-                return new BaoCaoGUI(safeUsername, safeRole);
-            default:
-                return null;
-        }
-    }
-
-    private static String safeUsername(String username) {
-        return username == null || username.trim().isEmpty() ? "guest" : username.trim();
-    }
-
-    private static String safeRole(String role) {
-        return role == null || role.trim().isEmpty() ? "Lễ tân" : role.trim();
+    private static String safe(String v, String fallback) {
+        return v == null || v.trim().isEmpty() ? fallback : v.trim();
     }
 }

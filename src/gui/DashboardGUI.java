@@ -29,6 +29,7 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.Component;
 
 public class DashboardGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -46,6 +47,7 @@ public class DashboardGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
 
     private JTable tblCongViec;
     private DefaultTableModel taskTableModel;
@@ -64,7 +66,6 @@ public class DashboardGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Dashboard - Hotel PMS");
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
@@ -80,6 +81,7 @@ public class DashboardGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.DASHBOARD, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -180,9 +182,21 @@ public class DashboardGUI extends JFrame {
         JPanel content = new JPanel();
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-        content.add(buildKpiSection());
+
+        JPanel kpiSection = buildKpiSection();
+        kpiSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+        kpiSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, kpiSection.getPreferredSize().height));
+
+        // Wrap JSplitPane trong một JPanel để căn trái đúng
+        JSplitPane splitPane = buildMainSplitPanels();
+        JPanel splitWrapper = new JPanel(new BorderLayout());
+        splitWrapper.setOpaque(false);
+        splitWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+        splitWrapper.add(splitPane, BorderLayout.CENTER);
+
+        content.add(kpiSection);
         content.add(Box.createVerticalStrut(12));
-        content.add(buildMainSplitPanels());
+        content.add(splitWrapper);
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(null);
@@ -232,7 +246,7 @@ public class DashboardGUI extends JFrame {
         card.setBackground(PANEL_SOFT);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(10, 12, 10, 12)
+                new EmptyBorder(10, 5, 10, 12)
         ));
 
         JLabel lblLabel = new JLabel(label);
@@ -667,4 +681,13 @@ public class DashboardGUI extends JFrame {
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

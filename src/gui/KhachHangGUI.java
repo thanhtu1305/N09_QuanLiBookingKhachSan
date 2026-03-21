@@ -54,6 +54,7 @@ public class KhachHangGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<CustomerRecord> allCustomers = new ArrayList<CustomerRecord>();
     private final List<CustomerRecord> filteredCustomers = new ArrayList<CustomerRecord>();
 
@@ -87,7 +88,6 @@ public class KhachHangGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý khách hàng - " + AppBranding.APP_DISPLAY_NAME);
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -105,6 +105,7 @@ public class KhachHangGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.KHACH_HANG, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -830,7 +831,6 @@ public class KhachHangGUI extends JFrame {
         protected BaseCustomerDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1347,4 +1347,13 @@ public class KhachHangGUI extends JFrame {
             return record;
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

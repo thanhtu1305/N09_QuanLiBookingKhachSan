@@ -53,6 +53,7 @@ public class NhanVienGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<EmployeeRecord> allEmployees = new ArrayList<EmployeeRecord>();
     private final List<EmployeeRecord> filteredEmployees = new ArrayList<EmployeeRecord>();
 
@@ -86,7 +87,6 @@ public class NhanVienGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý nhân viên - " + AppBranding.APP_DISPLAY_NAME);
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -104,6 +104,7 @@ public class NhanVienGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.NHAN_VIEN, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -785,7 +786,6 @@ public class NhanVienGUI extends JFrame {
         protected BaseEmployeeDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1363,4 +1363,13 @@ public class NhanVienGUI extends JFrame {
             return record;
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

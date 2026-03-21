@@ -1,6 +1,7 @@
 package gui;
 
 import gui.common.AppBranding;
+import gui.common.AppFrame;
 import utils.NavigationUtil;
 import utils.NavigationUtil.ScreenKey;
 
@@ -41,13 +42,16 @@ public class DangNhapGUI extends JFrame {
 
     private JTextField txtUsername;
     private JPasswordField txtPassword;
+    private JPanel rootPanel;
     private JRadioButton rdoLeTan;
     private JRadioButton rdoQuanLi;
 
     public DangNhapGUI() {
         setTitle("Đăng nhập - " + AppBranding.APP_DISPLAY_NAME);
-        setSize(1000, 650);
         setLocationRelativeTo(null);
+        setSize(1000, 650);
+        setExtendedState(JFrame.MAXIMIZED_BOTH);
+        setMinimumSize(new java.awt.Dimension(800, 600));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         initUI();
     }
@@ -60,6 +64,7 @@ public class DangNhapGUI extends JFrame {
         root.add(buildCenterContainer(), BorderLayout.CENTER);
         root.add(buildFooter(), BorderLayout.SOUTH);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -274,7 +279,10 @@ public class DangNhapGUI extends JFrame {
         }
 
         String role = rdoLeTan.isSelected() ? "Lễ tân" : "Quản lí";
-        NavigationUtil.navigate(this, null, ScreenKey.DASHBOARD, username, role);
+        AppFrame.get().setVisible(true);
+        NavigationUtil.navigate(null, null, ScreenKey.DASHBOARD, username, role);
+        // Ẩn cửa sổ login (AppFrame đã hiện)
+        this.setVisible(false);
     }
 
     private void onClear() {
@@ -283,4 +291,10 @@ public class DangNhapGUI extends JFrame {
         rdoLeTan.setSelected(true);
         txtUsername.requestFocusInWindow();
     }
+
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

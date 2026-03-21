@@ -52,6 +52,7 @@ public class DichVuGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<ServiceCatalogRecord> serviceCatalogs = new ArrayList<ServiceCatalogRecord>();
     private final List<ServiceUsageRecord> allServiceUsages = new ArrayList<ServiceUsageRecord>();
     private final List<ServiceUsageRecord> filteredServiceUsages = new ArrayList<ServiceUsageRecord>();
@@ -80,7 +81,6 @@ public class DichVuGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý dịch vụ - Hotel PMS");
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -98,6 +98,7 @@ public class DichVuGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.DICH_VU, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -728,7 +729,6 @@ public class DichVuGUI extends JFrame {
         protected BaseServiceDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1275,4 +1275,13 @@ public class DichVuGUI extends JFrame {
             this.moTa = moTa;
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

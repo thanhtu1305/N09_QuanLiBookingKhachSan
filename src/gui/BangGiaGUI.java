@@ -55,6 +55,7 @@ public class BangGiaGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<PriceRecord> allPrices = new ArrayList<PriceRecord>();
     private final List<PriceRecord> filteredPrices = new ArrayList<PriceRecord>();
 
@@ -86,7 +87,6 @@ public class BangGiaGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý bảng giá - Hotel PMS");
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -104,6 +104,7 @@ public class BangGiaGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.BANG_GIA, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -774,7 +775,6 @@ public class BangGiaGUI extends JFrame {
         protected BasePriceDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1478,4 +1478,13 @@ public class BangGiaGUI extends JFrame {
             return phuThu <= 0 ? "-" : String.format(Locale.US, "%,.0f", phuThu).replace(',', '.');
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

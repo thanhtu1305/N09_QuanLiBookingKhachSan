@@ -54,6 +54,7 @@ public class TienNghiGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<AmenityRecord> allAmenities = new ArrayList<AmenityRecord>();
     private final List<AmenityRecord> filteredAmenities = new ArrayList<AmenityRecord>();
 
@@ -82,7 +83,6 @@ public class TienNghiGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý tiện nghi - " + AppBranding.APP_DISPLAY_NAME);
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -100,6 +100,7 @@ public class TienNghiGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.TIEN_NGHI, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -743,7 +744,6 @@ public class TienNghiGUI extends JFrame {
         protected BaseAmenityDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1097,4 +1097,13 @@ public class TienNghiGUI extends JFrame {
                     || (suDungChoPhong != null && !suDungChoPhong.trim().isEmpty() && !"Chưa cấu hình".equalsIgnoreCase(suDungChoPhong.trim()));
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

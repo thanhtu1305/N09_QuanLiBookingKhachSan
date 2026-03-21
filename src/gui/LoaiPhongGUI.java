@@ -58,6 +58,7 @@ public class LoaiPhongGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<RoomTypeRecord> allTypes = new ArrayList<RoomTypeRecord>();
     private final List<RoomTypeRecord> filteredTypes = new ArrayList<RoomTypeRecord>();
 
@@ -87,7 +88,6 @@ public class LoaiPhongGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý loại phòng - Hotel PMS");
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -105,6 +105,7 @@ public class LoaiPhongGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.LOAI_PHONG, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -815,7 +816,6 @@ public class LoaiPhongGUI extends JFrame {
         protected BaseRoomTypeDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1449,4 +1449,13 @@ public class LoaiPhongGUI extends JFrame {
             return builder.length() == 0 ? "Chưa cấu hình tiện nghi mặc định." : builder.toString();
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

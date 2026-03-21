@@ -55,6 +55,7 @@ public class ThanhToanGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<InvoiceRecord> allInvoices = new ArrayList<InvoiceRecord>();
     private final List<InvoiceRecord> filteredInvoices = new ArrayList<InvoiceRecord>();
 
@@ -94,7 +95,6 @@ public class ThanhToanGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Thanh toán - " + AppBranding.APP_DISPLAY_NAME);
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -112,6 +112,7 @@ public class ThanhToanGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.THANH_TOAN, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -822,7 +823,6 @@ public class ThanhToanGUI extends JFrame {
         protected BasePaymentDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -936,33 +936,33 @@ public class ThanhToanGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-        txtKhachDua = createInputField(invoice.getTongPhaiThuLabel());
-        txtTienThua = createInputField("0");
-        txtTienThua.setEditable(false);
-        cboPhuongThucDialog = createComboBox(new String[]{"Tiền mặt", "Thẻ", "Chuyển khoản", "Kết hợp"});
-        txtSoThamChieu = createInputField("");
-        txtNguoiThu = createInputField(username);
-        txtGhiChuDialog = createDialogTextArea(3);
-        txtKhachDua.getDocument().addDocumentListener(new DocumentListener() {
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                updateTienThua();
-            }
+            txtKhachDua = createInputField(invoice.getTongPhaiThuLabel());
+            txtTienThua = createInputField("0");
+            txtTienThua.setEditable(false);
+            cboPhuongThucDialog = createComboBox(new String[]{"Tiền mặt", "Thẻ", "Chuyển khoản", "Kết hợp"});
+            txtSoThamChieu = createInputField("");
+            txtNguoiThu = createInputField(username);
+            txtGhiChuDialog = createDialogTextArea(3);
+            txtKhachDua.getDocument().addDocumentListener(new DocumentListener() {
+                @Override
+                public void insertUpdate(DocumentEvent e) {
+                    updateTienThua();
+                }
 
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                updateTienThua();
-            }
+                @Override
+                public void removeUpdate(DocumentEvent e) {
+                    updateTienThua();
+                }
 
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                updateTienThua();
-            }
-        });
-        cboPhuongThucDialog.addActionListener(e -> updatePaymentFields());
-        updatePaymentFields();
+                @Override
+                public void changedUpdate(DocumentEvent e) {
+                    updateTienThua();
+                }
+            });
+            cboPhuongThucDialog.addActionListener(e -> updatePaymentFields());
+            updatePaymentFields();
 
-        addFormRow(form, gbc, 0, "Khách đưa", txtKhachDua);
+            addFormRow(form, gbc, 0, "Khách đưa", txtKhachDua);
             addFormRow(form, gbc, 1, "Tiền thừa", txtTienThua);
             addFormRow(form, gbc, 2, "Phương thức", cboPhuongThucDialog);
             addFormRow(form, gbc, 3, "Số tham chiếu", txtSoThamChieu);
@@ -1543,4 +1543,13 @@ public class ThanhToanGUI extends JFrame {
             return String.format(Locale.US, "%,.0f", getTongPhaiThu()).replace(',', '.');
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

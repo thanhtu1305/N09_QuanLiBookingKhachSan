@@ -52,6 +52,7 @@ public class BaoCaoGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
 
     private JComboBox<String> cboNgay;
     private JComboBox<String> cboThang;
@@ -73,7 +74,6 @@ public class BaoCaoGUI extends JFrame {
         this.role = safeValue(role, "Quản lý");
 
         setTitle("Báo cáo và thống kê - " + AppBranding.APP_DISPLAY_NAME);
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -88,6 +88,7 @@ public class BaoCaoGUI extends JFrame {
         root.setBorder(new EmptyBorder(12, 12, 12, 12));
         root.add(SidebarFactory.createSidebar(this, ScreenKey.BAO_CAO, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -665,7 +666,6 @@ public class BaoCaoGUI extends JFrame {
         protected BaseReportDialog(Frame owner, String title, int width, int height) {
             super(owner, title, true);
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setSize(width, height);
             setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -1120,4 +1120,13 @@ public class BaoCaoGUI extends JFrame {
             return filter;
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

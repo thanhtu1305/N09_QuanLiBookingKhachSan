@@ -53,6 +53,7 @@ public class CheckInOutGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private JPanel rootPanel;
     private final List<StayRecord> allRecords = new ArrayList<StayRecord>();
     private final List<StayRecord> filteredRecords = new ArrayList<StayRecord>();
 
@@ -83,7 +84,6 @@ public class CheckInOutGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         setTitle("Quản lý Check-in / Check-out - Hotel PMS");
-        setSize(1360, 820);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -101,6 +101,7 @@ public class CheckInOutGUI extends JFrame {
         root.add(SidebarFactory.createSidebar(this, ScreenKey.CHECK_IN_OUT, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
 
+        rootPanel = root;
         setContentPane(root);
     }
 
@@ -688,7 +689,6 @@ public class CheckInOutGUI extends JFrame {
 
     private void openSimpleDialog(String title, String[] fields) {
         JDialog dialog = new JDialog((Frame) this, title, true);
-        dialog.setSize(460, 320);
         dialog.setLocationRelativeTo(this);
 
         JPanel root = new JPanel(new BorderLayout(0, 10));
@@ -728,7 +728,7 @@ public class CheckInOutGUI extends JFrame {
 
         root.add(form, BorderLayout.CENTER);
         root.add(actions, BorderLayout.SOUTH);
-        dialog.setContentPane(root);
+        setContentPane(root);
         dialog.setVisible(true);
     }
 
@@ -795,4 +795,13 @@ public class CheckInOutGUI extends JFrame {
             this.caLam = caLam;
         }
     }
+
+    /**
+     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
+     */
+    public JPanel buildPanel() {
+        if (rootPanel == null) initUI();
+        return rootPanel;
+    }
+
 }

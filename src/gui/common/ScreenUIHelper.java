@@ -3,7 +3,6 @@ package gui.common;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
-import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -17,14 +16,20 @@ import java.awt.Font;
 import java.awt.event.ActionEvent;
 
 public final class ScreenUIHelper {
-    private ScreenUIHelper() {
-    }
 
-    public static JPanel createWindowControlPanel(JFrame frame, Color textPrimary, Color borderSoft, String screenName) {
+    private ScreenUIHelper() {}
+
+    /**
+     * Nút [_] thu nhỏ và [X] đóng — hoạt động trên AppFrame singleton.
+     */
+    public static JPanel createWindowControlPanel(Object ignored, Color textPrimary, Color borderSoft, String screenName) {
+        AppFrame frame = AppFrame.get();
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         panel.setOpaque(false);
-        panel.add(createWindowButton("[_]", textPrimary, borderSoft, e -> frame.setState(JFrame.ICONIFIED)));
-        panel.add(createWindowButton("[X]", textPrimary, borderSoft, e -> closeWindow(frame, screenName)));
+        panel.add(createWindowButton("[_]", textPrimary, borderSoft,
+                e -> frame.setState(AppFrame.ICONIFIED)));
+        panel.add(createWindowButton("[X]", textPrimary, borderSoft,
+                e -> closeWindow(screenName)));
         return panel;
     }
 
@@ -44,9 +49,14 @@ public final class ScreenUIHelper {
         return panel;
     }
 
-    public static void registerShortcut(JFrame frame, String keyStroke, String actionKey, final Runnable runnable) {
-        JRootPane rootPane = frame.getRootPane();
-        rootPane.getInputMap(JRootPane.WHEN_IN_FOCUSED_WINDOW).put(KeyStroke.getKeyStroke(keyStroke), actionKey);
+    /**
+     * Đăng ký shortcut vào AppFrame (JFrame duy nhất).
+     * Tham số frame bỏ qua — shortcut luôn bind vào AppFrame.get().
+     */
+    public static void registerShortcut(Object ignored, String keyStroke, String actionKey, Runnable runnable) {
+        JRootPane rootPane = AppFrame.get().getRootPane();
+        rootPane.getInputMap(JRootPane.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(keyStroke), actionKey);
         rootPane.getActionMap().put(actionKey, new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -55,7 +65,8 @@ public final class ScreenUIHelper {
         });
     }
 
-    private static JButton createWindowButton(String text, Color textPrimary, Color borderSoft, java.awt.event.ActionListener listener) {
+    private static JButton createWindowButton(String text, Color textPrimary, Color borderSoft,
+                                              java.awt.event.ActionListener listener) {
         JButton button = new JButton(text);
         button.setHorizontalAlignment(SwingConstants.CENTER);
         button.setFont(new Font("Segoe UI", Font.BOLD, 12));
@@ -73,16 +84,17 @@ public final class ScreenUIHelper {
         return button;
     }
 
-    private static void closeWindow(JFrame frame, String screenName) {
+    private static void closeWindow(String screenName) {
         int confirm = JOptionPane.showConfirmDialog(
-                frame,
+                AppFrame.get(),
                 "Bạn có chắc muốn đóng " + screenName + "?",
                 "Xác nhận",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.QUESTION_MESSAGE
         );
         if (confirm == JOptionPane.YES_OPTION) {
-            frame.dispose();
+            AppFrame.get().dispose();
+            System.exit(0);
         }
     }
 }

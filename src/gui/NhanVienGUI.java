@@ -1178,7 +1178,7 @@ public class NhanVienGUI extends JFrame {
             gbc.anchor = GridBagConstraints.WEST;
 
             txtUsername = createInputField(employee.username.isEmpty() ? employee.maNhanVien.toLowerCase(Locale.ROOT) : employee.username);
-            cboVaiTro = createComboBox(new String[]{"Lễ tân", "Quản lý", "Kế toán", "Nhân viên vận hành"});
+            cboVaiTro = createComboBox(new String[]{"Lễ tân", "Quản lý"});
             txtMatKhau = createInputField("");
             txtXacNhanMatKhau = createInputField("");
             cboTrangThaiDialog = createComboBox(new String[]{"Đang hoạt động", "Tạm khóa"});

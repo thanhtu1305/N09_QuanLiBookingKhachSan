@@ -497,7 +497,7 @@ public class NhanVienGUI extends JFrame {
                 "Lễ tân", "Nhân viên", "Ca chiều", "15/08/2023", "Hoạt động", "mai.tran@hotel.com", "Quận 10, TP.HCM",
                 "Ưu tiên xử lý phòng VIP.", false));
         allEmployees.add(EmployeeRecord.create("NV003", "Phạm Khôi", "03/01/1989", "Nam", "079100000333", "0903333333",
-                "Kế toán", "Kế toán tổng hợp", "Giờ hành chính", "20/02/2021", "Hoạt động", "khoi.pham@hotel.com", "Bình Thạnh, TP.HCM",
+                "Lễ tân", "Nhân viên", "Giờ hành chính", "20/02/2021", "Hoạt động", "khoi.pham@hotel.com", "Bình Thạnh, TP.HCM",
                 "Theo dõi đối soát doanh thu.", true));
         EmployeeRecord nv4 = EmployeeRecord.create("NV004", "Lê Quỳnh", "15/12/1997", "Nữ", "079100000444", "0904444444",
                 "Lễ tân", "Nhân viên", "Ca tối", "09/11/2024", "Tạm ngừng", "quynh.le@hotel.com", "Thủ Đức, TP.HCM",

@@ -820,14 +820,26 @@ public class ThanhToanGUI extends JFrame {
     }
 
     private abstract class BasePaymentDialog extends JDialog {
+        private final int minimumWidth;
+        private final int minimumHeight;
+
         protected BasePaymentDialog(Frame owner, String title, int width, int height) {
-            super(owner, title, true);
+            super(ScreenUIHelper.resolveDialogOwner(owner), title, true);
+            this.minimumWidth = width;
+            this.minimumHeight = height;
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
             setLayout(new BorderLayout());
             setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        }
+
+        @Override
+        public void setVisible(boolean visible) {
+            if (visible) {
+                ScreenUIHelper.prepareDialog(this, getOwner(), minimumWidth, minimumHeight);
+            }
+            super.setVisible(visible);
         }
 
         protected JPanel buildDialogHeader(String title, String subtitle) {

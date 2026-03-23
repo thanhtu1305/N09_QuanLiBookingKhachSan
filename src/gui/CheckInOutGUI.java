@@ -688,8 +688,9 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void openSimpleDialog(String title, String[] fields) {
-        JDialog dialog = new JDialog((Frame) this, title, true);
-        dialog.setLocationRelativeTo(this);
+        Frame dialogOwner = ScreenUIHelper.resolveDialogOwner(this);
+        JDialog dialog = new JDialog(dialogOwner, title, true);
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         JPanel root = new JPanel(new BorderLayout(0, 10));
         root.setBackground(CARD_BG);
@@ -728,7 +729,8 @@ public class CheckInOutGUI extends JFrame {
 
         root.add(form, BorderLayout.CENTER);
         root.add(actions, BorderLayout.SOUTH);
-        setContentPane(root);
+        dialog.setContentPane(root);
+        ScreenUIHelper.prepareDialog(dialog, dialogOwner, 520, 320);
         dialog.setVisible(true);
     }
 

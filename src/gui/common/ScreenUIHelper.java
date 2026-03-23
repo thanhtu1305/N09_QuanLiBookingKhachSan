@@ -3,19 +3,29 @@ package gui.common;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRootPane;
 import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Frame;
+import java.awt.Window;
 import java.awt.event.ActionEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 
 public final class ScreenUIHelper {
+    private static final String DIALOG_PREPARED_KEY = "dialogPrepared";
 
     private ScreenUIHelper() {}
 
@@ -62,6 +72,82 @@ public final class ScreenUIHelper {
             public void actionPerformed(ActionEvent e) {
                 runnable.run();
             }
+        });
+    }
+
+    public static void prepareDialog(JDialog dialog, Window parent, int minWidth, int minHeight) {
+        if (dialog == null) {
+            return;
+        }
+
+        dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+
+        if (!Boolean.TRUE.equals(dialog.getRootPane().getClientProperty(DIALOG_PREPARED_KEY))) {
+            dialog.getRootPane().putClientProperty(DIALOG_PREPARED_KEY, Boolean.TRUE);
+            dialog.addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowClosed(WindowEvent e) {
+                    refreshOwner(parent);
+                }
+
+                @Override
+                public void windowClosing(WindowEvent e) {
+                    refreshOwner(parent);
+                }
+            });
+        }
+
+        int safeMinWidth = Math.max(minWidth, 320);
+        int safeMinHeight = Math.max(minHeight, 180);
+
+        dialog.getContentPane().revalidate();
+        dialog.getContentPane().repaint();
+        dialog.pack();
+
+        Dimension packedSize = dialog.getSize();
+        int targetWidth = Math.max(packedSize.width, safeMinWidth);
+        int targetHeight = Math.max(packedSize.height, safeMinHeight);
+
+        dialog.setMinimumSize(new Dimension(safeMinWidth, safeMinHeight));
+        if (packedSize.width != targetWidth || packedSize.height != targetHeight) {
+            dialog.setSize(targetWidth, targetHeight);
+        }
+        dialog.setLocationRelativeTo(parent);
+        dialog.getContentPane().revalidate();
+        dialog.getContentPane().repaint();
+    }
+
+    public static Frame resolveDialogOwner(Component candidate) {
+        Window ancestor = candidate == null ? null : SwingUtilities.getWindowAncestor(candidate);
+        if (ancestor instanceof Frame && ancestor.isDisplayable()) {
+            return (Frame) ancestor;
+        }
+
+        if (candidate instanceof Frame) {
+            Frame frame = (Frame) candidate;
+            if (frame.isDisplayable() || frame.isShowing()) {
+                return frame;
+            }
+        }
+
+        AppFrame appFrame = AppFrame.get();
+        if (appFrame.isDisplayable() || appFrame.isShowing()) {
+            return appFrame;
+        }
+
+        return candidate instanceof Frame ? (Frame) candidate : null;
+    }
+
+    private static void refreshOwner(Window parent) {
+        if (parent == null) {
+            return;
+        }
+
+        SwingUtilities.invokeLater(() -> {
+            if (parent instanceof Container) {
+                ((Container) parent).revalidate();
+            }
+            parent.repaint();
         });
     }
 

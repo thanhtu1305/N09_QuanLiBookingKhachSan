@@ -494,7 +494,7 @@ public class NhanVienGUI extends JFrame {
                 "Lễ tân", "Trưởng ca", "Ca sáng", "01/03/2022", "Hoạt động", "hai.nguyen@hotel.com", "Quận 7, TP.HCM",
                 "Quản lý khu vực lễ tân buổi sáng.", true));
         allEmployees.add(EmployeeRecord.create("NV002", "Trần Mai", "21/06/1996", "Nữ", "079100000222", "0902222222",
-                "Buồng phòng", "Nhân viên", "Ca chiều", "15/08/2023", "Hoạt động", "mai.tran@hotel.com", "Quận 10, TP.HCM",
+                "Lễ tân", "Nhân viên", "Ca chiều", "15/08/2023", "Hoạt động", "mai.tran@hotel.com", "Quận 10, TP.HCM",
                 "Ưu tiên xử lý phòng VIP.", false));
         allEmployees.add(EmployeeRecord.create("NV003", "Phạm Khôi", "03/01/1989", "Nam", "079100000333", "0903333333",
                 "Kế toán", "Kế toán tổng hợp", "Giờ hành chính", "20/02/2021", "Hoạt động", "khoi.pham@hotel.com", "Bình Thạnh, TP.HCM",
@@ -783,14 +783,26 @@ public class NhanVienGUI extends JFrame {
     }
 
     private abstract class BaseEmployeeDialog extends JDialog {
+        private final int minimumWidth;
+        private final int minimumHeight;
+
         protected BaseEmployeeDialog(Frame owner, String title, int width, int height) {
-            super(owner, title, true);
+            super(ScreenUIHelper.resolveDialogOwner(owner), title, true);
+            this.minimumWidth = width;
+            this.minimumHeight = height;
             setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            setLocationRelativeTo(owner);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
             setLayout(new BorderLayout());
             setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+        }
+
+        @Override
+        public void setVisible(boolean visible) {
+            if (visible) {
+                ScreenUIHelper.prepareDialog(this, getOwner(), minimumWidth, minimumHeight);
+            }
+            super.setVisible(visible);
         }
 
         protected JPanel buildDialogHeader(String title, String subtitle) {

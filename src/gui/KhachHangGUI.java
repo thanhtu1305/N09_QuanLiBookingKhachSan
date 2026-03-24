@@ -263,14 +263,7 @@ public class KhachHangGUI extends JFrame {
                 }
             }
         });
-        tblKhachHang.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                if (e.getClickCount() == 2 && tblKhachHang.getSelectedRow() >= 0) {
-                    openCustomerDetailDialog();
-                }
-            }
-        });
+        ScreenUIHelper.registerTableDoubleClick(tblKhachHang, this::openUpdateCustomerDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblKhachHang);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

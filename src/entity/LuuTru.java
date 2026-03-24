@@ -2,15 +2,15 @@ package entity;
 
 public class LuuTru {
     private String maLuuTru;
-    private String maDatPhong;
+    private String maChiTietDatPhong;
     private String trangThai;
 
     public LuuTru() {
     }
 
-    public LuuTru(String maLuuTru, String maDatPhong, String trangThai) {
+    public LuuTru(String maLuuTru, String maChiTietDatPhong, String trangThai) {
         this.maLuuTru = maLuuTru;
-        this.maDatPhong = maDatPhong;
+        this.maChiTietDatPhong = maChiTietDatPhong;
         this.trangThai = trangThai;
     }
 
@@ -22,12 +22,12 @@ public class LuuTru {
         this.maLuuTru = maLuuTru;
     }
 
-    public String getMaDatPhong() {
-        return maDatPhong;
+    public String getMaChiTietDatPhong() {
+        return maChiTietDatPhong;
     }
 
-    public void setMaDatPhong(String maDatPhong) {
-        this.maDatPhong = maDatPhong;
+    public void setMaChiTietDatPhong(String maChiTietDatPhong) {
+        this.maChiTietDatPhong = maChiTietDatPhong;
     }
 
     public String getTrangThai() {
@@ -42,7 +42,7 @@ public class LuuTru {
     public String toString() {
         return "LuuTru{" +
                 "maLuuTru='" + maLuuTru + '\'' +
-                ", maDatPhong='" + maDatPhong + '\'' +
+                ", maChiTietDatPhong='" + maChiTietDatPhong + '\'' +
                 ", trangThai='" + trangThai + '\'' +
                 '}';
     }

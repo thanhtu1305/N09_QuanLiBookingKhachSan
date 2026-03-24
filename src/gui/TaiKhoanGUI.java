@@ -280,6 +280,7 @@ public class TaiKhoanGUI extends JFrame {
                 }
             }
         });
+        ScreenUIHelper.registerTableDoubleClick(tblTaiKhoan, this::openPermissionDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblTaiKhoan);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

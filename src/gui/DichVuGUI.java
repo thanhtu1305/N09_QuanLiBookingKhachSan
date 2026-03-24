@@ -253,6 +253,7 @@ public class DichVuGUI extends JFrame {
                 }
             }
         });
+        ScreenUIHelper.registerTableDoubleClick(tblDichVu, this::openUpdateServiceUsageDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblDichVu);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

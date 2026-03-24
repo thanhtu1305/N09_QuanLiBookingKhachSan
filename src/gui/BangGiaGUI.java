@@ -269,6 +269,7 @@ public class BangGiaGUI extends JFrame {
                 }
             }
         });
+        ScreenUIHelper.registerTableDoubleClick(tblBangGia, this::openUpdatePriceTableDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblBangGia);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
@@ -829,6 +830,8 @@ public class BangGiaGUI extends JFrame {
         private final PriceRecord editingRecord;
         private final boolean editing;
         private final List<PriceDetailRecord> detailRows = new ArrayList<PriceDetailRecord>();
+        private JLabel lblDetailSummary;
+        private JTextArea txtSelectedDetailNote;
 
         private PriceTableEditorDialog(Frame owner, PriceRecord record) {
             super(owner, record == null ? "Thêm bảng giá" : "Cập nhật bảng giá", 940, 700);
@@ -850,8 +853,13 @@ public class BangGiaGUI extends JFrame {
 
             JPanel body = new JPanel(new BorderLayout(0, 12));
             body.setOpaque(false);
-            body.add(buildHeaderSection(), BorderLayout.NORTH);
-            body.add(buildDetailSection(), BorderLayout.CENTER);
+            JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildHeaderSection(), buildDetailSection());
+            splitPane.setBorder(null);
+            splitPane.setOpaque(false);
+            splitPane.setResizeWeight(0.36d);
+            splitPane.setDividerLocation(330);
+            splitPane.setContinuousLayout(true);
+            body.add(splitPane, BorderLayout.CENTER);
 
             content.add(body, BorderLayout.CENTER);
 
@@ -861,6 +869,10 @@ public class BangGiaGUI extends JFrame {
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnSaveNew, btnPrimary), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+
+            if (!editing) {
+                loadSampleDetailRows();
+            }
         }
 
         private JPanel buildHeaderSection() {
@@ -907,6 +919,7 @@ public class BangGiaGUI extends JFrame {
             wrapper.add(lblSection, BorderLayout.NORTH);
             wrapper.add(form, BorderLayout.CENTER);
             section.removeAll();
+            section.setPreferredSize(new Dimension(330, 0));
             section.add(wrapper, BorderLayout.CENTER);
 
             this.headerMaField = maField;
@@ -951,6 +964,7 @@ public class BangGiaGUI extends JFrame {
 
             JScrollPane scroll = new JScrollPane(table);
             scroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+            scroll.setPreferredSize(new Dimension(0, 360));
 
             JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             actions.setOpaque(false);
@@ -958,19 +972,53 @@ public class BangGiaGUI extends JFrame {
             actions.add(createOutlineButton("Sửa dòng CT", new Color(245, 158, 11), e -> editSelectedDetail()));
             actions.add(createOutlineButton("Xóa dòng CT", new Color(220, 38, 38), e -> removeSelectedDetail()));
 
+            lblDetailSummary = new JLabel();
+            lblDetailSummary.setFont(BODY_FONT);
+            lblDetailSummary.setForeground(TEXT_MUTED);
+
+            txtSelectedDetailNote = createDialogTextArea(3);
+            txtSelectedDetailNote.setEditable(false);
+            txtSelectedDetailNote.setBackground(PANEL_SOFT);
+
+            JPanel footer = new JPanel(new BorderLayout(0, 8));
+            footer.setOpaque(false);
+            footer.add(lblDetailSummary, BorderLayout.NORTH);
+            footer.add(new JScrollPane(txtSelectedDetailNote), BorderLayout.CENTER);
+
+            JPanel center = new JPanel(new BorderLayout(0, 10));
+            center.setOpaque(false);
+            center.add(actions, BorderLayout.NORTH);
+            center.add(scroll, BorderLayout.CENTER);
+            center.add(footer, BorderLayout.SOUTH);
+
             wrapper.add(lblSection, BorderLayout.NORTH);
-            wrapper.add(actions, BorderLayout.CENTER);
-            wrapper.add(scroll, BorderLayout.SOUTH);
+            wrapper.add(center, BorderLayout.CENTER);
             section.add(wrapper, BorderLayout.CENTER);
 
             this.detailTableModelRef = model;
             this.detailTableRef = table;
+            this.detailTableRef.getSelectionModel().addListSelectionListener(e -> {
+                if (!e.getValueIsAdjusting()) {
+                    updateSelectedDetailPreview();
+                }
+            });
             refillDetailTable();
             return section;
         }
 
         private DefaultTableModel detailTableModelRef;
         private JTable detailTableRef;
+
+        private void loadSampleDetailRows() {
+            detailRows.clear();
+            detailRows.add(new PriceDetailRecord("Thường", "14:00 - 12:00", 650000, 120000, 0, 1, "Ngày thường"));
+            detailRows.add(new PriceDetailRecord("Cuối tuần", "14:00 - 12:00", 750000, 150000, 0, 2, "Thứ 6, Thứ 7, Chủ nhật"));
+            detailRows.add(new PriceDetailRecord("Ngày lễ", "14:00 - 12:00", 900000, 180000, 50000, 3, "Áp dụng ngày lễ"));
+            refillDetailTable();
+            if (detailTableRef.getRowCount() > 0) {
+                detailTableRef.setRowSelectionInterval(0, 0);
+            }
+        }
 
         private void refillDetailTable() {
             detailTableModelRef.setRowCount(0);
@@ -987,6 +1035,32 @@ public class BangGiaGUI extends JFrame {
                         detail.ghiChu
                 });
             }
+            if (detailTableRef != null && detailTableRef.getRowCount() > 0) {
+                detailTableRef.setRowSelectionInterval(0, 0);
+            }
+            refreshDetailSummary();
+            updateSelectedDetailPreview();
+        }
+
+        private void refreshDetailSummary() {
+            if (lblDetailSummary == null) {
+                return;
+            }
+            lblDetailSummary.setText("Tổng số dòng chi tiết: " + detailRows.size());
+        }
+
+        private void updateSelectedDetailPreview() {
+            if (txtSelectedDetailNote == null) {
+                return;
+            }
+            int row = detailTableRef == null ? -1 : detailTableRef.getSelectedRow();
+            if (row < 0 || row >= detailRows.size()) {
+                txtSelectedDetailNote.setText("Chọn một dòng chi tiết để xem ghi chú nhanh.");
+                return;
+            }
+            PriceDetailRecord detail = detailRows.get(row);
+            txtSelectedDetailNote.setText("Loại ngày: " + safeValue(detail.loaiNgay, "-")
+                    + "\nGhi chú: " + safeValue(detail.ghiChu, "-"));
         }
 
         private void openPriceDetailDialog(PriceDetailRecord detail) {
@@ -1083,15 +1157,7 @@ public class BangGiaGUI extends JFrame {
             } else {
                 addPriceTable(target, keepOpen);
                 if (keepOpen) {
-                    headerMaField.setText("");
-                    headerTenField.setText("");
-                    headerLoaiField.setSelectedIndex(0);
-                    headerTuNgayField.setText("01/04/2026");
-                    headerDenNgayField.setText("31/12/2026");
-                    headerStatusField.setSelectedIndex(0);
-                    headerGhiChuField.setText("");
-                    detailRows.clear();
-                    refillDetailTable();
+                    loadSampleDetailRows();
                 } else {
                     dispose();
                 }

@@ -254,14 +254,7 @@ public class TienNghiGUI extends JFrame {
                 }
             }
         });
-        tblTienNghi.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                if (e.getClickCount() == 2 && tblTienNghi.getSelectedRow() >= 0) {
-                    openAmenityDetailDialog();
-                }
-            }
-        });
+        ScreenUIHelper.registerTableDoubleClick(tblTienNghi, this::openUpdateAmenityDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblTienNghi);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

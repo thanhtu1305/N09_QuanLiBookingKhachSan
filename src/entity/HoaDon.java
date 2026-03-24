@@ -1,17 +1,31 @@
 package entity;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class HoaDon {
     private String maHoaDon;
-    private String maLuuTru;
-    private double tongTien;
+    private String maDatPhong;
+    private String maKhachHang;
+    private String ngayLap;
+    private double tongTienPhong;
+    private double tongTienDichVu;
+    private double tongPhuThu;
+    private double tongGiamGia;
+    private double tongTruDatCoc;
+    private double tongThanhToan;
+    private String trangThai;
+    private final List<ChiTietHoaDon> chiTietHoaDons = new ArrayList<ChiTietHoaDon>();
 
     public HoaDon() {
     }
 
-    public HoaDon(String maHoaDon, String maLuuTru, double tongTien) {
+    public HoaDon(String maHoaDon, String maDatPhong, String maKhachHang, String ngayLap, String trangThai) {
         this.maHoaDon = maHoaDon;
-        this.maLuuTru = maLuuTru;
-        this.tongTien = tongTien;
+        this.maDatPhong = maDatPhong;
+        this.maKhachHang = maKhachHang;
+        this.ngayLap = ngayLap;
+        this.trangThai = trangThai;
     }
 
     public String getMaHoaDon() {
@@ -22,28 +36,87 @@ public class HoaDon {
         this.maHoaDon = maHoaDon;
     }
 
-    public String getMaLuuTru() {
-        return maLuuTru;
+    public String getMaDatPhong() {
+        return maDatPhong;
     }
 
-    public void setMaLuuTru(String maLuuTru) {
-        this.maLuuTru = maLuuTru;
+    public void setMaDatPhong(String maDatPhong) {
+        this.maDatPhong = maDatPhong;
     }
 
-    public double getTongTien() {
-        return tongTien;
+    public String getMaKhachHang() {
+        return maKhachHang;
     }
 
-    public void setTongTien(double tongTien) {
-        this.tongTien = tongTien;
+    public void setMaKhachHang(String maKhachHang) {
+        this.maKhachHang = maKhachHang;
     }
 
-    @Override
-    public String toString() {
-        return "HoaDon{" +
-                "maHoaDon='" + maHoaDon + '\'' +
-                ", maLuuTru='" + maLuuTru + '\'' +
-                ", tongTien=" + tongTien +
-                '}';
+    public String getNgayLap() {
+        return ngayLap;
+    }
+
+    public void setNgayLap(String ngayLap) {
+        this.ngayLap = ngayLap;
+    }
+
+    public double getTongTienPhong() {
+        return tongTienPhong;
+    }
+
+    public void setTongTienPhong(double tongTienPhong) {
+        this.tongTienPhong = tongTienPhong;
+    }
+
+    public double getTongTienDichVu() {
+        return tongTienDichVu;
+    }
+
+    public void setTongTienDichVu(double tongTienDichVu) {
+        this.tongTienDichVu = tongTienDichVu;
+    }
+
+    public double getTongPhuThu() {
+        return tongPhuThu;
+    }
+
+    public void setTongPhuThu(double tongPhuThu) {
+        this.tongPhuThu = tongPhuThu;
+    }
+
+    public double getTongGiamGia() {
+        return tongGiamGia;
+    }
+
+    public void setTongGiamGia(double tongGiamGia) {
+        this.tongGiamGia = tongGiamGia;
+    }
+
+    public double getTongTruDatCoc() {
+        return tongTruDatCoc;
+    }
+
+    public void setTongTruDatCoc(double tongTruDatCoc) {
+        this.tongTruDatCoc = tongTruDatCoc;
+    }
+
+    public double getTongThanhToan() {
+        return tongThanhToan;
+    }
+
+    public void setTongThanhToan(double tongThanhToan) {
+        this.tongThanhToan = tongThanhToan;
+    }
+
+    public String getTrangThai() {
+        return trangThai;
+    }
+
+    public void setTrangThai(String trangThai) {
+        this.trangThai = trangThai;
+    }
+
+    public List<ChiTietHoaDon> getChiTietHoaDons() {
+        return chiTietHoaDons;
     }
 }

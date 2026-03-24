@@ -292,6 +292,7 @@ public class LoaiPhongGUI extends JFrame {
                 }
             }
         });
+        ScreenUIHelper.registerTableDoubleClick(tblLoaiPhong, this::openUpdateRoomTypeDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblLoaiPhong);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

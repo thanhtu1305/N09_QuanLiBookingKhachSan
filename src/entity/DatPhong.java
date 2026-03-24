@@ -1,17 +1,31 @@
 package entity;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+
 public class DatPhong {
     private String maDatPhong;
     private String maKhachHang;
-    private String maPhong;
+    private LocalDate ngayDat;
+    private String nguonDatPhong;
+    private double tongTienDatCoc;
+    private String trangThaiDatPhong;
+    private String ghiChu;
+    private final List<ChiTietDatPhong> chiTietDatPhongs = new ArrayList<ChiTietDatPhong>();
 
     public DatPhong() {
     }
 
-    public DatPhong(String maDatPhong, String maKhachHang, String maPhong) {
+    public DatPhong(String maDatPhong, String maKhachHang, LocalDate ngayDat, String nguonDatPhong,
+                    double tongTienDatCoc, String trangThaiDatPhong, String ghiChu) {
         this.maDatPhong = maDatPhong;
         this.maKhachHang = maKhachHang;
-        this.maPhong = maPhong;
+        this.ngayDat = ngayDat;
+        this.nguonDatPhong = nguonDatPhong;
+        this.tongTienDatCoc = tongTienDatCoc;
+        this.trangThaiDatPhong = trangThaiDatPhong;
+        this.ghiChu = ghiChu;
     }
 
     public String getMaDatPhong() {
@@ -30,12 +44,48 @@ public class DatPhong {
         this.maKhachHang = maKhachHang;
     }
 
-    public String getMaPhong() {
-        return maPhong;
+    public LocalDate getNgayDat() {
+        return ngayDat;
     }
 
-    public void setMaPhong(String maPhong) {
-        this.maPhong = maPhong;
+    public void setNgayDat(LocalDate ngayDat) {
+        this.ngayDat = ngayDat;
+    }
+
+    public String getNguonDatPhong() {
+        return nguonDatPhong;
+    }
+
+    public void setNguonDatPhong(String nguonDatPhong) {
+        this.nguonDatPhong = nguonDatPhong;
+    }
+
+    public double getTongTienDatCoc() {
+        return tongTienDatCoc;
+    }
+
+    public void setTongTienDatCoc(double tongTienDatCoc) {
+        this.tongTienDatCoc = tongTienDatCoc;
+    }
+
+    public String getTrangThaiDatPhong() {
+        return trangThaiDatPhong;
+    }
+
+    public void setTrangThaiDatPhong(String trangThaiDatPhong) {
+        this.trangThaiDatPhong = trangThaiDatPhong;
+    }
+
+    public String getGhiChu() {
+        return ghiChu;
+    }
+
+    public void setGhiChu(String ghiChu) {
+        this.ghiChu = ghiChu;
+    }
+
+    public List<ChiTietDatPhong> getChiTietDatPhongs() {
+        return chiTietDatPhongs;
     }
 
     @Override
@@ -43,7 +93,12 @@ public class DatPhong {
         return "DatPhong{" +
                 "maDatPhong='" + maDatPhong + '\'' +
                 ", maKhachHang='" + maKhachHang + '\'' +
-                ", maPhong='" + maPhong + '\'' +
+                ", ngayDat=" + ngayDat +
+                ", nguonDatPhong='" + nguonDatPhong + '\'' +
+                ", tongTienDatCoc=" + tongTienDatCoc +
+                ", trangThaiDatPhong='" + trangThaiDatPhong + '\'' +
+                ", ghiChu='" + ghiChu + '\'' +
+                ", soDongChiTiet=" + chiTietDatPhongs.size() +
                 '}';
     }
 }

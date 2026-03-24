@@ -8,6 +8,7 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRootPane;
+import javax.swing.JTable;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingConstants;
@@ -21,6 +22,8 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 
@@ -136,6 +139,29 @@ public final class ScreenUIHelper {
         }
 
         return candidate instanceof Frame ? (Frame) candidate : null;
+    }
+
+    public static void registerTableDoubleClick(JTable table, Runnable action) {
+        if (table == null || action == null) {
+            return;
+        }
+
+        table.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (!SwingUtilities.isLeftMouseButton(e) || e.getClickCount() != 2) {
+                    return;
+                }
+
+                int viewRow = table.rowAtPoint(e.getPoint());
+                if (viewRow < 0) {
+                    return;
+                }
+
+                table.setRowSelectionInterval(viewRow, viewRow);
+                action.run();
+            }
+        });
     }
 
     private static void refreshOwner(Window parent) {

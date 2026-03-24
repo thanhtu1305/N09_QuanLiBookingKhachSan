@@ -86,6 +86,8 @@ public class DatPhongGUI extends JFrame {
     private JLabel lblNgayTraPhong;
     private JLabel lblTrangThai;
     private JLabel lblTienCoc;
+    private JTable tblBookingDetails;
+    private DefaultTableModel bookingDetailModel;
     private JTextArea txtGhiChu;
 
     public DatPhongGUI() {
@@ -250,11 +252,12 @@ public class DatPhongGUI extends JFrame {
         String[] columns = {
                 "Mã đặt phòng",
                 "Khách hàng",
-                "Số điện thoại",
-                "Loại phòng",
-                "Check-in dự kiến",
-                "Check-out dự kiến",
-                "Trạng thái"
+                "Ngày đặt",
+                "Nguồn",
+                "Tổng tiền cọc",
+                "Trạng thái",
+                "Số dòng chi tiết",
+                "Ghi chú"
         };
 
         bookingModel = new DefaultTableModel(columns, 0) {
@@ -283,6 +286,7 @@ public class DatPhongGUI extends JFrame {
                 }
             }
         });
+        ScreenUIHelper.registerTableDoubleClick(tblDatPhong, this::openUpdateBookingDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblDatPhong);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
@@ -302,7 +306,7 @@ public class DatPhongGUI extends JFrame {
         JPanel wrapper = new JPanel(new BorderLayout(0, 12));
         wrapper.setOpaque(false);
         wrapper.add(buildDetailCard(), BorderLayout.CENTER);
-        wrapper.add(buildHoldStatusCard(), BorderLayout.SOUTH);
+        wrapper.add(buildDetailLinesCard(), BorderLayout.SOUTH);
         return wrapper;
     }
 
@@ -332,12 +336,12 @@ public class DatPhongGUI extends JFrame {
         addDetailRow(body, "Khách hàng", lblKhachHang);
         addDetailRow(body, "Số điện thoại", lblSoDienThoai);
         addDetailRow(body, "CCCD", lblCccd);
-        addDetailRow(body, "Loại phòng", lblLoaiPhong);
-        addDetailRow(body, "Số người", lblSoNguoi);
-        addDetailRow(body, "Ngày nhận phòng", lblNgayNhanPhong);
-        addDetailRow(body, "Ngày trả phòng", lblNgayTraPhong);
+        addDetailRow(body, "Tóm tắt loại phòng", lblLoaiPhong);
+        addDetailRow(body, "Tổng số người", lblSoNguoi);
+        addDetailRow(body, "Check-in sớm nhất", lblNgayNhanPhong);
+        addDetailRow(body, "Check-out muộn nhất", lblNgayTraPhong);
         addDetailRow(body, "Trạng thái", lblTrangThai);
-        addDetailRow(body, "Tiền cọc", lblTienCoc);
+        addDetailRow(body, "Tổng tiền cọc", lblTienCoc);
 
         JPanel notePanel = new JPanel(new BorderLayout(0, 6));
         notePanel.setOpaque(false);
@@ -363,44 +367,33 @@ public class DatPhongGUI extends JFrame {
         return card;
     }
 
-    private JPanel buildHoldStatusCard() {
+    private JPanel buildDetailLinesCard() {
         JPanel card = createCardPanel(new BorderLayout());
 
-        JLabel lblTitle = new JLabel("Tình trạng giữ chỗ theo loại phòng");
+        JLabel lblTitle = new JLabel("Chi tiết các dòng đặt phòng");
         lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
         lblTitle.setForeground(TEXT_PRIMARY);
         lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        JPanel rows = new JPanel(new GridLayout(3, 1, 0, 8));
-        rows.setOpaque(false);
-        rows.add(createHoldRow("Standard", "5 trống / 2 đã đặt", new Color(22, 163, 74)));
-        rows.add(createHoldRow("Deluxe", "3 trống / 4 đã đặt", new Color(37, 99, 235)));
-        rows.add(createHoldRow("Suite", "1 trống / 1 đã đặt", new Color(245, 158, 11)));
+        String[] columns = {"STT", "Loại phòng", "Phòng", "Check-in", "Check-out", "Số người", "Giá áp dụng", "Cọc chi tiết", "Trạng thái"};
+        bookingDetailModel = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        tblBookingDetails = new JTable(bookingDetailModel);
+        tblBookingDetails.setFont(BODY_FONT);
+        tblBookingDetails.setRowHeight(28);
+        tblBookingDetails.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tblBookingDetails.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+
+        JScrollPane scrollPane = new JScrollPane(tblBookingDetails);
+        scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
 
         card.add(lblTitle, BorderLayout.NORTH);
-        card.add(rows, BorderLayout.CENTER);
+        card.add(scrollPane, BorderLayout.CENTER);
         return card;
-    }
-
-    private JPanel createHoldRow(String roomType, String status, Color accent) {
-        JPanel row = new JPanel(new BorderLayout(10, 0));
-        row.setOpaque(false);
-
-        JLabel lblType = new JLabel(roomType, SwingConstants.CENTER);
-        lblType.setOpaque(true);
-        lblType.setBackground(new Color(239, 246, 255));
-        lblType.setForeground(TEXT_PRIMARY);
-        lblType.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblType.setPreferredSize(new Dimension(92, 30));
-        lblType.setBorder(BorderFactory.createLineBorder(accent, 1, true));
-
-        JLabel lblStatus = new JLabel(status);
-        lblStatus.setFont(BODY_FONT);
-        lblStatus.setForeground(TEXT_PRIMARY);
-
-        row.add(lblType, BorderLayout.WEST);
-        row.add(lblStatus, BorderLayout.CENTER);
-        return row;
     }
 
     private JPanel buildFooter() {
@@ -519,24 +512,53 @@ public class DatPhongGUI extends JFrame {
 
     private void seedSampleData() {
         allBookings.clear();
-        allBookings.add(BookingRecord.create("DP240301", "KH001", "Nguyễn Minh Anh", "0901234567", "079203001234",
-                "Đặt trước", "Standard", false, "", LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11), 2,
-                "BG01 - Standard", 850000, 500000, "Mới tạo", "Khách yêu cầu phòng gần thang máy."));
-        allBookings.add(BookingRecord.create("DP240302", "KH002", "Trần Hoài Nam", "0912345678", "079203001235",
-                "Đặt trước", "Deluxe", true, "202", LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 12), 2,
-                "BG02 - Deluxe", 2500000, 1000000, "Đã xác nhận", "Đến sau 20:00, giữ phòng muộn."));
-        allBookings.add(BookingRecord.create("DP240303", "KH003", "Lê Thu Hà", "0988555777", "079203001236",
-                "Đặt trước", "Suite", true, "502", LocalDate.of(2026, 3, 11), LocalDate.of(2026, 3, 13), 3,
-                "BG03 - Suite", 4200000, 2500000, "Đã cọc", "Cần xuất hóa đơn công ty."));
-        allBookings.add(BookingRecord.create("DP240304", "KH004", "Phạm Quốc Bảo", "0977666111", "079203001237",
-                "Đặt trước", "Standard", false, "", LocalDate.of(2026, 3, 12), LocalDate.of(2026, 3, 13), 1,
-                "BG01 - Standard", 850000, 0, "Mới tạo", "Gọi trước khi check-in 30 phút."));
-        allBookings.add(BookingRecord.create("DP240305", "KH005", "Võ Ngọc Linh", "0933222444", "079203001238",
-                "Walk-in", "Deluxe", true, "203", LocalDate.of(2026, 3, 13), LocalDate.of(2026, 3, 15), 2,
-                "BG02 - Deluxe", 2900000, 800000, "Đã xác nhận", "Ưu tiên tầng cao, không hút thuốc."));
-        allBookings.add(BookingRecord.create("DP240306", "KH006", "Đặng Gia Huy", "0966777888", "079203001239",
-                "Đặt trước", "Suite", false, "", LocalDate.of(2026, 3, 14), LocalDate.of(2026, 3, 16), 2,
-                "BG03 - Suite", 4200000, 0, "Đã hủy", "Khách hủy do thay đổi lịch công tác."));
+        allBookings.add(createSampleBooking("DP240301", "KH001", "Nguyễn Minh Anh", "0901234567", "079203001234",
+                LocalDate.of(2026, 3, 8), "Đặt trước", "Mới tạo", "Khách yêu cầu 2 phòng gần nhau.",
+                createSampleBookingDetail("CTDP240301-01", "Standard", "", "BG01 - Standard", "CTBG01",
+                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11), 2, 850000, 300000, "Giữ chỗ", "Gần thang máy", ""),
+                createSampleBookingDetail("CTDP240301-02", "Standard", "", "BG01 - Standard", "CTBG02",
+                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11), 2, 850000, 200000, "Giữ chỗ", "Phòng yên tĩnh", "")));
+        allBookings.add(createSampleBooking("DP240302", "KH002", "Trần Hoài Nam", "0912345678", "079203001235",
+                LocalDate.of(2026, 3, 9), "Đặt trước", "Đã xác nhận", "Đến sau 20:00, giữ phòng muộn.",
+                createSampleBookingDetail("CTDP240302-01", "Deluxe", "202", "BG02 - Deluxe", "CTBG03",
+                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 12), 2, 2500000, 1000000, "Đã xác nhận", "Giữ phòng muộn", "")));
+        allBookings.add(createSampleBooking("DP240303", "KH003", "Lê Thu Hà", "0988555777", "079203001236",
+                LocalDate.of(2026, 3, 10), "Đặt trước", "Đã cọc", "Cần xuất hóa đơn công ty.",
+                createSampleBookingDetail("CTDP240303-01", "Deluxe", "302", "BG02 - Deluxe", "CTBG04",
+                        LocalDate.of(2026, 3, 11), LocalDate.of(2026, 3, 13), 2, 2200000, 1200000, "Đã xác nhận", "Phòng cho đồng nghiệp 1", ""),
+                createSampleBookingDetail("CTDP240303-02", "Suite", "502", "BG03 - Suite", "CTBG05",
+                        LocalDate.of(2026, 3, 11), LocalDate.of(2026, 3, 13), 3, 4200000, 1300000, "Đã cọc", "Phòng cho đồng nghiệp 2", "")));
+        allBookings.add(createSampleBooking("DP240304", "KH004", "Phạm Quốc Bảo", "0977666111", "079203001237",
+                LocalDate.of(2026, 3, 11), "Đặt trước", "Mới tạo", "Gọi trước khi check-in 30 phút.",
+                createSampleBookingDetail("CTDP240304-01", "Standard", "", "BG01 - Standard", "CTBG01",
+                        LocalDate.of(2026, 3, 12), LocalDate.of(2026, 3, 13), 1, 850000, 0, "Giữ chỗ", "Gọi trước 30 phút", "")));
+        allBookings.add(createSampleBooking("DP240305", "KH005", "Võ Ngọc Linh", "0933222444", "079203001238",
+                LocalDate.of(2026, 3, 12), "Walk-in", "Đã xác nhận", "Ưu tiên tầng cao, không hút thuốc.",
+                createSampleBookingDetail("CTDP240305-01", "Deluxe", "203", "BG02 - Deluxe", "CTBG03",
+                        LocalDate.of(2026, 3, 13), LocalDate.of(2026, 3, 15), 2, 2900000, 800000, "Đã xác nhận", "Tầng cao", "")));
+        allBookings.add(createSampleBooking("DP240306", "KH006", "Đặng Gia Huy", "0966777888", "079203001239",
+                LocalDate.of(2026, 3, 13), "Đặt trước", "Đã hủy", "Khách hủy do thay đổi lịch công tác.",
+                createSampleBookingDetail("CTDP240306-01", "Suite", "", "BG03 - Suite", "CTBG05",
+                        LocalDate.of(2026, 3, 14), LocalDate.of(2026, 3, 16), 2, 4200000, 0, "Đã hủy", "Chưa gán phòng", "")));
+    }
+
+    private BookingRecord createSampleBooking(String maDatPhong, String maKhachHang, String khachHang, String soDienThoai, String cccd,
+                                              LocalDate ngayDat, String nguonDat, String trangThai, String ghiChu,
+                                              BookingDetailRecord... details) {
+        BookingRecord booking = BookingRecord.createHeader(maDatPhong, maKhachHang, khachHang, soDienThoai, cccd, ngayDat, nguonDat, trangThai, ghiChu);
+        for (BookingDetailRecord detail : details) {
+            booking.details.add(detail);
+        }
+        booking.syncDerivedData();
+        return booking;
+    }
+
+    private BookingDetailRecord createSampleBookingDetail(String maChiTiet, String loaiPhong, String soPhong, String bangGia,
+                                                          String chiTietBangGia, LocalDate checkIn, LocalDate checkOut,
+                                                          int soNguoi, double giaApDung, double tienDatCocChiTiet,
+                                                          String trangThaiChiTiet, String yeuCauKhac, String ghiChu) {
+        return BookingDetailRecord.create(maChiTiet, loaiPhong, soPhong, bangGia, chiTietBangGia, checkIn, checkOut,
+                soNguoi, giaApDung, tienDatCocChiTiet, trangThaiChiTiet, yeuCauKhac, ghiChu);
     }
 
     private void reloadSampleData(boolean showMessage) {
@@ -574,7 +596,7 @@ public class DatPhongGUI extends JFrame {
             if (!"Tất cả".equals(nguonDat) && !booking.nguonDat.equals(nguonDat)) {
                 continue;
             }
-            if (!"Tất cả".equals(loaiPhong) && !booking.loaiPhong.equals(loaiPhong)) {
+            if (!"Tất cả".equals(loaiPhong) && !booking.matchesRoomType(loaiPhong)) {
                 continue;
             }
             if (fromDate != null && booking.ngayNhanPhong.isBefore(fromDate)) {
@@ -605,11 +627,12 @@ public class DatPhongGUI extends JFrame {
             bookingModel.addRow(new Object[]{
                     booking.maDatPhong,
                     booking.khachHang,
-                    booking.soDienThoai,
-                    booking.loaiPhong,
-                    booking.formatNgayNhanPhong(),
-                    booking.formatNgayTraPhong(),
-                    booking.trangThai
+                    booking.formatNgayDat(),
+                    booking.nguonDat,
+                    formatMoney(booking.tongTienDatCoc),
+                    booking.trangThai,
+                    booking.details.size(),
+                    booking.ghiChu
             });
         }
 
@@ -626,14 +649,15 @@ public class DatPhongGUI extends JFrame {
         lblKhachHang.setText(booking.khachHang);
         lblSoDienThoai.setText(booking.soDienThoai);
         lblCccd.setText(booking.cccd);
-        lblLoaiPhong.setText(booking.loaiPhong);
-        lblSoNguoi.setText(String.valueOf(booking.soNguoi));
+        lblLoaiPhong.setText(booking.getRoomTypeSummary());
+        lblSoNguoi.setText(String.valueOf(booking.getTotalGuests()));
         lblNgayNhanPhong.setText(booking.formatNgayNhanPhong());
         lblNgayTraPhong.setText(booking.formatNgayTraPhong());
         lblTrangThai.setText(booking.trangThai);
-        lblTienCoc.setText(formatMoney(booking.tienCoc));
+        lblTienCoc.setText(formatMoney(booking.tongTienDatCoc));
         txtGhiChu.setText(booking.ghiChu);
         txtGhiChu.setCaretPosition(0);
+        refillBookingDetailTable(booking);
     }
 
     private void clearDetailPanel() {
@@ -648,6 +672,30 @@ public class DatPhongGUI extends JFrame {
         lblTrangThai.setText("-");
         lblTienCoc.setText("-");
         txtGhiChu.setText("Không có dữ liệu phù hợp.");
+        if (bookingDetailModel != null) {
+            bookingDetailModel.setRowCount(0);
+        }
+    }
+
+    private void refillBookingDetailTable(BookingRecord booking) {
+        if (bookingDetailModel == null) {
+            return;
+        }
+        bookingDetailModel.setRowCount(0);
+        for (int i = 0; i < booking.details.size(); i++) {
+            BookingDetailRecord detail = booking.details.get(i);
+            bookingDetailModel.addRow(new Object[]{
+                    i + 1,
+                    detail.loaiPhong,
+                    detail.maPhong == null || detail.maPhong.trim().isEmpty() ? "Chưa gán" : detail.maPhong,
+                    detail.formatCheckIn(),
+                    detail.formatCheckOut(),
+                    detail.soNguoi,
+                    formatMoney(detail.giaApDung),
+                    formatMoney(detail.tienDatCocChiTiet),
+                    detail.trangThaiChiTiet
+            });
+        }
     }
 
     private BookingRecord getSelectedBooking() {
@@ -917,48 +965,53 @@ public class DatPhongGUI extends JFrame {
     private final class BookingEditorDialog extends BaseBookingDialog {
         private final BookingRecord editingBooking;
         private final boolean editing;
+        private final List<BookingDetailRecord> detailRows = new ArrayList<BookingDetailRecord>();
         private JTextField txtMaBooking;
+        private JTextField txtNgayDatDialog;
         private JComboBox<String> cboNguonBookingDialog;
         private JTextField txtMaKh;
         private JTextField txtHoTen;
         private JTextField txtSdt;
         private JTextField txtCccdDialog;
-        private JComboBox<String> cboLoaiPhongDialog;
-        private JComboBox<String> cboGanPhong;
-        private JTextField txtSoPhongDialog;
-        private JTextField txtCheckInDialog;
-        private JTextField txtCheckOutDialog;
-        private JTextField txtSoNguoiDialog;
-        private JTextArea txtYeuCauKhac;
-        private JComboBox<String> cboBangGiaDialog;
-        private JTextField txtTamTinhDialog;
-        private JTextField txtDatCocDialog;
+        private JTextField txtTongDatCocDialog;
         private JTextArea txtGhiChuDialog;
+        private JTable tblBookingDetailDialog;
+        private DefaultTableModel bookingDetailDialogModel;
+        private JLabel lblDetailSummary;
+        private JTextArea txtSelectedDetailNote;
 
         private BookingEditorDialog(Frame owner, BookingRecord booking) {
-            super(owner, booking == null ? "Tạo booking" : "Cập nhật booking", 920, 720);
+            super(owner, booking == null ? "Tạo booking" : "Cập nhật booking", 980, 760);
             this.editingBooking = booking;
             this.editing = booking != null;
+            if (editing) {
+                for (BookingDetailRecord detail : booking.details) {
+                    detailRows.add(detail.copy());
+                }
+            }
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
             content.add(buildDialogHeader(
                     editing ? "CẬP NHẬT BOOKING" : "TẠO BOOKING",
-                    "Hỗ trợ luồng đặt trước hoặc walk-in, giữ chỗ theo loại phòng hoặc gán trước phòng cụ thể."
+                    "Phần trên là header của phiếu đặt phòng, phần dưới là các dòng chi tiết phòng theo mô hình header-detail."
             ), BorderLayout.NORTH);
 
-            JPanel body = new JPanel();
-            body.setOpaque(false);
-            body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-            body.add(buildCustomerSection());
-            body.add(Box.createVerticalStrut(10));
-            body.add(buildStaySection());
-            body.add(Box.createVerticalStrut(10));
-            body.add(buildPriceSection());
+            if (detailRows.isEmpty()) {
+                loadSampleBookingDetailRows();
+            }
 
+            JPanel body = new JPanel(new BorderLayout(0, 12));
+            body.setOpaque(false);
+            JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildHeaderSection(), buildDetailSection());
+            splitPane.setBorder(null);
+            splitPane.setOpaque(false);
+            splitPane.setResizeWeight(0.38d);
+            splitPane.setDividerLocation(360);
+            splitPane.setContinuousLayout(true);
+            body.add(splitPane, BorderLayout.CENTER);
             content.add(body, BorderLayout.CENTER);
 
-            JButton btnCheckAvailability = createOutlineButton("Kiểm tra phòng trống", new Color(37, 99, 235), e -> openAvailableRoomsDialog());
             JButton btnSave = createPrimaryButton("Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit("Mới tạo"));
             JButton btnSaveConfirm = createOutlineButton("Lưu và xác nhận", new Color(59, 130, 246), e -> submit("Đã xác nhận"));
             JButton btnSaveCheckIn = createOutlineButton("Lưu và check-in", new Color(245, 158, 11), e -> submit("Đã check-in"));
@@ -966,19 +1019,15 @@ public class DatPhongGUI extends JFrame {
             btnSaveConfirm.setVisible(!editing);
             btnSaveCheckIn.setVisible(!editing);
 
-            JPanel bottom = new JPanel(new BorderLayout());
-            bottom.setOpaque(false);
-            bottom.add(btnCheckAvailability, BorderLayout.WEST);
-            bottom.add(buildDialogButtons(btnCancel, btnSaveCheckIn, btnSaveConfirm, btnSave), BorderLayout.EAST);
-            content.add(bottom, BorderLayout.SOUTH);
+            content.add(buildDialogButtons(btnCancel, btnSaveCheckIn, btnSaveConfirm, btnSave), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
         }
 
-        private JPanel buildCustomerSection() {
+        private JPanel buildHeaderSection() {
             JPanel card = createDialogCardPanel();
             JPanel wrapper = new JPanel(new BorderLayout(0, 10));
             wrapper.setOpaque(false);
-            JLabel lblSection = new JLabel("THÔNG TIN KHÁCH HÀNG");
+            JLabel lblSection = new JLabel("HEADER - THÔNG TIN CHUNG");
             lblSection.setFont(SECTION_FONT);
             lblSection.setForeground(TEXT_PRIMARY);
 
@@ -989,14 +1038,19 @@ public class DatPhongGUI extends JFrame {
 
             txtMaBooking = createInputField(editing ? editingBooking.maDatPhong : "DP" + (240300 + allBookings.size() + 1));
             txtMaBooking.setEditable(!editing);
+            txtNgayDatDialog = createInputField(editing ? editingBooking.formatNgayDat() : LocalDate.now().format(DATE_FORMAT));
             cboNguonBookingDialog = createComboBox(BOOKING_SOURCE_OPTIONS);
             txtMaKh = createInputField(editing ? editingBooking.maKhachHang : "");
             txtHoTen = createInputField(editing ? editingBooking.khachHang : "");
             txtSdt = createInputField(editing ? editingBooking.soDienThoai : "");
             txtCccdDialog = createInputField(editing ? editingBooking.cccd : "");
+            txtTongDatCocDialog = createInputField(editing ? formatMoney(editingBooking.tongTienDatCoc) : "0");
+            txtTongDatCocDialog.setEditable(false);
+            txtGhiChuDialog = createDialogTextArea(3);
 
             if (editing) {
                 cboNguonBookingDialog.setSelectedItem(editingBooking.nguonDat);
+                txtGhiChuDialog.setText(editingBooking.ghiChu);
             }
 
             JButton btnTimKh = createOutlineButton("Tìm KH", new Color(59, 130, 246), e -> showWarning("Chức năng tìm KH đang dùng demo data nội bộ."));
@@ -1013,153 +1067,267 @@ public class DatPhongGUI extends JFrame {
             maKhPanel.add(customerButtons, BorderLayout.EAST);
 
             addFormRow(form, gbc, 0, "Mã booking", txtMaBooking);
-            addFormRow(form, gbc, 1, "Nguồn booking", cboNguonBookingDialog);
-            addFormRow(form, gbc, 2, "Mã KH", maKhPanel);
-            addFormRow(form, gbc, 3, "Họ tên", txtHoTen);
-            addFormRow(form, gbc, 4, "SĐT", txtSdt);
-            addFormRow(form, gbc, 5, "CCCD/Passport", txtCccdDialog);
+            addFormRow(form, gbc, 1, "Ngày đặt", txtNgayDatDialog);
+            addFormRow(form, gbc, 2, "Nguồn booking", cboNguonBookingDialog);
+            addFormRow(form, gbc, 3, "Mã KH", maKhPanel);
+            addFormRow(form, gbc, 4, "Họ tên", txtHoTen);
+            addFormRow(form, gbc, 5, "SĐT", txtSdt);
+            addFormRow(form, gbc, 6, "CCCD/Passport", txtCccdDialog);
+            addFormRow(form, gbc, 7, "Tổng tiền cọc", txtTongDatCocDialog);
+            addFormRow(form, gbc, 8, "Ghi chú chung", new JScrollPane(txtGhiChuDialog));
 
             wrapper.add(lblSection, BorderLayout.NORTH);
             wrapper.add(form, BorderLayout.CENTER);
+            card.setPreferredSize(new Dimension(360, 0));
             card.add(wrapper, BorderLayout.CENTER);
             return card;
         }
 
-        private JPanel buildStaySection() {
+        private JPanel buildDetailSection() {
             JPanel card = createDialogCardPanel();
             JPanel wrapper = new JPanel(new BorderLayout(0, 10));
             wrapper.setOpaque(false);
-            JLabel lblSection = new JLabel("THÔNG TIN LƯU TRÚ");
+            JLabel lblSection = new JLabel("DETAIL - CÁC DÒNG CHI TIẾT ĐẶT PHÒNG");
             lblSection.setFont(SECTION_FONT);
             lblSection.setForeground(TEXT_PRIMARY);
 
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
+            String[] columns = {"STT", "Loại phòng", "Phòng", "Check-in", "Check-out", "Số người", "Giá áp dụng", "Cọc chi tiết", "Trạng thái", "Yêu cầu khác"};
+            bookingDetailDialogModel = new DefaultTableModel(columns, 0) {
+                @Override
+                public boolean isCellEditable(int row, int column) {
+                    return false;
+                }
+            };
+            tblBookingDetailDialog = new JTable(bookingDetailDialogModel);
+            tblBookingDetailDialog.setFont(BODY_FONT);
+            tblBookingDetailDialog.setRowHeight(30);
+            tblBookingDetailDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            tblBookingDetailDialog.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
 
-            cboLoaiPhongDialog = createComboBox(ROOM_TYPE_OPTIONS);
-            cboGanPhong = createComboBox(new String[]{"Không", "Có"});
-            txtSoPhongDialog = createInputField(editing ? editingBooking.soPhong : "");
-            txtCheckInDialog = createInputField(editing ? editingBooking.formatNgayNhanPhong() : "20/03/2026");
-            txtCheckOutDialog = createInputField(editing ? editingBooking.formatNgayTraPhong() : "21/03/2026");
-            txtSoNguoiDialog = createInputField(editing ? String.valueOf(editingBooking.soNguoi) : "2");
-            txtYeuCauKhac = createDialogTextArea(3);
+            JScrollPane scrollPane = new JScrollPane(tblBookingDetailDialog);
+            scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+            scrollPane.setPreferredSize(new Dimension(0, 360));
 
-            if (editing) {
-                cboLoaiPhongDialog.setSelectedItem(editingBooking.loaiPhong);
-                cboGanPhong.setSelectedItem(editingBooking.ganPhongTruoc ? "Có" : "Không");
-                txtYeuCauKhac.setText(editingBooking.yeuCauKhac);
-            }
+            JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            actions.setOpaque(false);
+            actions.add(createPrimaryButton("Thêm dòng phòng", new Color(59, 130, 246), Color.WHITE, e -> openBookingDetailDialog(null)));
+            actions.add(createOutlineButton("Sửa dòng", new Color(245, 158, 11), e -> editSelectedDetailRow()));
+            actions.add(createOutlineButton("Xóa dòng", new Color(220, 38, 38), e -> removeSelectedDetailRow()));
 
-            if (editing && "Đã check-in".equals(editingBooking.trangThai)) {
-                cboLoaiPhongDialog.setEnabled(false);
-                txtCheckInDialog.setEditable(false);
-            }
+            lblDetailSummary = new JLabel();
+            lblDetailSummary.setFont(BODY_FONT);
+            lblDetailSummary.setForeground(TEXT_MUTED);
 
-            addFormRow(form, gbc, 0, "Loại phòng", cboLoaiPhongDialog);
-            addFormRow(form, gbc, 1, "Gán phòng trước", cboGanPhong);
-            addFormRow(form, gbc, 2, "Số phòng", txtSoPhongDialog);
-            addFormRow(form, gbc, 3, "Check-in dự kiến", txtCheckInDialog);
-            addFormRow(form, gbc, 4, "Check-out dự kiến", txtCheckOutDialog);
-            addFormRow(form, gbc, 5, "Số người", txtSoNguoiDialog);
-            addFormRow(form, gbc, 6, "Yêu cầu khác", new JScrollPane(txtYeuCauKhac));
+            txtSelectedDetailNote = createDialogTextArea(3);
+            txtSelectedDetailNote.setEditable(false);
+            txtSelectedDetailNote.setBackground(PANEL_SOFT);
+
+            JPanel footer = new JPanel(new BorderLayout(0, 8));
+            footer.setOpaque(false);
+            footer.add(lblDetailSummary, BorderLayout.NORTH);
+            footer.add(new JScrollPane(txtSelectedDetailNote), BorderLayout.CENTER);
+
+            JPanel center = new JPanel(new BorderLayout(0, 10));
+            center.setOpaque(false);
+            center.add(actions, BorderLayout.NORTH);
+            center.add(scrollPane, BorderLayout.CENTER);
+            center.add(footer, BorderLayout.SOUTH);
 
             wrapper.add(lblSection, BorderLayout.NORTH);
-            wrapper.add(form, BorderLayout.CENTER);
+            wrapper.add(center, BorderLayout.CENTER);
             card.add(wrapper, BorderLayout.CENTER);
+            tblBookingDetailDialog.getSelectionModel().addListSelectionListener(e -> {
+                if (!e.getValueIsAdjusting()) {
+                    updateSelectedDetailPreview();
+                }
+            });
+            refillBookingDetailDialogTable();
             return card;
         }
 
-        private JPanel buildPriceSection() {
-            JPanel card = createDialogCardPanel();
-            JPanel wrapper = new JPanel(new BorderLayout(0, 10));
-            wrapper.setOpaque(false);
-            JLabel lblSection = new JLabel("THÔNG TIN GIÁ");
-            lblSection.setFont(SECTION_FONT);
-            lblSection.setForeground(TEXT_PRIMARY);
-
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            cboBangGiaDialog = createComboBox(PRICE_TABLE_OPTIONS);
-            txtTamTinhDialog = createInputField(editing ? formatMoney(editingBooking.tamTinh) : "850000");
-            txtDatCocDialog = createInputField(editing ? formatMoney(editingBooking.tienCoc) : "0");
-            txtGhiChuDialog = createDialogTextArea(3);
-            if (editing) {
-                cboBangGiaDialog.setSelectedItem(editingBooking.bangGiaApDung);
-                txtGhiChuDialog.setText(editingBooking.ghiChu);
+        private void refillBookingDetailDialogTable() {
+            bookingDetailDialogModel.setRowCount(0);
+            for (int i = 0; i < detailRows.size(); i++) {
+                BookingDetailRecord detail = detailRows.get(i);
+                bookingDetailDialogModel.addRow(new Object[]{
+                        i + 1,
+                        detail.loaiPhong,
+                        detail.maPhong == null || detail.maPhong.trim().isEmpty() ? "Chưa gán" : detail.maPhong,
+                        detail.formatCheckIn(),
+                        detail.formatCheckOut(),
+                        detail.soNguoi,
+                        formatMoney(detail.giaApDung),
+                        formatMoney(detail.tienDatCocChiTiet),
+                        detail.trangThaiChiTiet,
+                        detail.yeuCauKhac
+                });
             }
-
-            addFormRow(form, gbc, 0, "Bảng giá áp dụng", cboBangGiaDialog);
-            addFormRow(form, gbc, 1, "Tạm tính", txtTamTinhDialog);
-            addFormRow(form, gbc, 2, "Đặt cọc", txtDatCocDialog);
-            addFormRow(form, gbc, 3, "Ghi chú", new JScrollPane(txtGhiChuDialog));
-
-            wrapper.add(lblSection, BorderLayout.NORTH);
-            wrapper.add(form, BorderLayout.CENTER);
-            card.add(wrapper, BorderLayout.CENTER);
-            return card;
+            if (!detailRows.isEmpty()) {
+                tblBookingDetailDialog.setRowSelectionInterval(0, 0);
+            }
+            refreshDepositSummary();
+            refreshDetailSummary();
+            updateSelectedDetailPreview();
         }
 
-        private void openAvailableRoomsDialog() {
-            new AvailableRoomsDialog(this,
-                    valueOf(cboLoaiPhongDialog.getSelectedItem()),
-                    txtCheckInDialog.getText().trim(),
-                    txtCheckOutDialog.getText().trim()).setVisible(true);
+        private void loadSampleBookingDetailRows() {
+            detailRows.clear();
+            String bookingCode = txtMaBooking != null && !txtMaBooking.getText().trim().isEmpty()
+                    ? txtMaBooking.getText().trim()
+                    : (editing && editingBooking != null ? editingBooking.maDatPhong : "DP_DEMO");
+            detailRows.add(createSampleDetailRow(
+                    bookingCode + "-CT01",
+                    "Standard",
+                    "P101",
+                    "BG01 - Standard",
+                    "CTBG01",
+                    LocalDate.of(2026, 3, 10),
+                    LocalDate.of(2026, 3, 11),
+                    2,
+                    650000,
+                    200000,
+                    "Mới tạo",
+                    "Phòng gần cửa sổ",
+                    "Demo detail 1"
+            ));
+            detailRows.add(createSampleDetailRow(
+                    bookingCode + "-CT02",
+                    "Standard",
+                    "P102",
+                    "BG01 - Standard",
+                    "CTBG02",
+                    LocalDate.of(2026, 3, 10),
+                    LocalDate.of(2026, 3, 11),
+                    2,
+                    650000,
+                    200000,
+                    "Mới tạo",
+                    "Phòng không hút thuốc",
+                    "Demo detail 2"
+            ));
+            detailRows.add(createSampleDetailRow(
+                    bookingCode + "-CT03",
+                    "Deluxe",
+                    "P201",
+                    "BG02 - Deluxe",
+                    "CTBG03",
+                    LocalDate.of(2026, 3, 10),
+                    LocalDate.of(2026, 3, 12),
+                    3,
+                    900000,
+                    300000,
+                    "Mới tạo",
+                    "Thêm nệm phụ",
+                    "Demo detail 3"
+            ));
+        }
+
+        private BookingDetailRecord createSampleDetailRow(String maChiTiet, String loaiPhong, String maPhong, String maBangGia,
+                                                          String maChiTietBangGia, LocalDate checkIn, LocalDate checkOut,
+                                                          int soNguoi, double giaApDung, double tienDatCocChiTiet,
+                                                          String trangThaiChiTiet, String yeuCauKhac, String ghiChu) {
+            return BookingDetailRecord.create(
+                    maChiTiet,
+                    loaiPhong,
+                    maPhong,
+                    maBangGia,
+                    maChiTietBangGia,
+                    checkIn,
+                    checkOut,
+                    soNguoi,
+                    giaApDung,
+                    tienDatCocChiTiet,
+                    trangThaiChiTiet,
+                    yeuCauKhac,
+                    ghiChu
+            );
+        }
+
+        private void refreshDepositSummary() {
+            double totalDeposit = 0;
+            for (BookingDetailRecord detail : detailRows) {
+                totalDeposit += detail.tienDatCocChiTiet;
+            }
+            txtTongDatCocDialog.setText(formatMoney(totalDeposit));
+        }
+
+        private void refreshDetailSummary() {
+            if (lblDetailSummary == null) {
+                return;
+            }
+            double totalDeposit = 0;
+            for (BookingDetailRecord detail : detailRows) {
+                totalDeposit += detail.tienDatCocChiTiet;
+            }
+            lblDetailSummary.setText("Tổng số dòng: " + detailRows.size() + "    Tổng cọc detail: " + formatMoney(totalDeposit));
+        }
+
+        private void updateSelectedDetailPreview() {
+            if (txtSelectedDetailNote == null) {
+                return;
+            }
+            int row = tblBookingDetailDialog == null ? -1 : tblBookingDetailDialog.getSelectedRow();
+            if (row < 0 || row >= detailRows.size()) {
+                txtSelectedDetailNote.setText("Chọn một dòng để xem yêu cầu khác và ghi chú nhanh.");
+                return;
+            }
+            BookingDetailRecord detail = detailRows.get(row);
+            txtSelectedDetailNote.setText("Yêu cầu khác: " + safeValue(detail.yeuCauKhac, "-")
+                    + "\nGhi chú: " + safeValue(detail.ghiChu, "-"));
+        }
+
+        private void openBookingDetailDialog(BookingDetailRecord detail) {
+            new BookingDetailEditorDialog(this, detail).setVisible(true);
+        }
+
+        private void editSelectedDetailRow() {
+            int row = tblBookingDetailDialog.getSelectedRow();
+            if (row < 0 || row >= detailRows.size()) {
+                showWarning("Vui lòng chọn một dòng chi tiết để cập nhật.");
+                return;
+            }
+            openBookingDetailDialog(detailRows.get(row));
+        }
+
+        private void removeSelectedDetailRow() {
+            int row = tblBookingDetailDialog.getSelectedRow();
+            if (row < 0 || row >= detailRows.size()) {
+                showWarning("Vui lòng chọn một dòng chi tiết để xóa.");
+                return;
+            }
+            if (!showConfirmDialog(
+                    "Xác nhận xóa dòng chi tiết",
+                    "Dòng chi tiết đặt phòng đang chọn sẽ bị xóa khỏi phiếu đặt phòng. Bạn có muốn tiếp tục không?",
+                    "Đồng ý",
+                    new Color(220, 38, 38)
+            )) {
+                return;
+            }
+            detailRows.remove(row);
+            refillBookingDetailDialogTable();
         }
 
         private void submit(String targetStatus) {
+            if (txtMaBooking.getText().trim().isEmpty()) {
+                showError("Mã đặt phòng không được để trống.");
+                return;
+            }
             if (txtMaKh.getText().trim().isEmpty() || txtHoTen.getText().trim().isEmpty()) {
-                showError("Booking phải có thông tin khách hàng.");
+                showError("Phiếu đặt phòng phải có thông tin khách hàng.");
                 return;
             }
-
-            LocalDate checkIn = requireDate(txtCheckInDialog.getText().trim(), "Ngày check-in dự kiến không hợp lệ.");
-            LocalDate checkOut = requireDate(txtCheckOutDialog.getText().trim(), "Ngày check-out dự kiến không hợp lệ.");
-            if (checkIn == null || checkOut == null) {
+            LocalDate ngayDat = requireDate(txtNgayDatDialog.getText().trim(), "Ngày đặt không hợp lệ.");
+            if (ngayDat == null) {
                 return;
             }
-            if (!checkOut.isAfter(checkIn)) {
-                showError("Check-out dự kiến phải lớn hơn check-in dự kiến.");
+            if (detailRows.isEmpty()) {
+                showError("Phiếu đặt phòng phải có ít nhất 1 dòng chi tiết.");
                 return;
             }
-            int soNguoi;
-            try {
-                soNguoi = Integer.parseInt(txtSoNguoiDialog.getText().trim());
-            } catch (NumberFormatException ex) {
-                showError("Số người phải hợp lệ.");
-                return;
-            }
-            if (soNguoi <= 0) {
-                showError("Số người phải hợp lệ.");
-                return;
-            }
-
-            String loaiPhong = valueOf(cboLoaiPhongDialog.getSelectedItem());
-            if (loaiPhong.isEmpty()) {
-                showError("Loại phòng là bắt buộc.");
-                return;
-            }
-            boolean ganPhongTruoc = "Có".equals(valueOf(cboGanPhong.getSelectedItem()));
-            if (ganPhongTruoc && txtSoPhongDialog.getText().trim().isEmpty()) {
-                showError("Nếu chọn gán phòng trước thì phải chọn phòng phù hợp.");
-                return;
-            }
-
-            double datCoc = parseMoney(txtDatCocDialog.getText().trim());
-            double tamTinh = parseMoney(txtTamTinhDialog.getText().trim());
-            if (datCoc < 0 || tamTinh < 0) {
-                showError("Tạm tính và đặt cọc phải hợp lệ.");
-                return;
-            }
-
             if ("Đã check-in".equals(targetStatus)) {
                 if (!showConfirmDialog(
                         "Xác nhận lưu và check-in",
-                        "Booking mới sẽ được tạo và chuyển sang quy trình check-in. Chỉ tiếp tục nếu có phòng phù hợp và phòng đã sẵn sàng.",
+                        "Mỗi dòng chi tiết đặt phòng sẽ sẵn sàng đi tiếp sang lưu trú/check-in. Bạn có muốn tiếp tục không?",
                         "Đồng ý",
                         new Color(245, 158, 11)
                 )) {
@@ -1167,43 +1335,39 @@ public class DatPhongGUI extends JFrame {
                 }
             }
 
-            BookingRecord target = editing ? editingBooking : BookingRecord.create(
+            BookingRecord target = editing
+                    ? editingBooking
+                    : BookingRecord.createHeader(
                     txtMaBooking.getText().trim(),
                     txtMaKh.getText().trim(),
                     txtHoTen.getText().trim(),
                     txtSdt.getText().trim(),
                     txtCccdDialog.getText().trim(),
+                    ngayDat,
                     valueOf(cboNguonBookingDialog.getSelectedItem()),
-                    loaiPhong,
-                    ganPhongTruoc,
-                    txtSoPhongDialog.getText().trim(),
-                    checkIn,
-                    checkOut,
-                    soNguoi,
-                    valueOf(cboBangGiaDialog.getSelectedItem()),
-                    tamTinh,
-                    datCoc,
                     targetStatus,
                     txtGhiChuDialog.getText().trim()
             );
 
+            target.maDatPhong = txtMaBooking.getText().trim();
             target.maKhachHang = txtMaKh.getText().trim();
             target.khachHang = txtHoTen.getText().trim();
             target.soDienThoai = txtSdt.getText().trim();
             target.cccd = txtCccdDialog.getText().trim();
+            target.ngayDat = ngayDat;
             target.nguonDat = valueOf(cboNguonBookingDialog.getSelectedItem());
-            target.loaiPhong = loaiPhong;
-            target.ganPhongTruoc = ganPhongTruoc;
-            target.soPhong = txtSoPhongDialog.getText().trim();
-            target.ngayNhanPhong = checkIn;
-            target.ngayTraPhong = checkOut;
-            target.soNguoi = soNguoi;
-            target.bangGiaApDung = valueOf(cboBangGiaDialog.getSelectedItem());
-            target.tamTinh = tamTinh;
-            target.tienCoc = datCoc;
             target.trangThai = targetStatus;
             target.ghiChu = txtGhiChuDialog.getText().trim();
-            target.yeuCauKhac = txtYeuCauKhac.getText().trim();
+            target.details.clear();
+            for (BookingDetailRecord detail : detailRows) {
+                BookingDetailRecord copy = detail.copy();
+                if ("Đã check-in".equals(targetStatus)
+                        && ("Giữ chỗ".equals(copy.trangThaiChiTiet) || "Mới tạo".equals(copy.trangThaiChiTiet))) {
+                    copy.trangThaiChiTiet = "Sẵn sàng check-in";
+                }
+                target.details.add(copy);
+            }
+            target.syncDerivedData();
 
             if (editing) {
                 refreshBookingViews(target, "Cập nhật booking thành công.");
@@ -1211,69 +1375,6 @@ public class DatPhongGUI extends JFrame {
                 addBooking(target, "Tạo booking thành công.");
             }
             dispose();
-        }
-
-        private final class AvailableRoomsDialog extends BaseBookingDialog {
-            private final String loaiPhong;
-            private final String checkIn;
-            private final String checkOut;
-            private final JTable tblRooms;
-            private final DefaultTableModel roomModel;
-
-            private AvailableRoomsDialog(Dialog owner, String loaiPhong, String checkIn, String checkOut) {
-                super(DatPhongGUI.this, "Kiểm tra phòng trống", 700, 420);
-                this.loaiPhong = loaiPhong;
-                this.checkIn = checkIn;
-                this.checkOut = checkOut;
-
-                JPanel content = new JPanel(new BorderLayout(0, 12));
-                content.setOpaque(false);
-                content.add(buildDialogHeader(
-                        "KIỂM TRA PHÒNG TRỐNG",
-                        "Kết quả demo theo loại phòng " + loaiPhong + " từ " + checkIn + " đến " + checkOut + "."
-                ), BorderLayout.NORTH);
-
-                String[] columns = {"Số phòng", "Tầng", "Trạng thái", "Giá tham khảo", "Ghi chú"};
-                roomModel = new DefaultTableModel(columns, 0) {
-                    @Override
-                    public boolean isCellEditable(int row, int column) {
-                        return false;
-                    }
-                };
-                tblRooms = new JTable(roomModel);
-                tblRooms.setRowHeight(30);
-                fillAvailableRooms();
-
-                content.add(new JScrollPane(tblRooms), BorderLayout.CENTER);
-                JButton btnSelect = createPrimaryButton("Chọn phòng", new Color(37, 99, 235), Color.WHITE, e -> chooseRoom());
-                JButton btnClose = createOutlineButton("Đóng", new Color(107, 114, 128), e -> dispose());
-                content.add(buildDialogButtons(btnClose, btnSelect), BorderLayout.SOUTH);
-                add(content, BorderLayout.CENTER);
-            }
-
-            private void fillAvailableRooms() {
-                roomModel.setRowCount(0);
-                if ("Deluxe".equals(loaiPhong)) {
-                    roomModel.addRow(new Object[]{"202", "Tầng 2", "Trống", "1.250.000", "Gần thang máy"});
-                    roomModel.addRow(new Object[]{"203", "Tầng 2", "Trống", "1.300.000", "Có ban công"});
-                } else if ("Suite".equals(loaiPhong)) {
-                    roomModel.addRow(new Object[]{"501", "Tầng 5", "Trống", "2.100.000", "Hướng thành phố"});
-                } else {
-                    roomModel.addRow(new Object[]{"101", "Tầng 1", "Trống", "850.000", "Gần lễ tân"});
-                    roomModel.addRow(new Object[]{"104", "Tầng 1", "Trống", "850.000", "Yên tĩnh"});
-                }
-            }
-
-            private void chooseRoom() {
-                int row = tblRooms.getSelectedRow();
-                if (row < 0) {
-                    showWarning("Vui lòng chọn một phòng trong danh sách.");
-                    return;
-                }
-                cboGanPhong.setSelectedItem("Có");
-                txtSoPhongDialog.setText(valueOf(tblRooms.getValueAt(row, 0)));
-                dispose();
-            }
         }
 
         private final class QuickCustomerDialog extends BaseBookingDialog {
@@ -1320,6 +1421,169 @@ public class DatPhongGUI extends JFrame {
                 JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
                 content.add(buildDialogButtons(btnCancel, btnSave), BorderLayout.SOUTH);
                 add(content, BorderLayout.CENTER);
+            }
+        }
+
+        private final class BookingDetailEditorDialog extends BaseBookingDialog {
+            private final BookingDetailRecord editingDetail;
+            private final JComboBox<String> cboLoaiPhongDialog;
+            private final JTextField txtPhongDialog;
+            private final JTextField txtCheckInDialog;
+            private final JTextField txtCheckOutDialog;
+            private final JTextField txtSoNguoiDialog;
+            private final JComboBox<String> cboBangGiaDialog;
+            private final JTextField txtChiTietBangGiaDialog;
+            private final JTextField txtGiaApDungDialog;
+            private final JTextField txtDatCocDialog;
+            private final JComboBox<String> cboTrangThaiChiTietDialog;
+            private final JTextArea txtYeuCauKhacDialog;
+            private final JTextArea txtGhiChuChiTietDialog;
+
+            private BookingDetailEditorDialog(Dialog owner, BookingDetailRecord detail) {
+                super(DatPhongGUI.this, detail == null ? "Thêm chi tiết đặt phòng" : "Cập nhật chi tiết đặt phòng", 700, 620);
+                this.editingDetail = detail;
+
+                JPanel content = new JPanel(new BorderLayout(0, 12));
+                content.setOpaque(false);
+                content.add(buildDialogHeader(
+                        detail == null ? "THÊM CHI TIẾT ĐẶT PHÒNG" : "CẬP NHẬT CHI TIẾT ĐẶT PHÒNG",
+                        "Mỗi dòng chi tiết đại diện cho một phòng cụ thể hoặc một nhu cầu phòng trong cùng phiếu đặt phòng."
+                ), BorderLayout.NORTH);
+
+                JPanel form = createDialogFormPanel();
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.insets = new java.awt.Insets(6, 0, 6, 12);
+                gbc.anchor = GridBagConstraints.WEST;
+
+                cboLoaiPhongDialog = createComboBox(ROOM_TYPE_OPTIONS);
+                txtPhongDialog = createInputField(detail == null ? "" : detail.maPhong);
+                txtCheckInDialog = createInputField(detail == null ? "20/03/2026" : detail.formatCheckIn());
+                txtCheckOutDialog = createInputField(detail == null ? "21/03/2026" : detail.formatCheckOut());
+                txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
+                cboBangGiaDialog = createComboBox(PRICE_TABLE_OPTIONS);
+                txtChiTietBangGiaDialog = createInputField(detail == null ? "" : detail.maChiTietBangGia);
+                txtGiaApDungDialog = createInputField(detail == null ? "850000" : formatMoney(detail.giaApDung));
+                txtDatCocDialog = createInputField(detail == null ? "0" : formatMoney(detail.tienDatCocChiTiet));
+                cboTrangThaiChiTietDialog = createComboBox(new String[]{"Mới tạo", "Giữ chỗ", "Đã xác nhận", "Sẵn sàng check-in", "Đã hủy"});
+                txtYeuCauKhacDialog = createDialogTextArea(2);
+                txtGhiChuChiTietDialog = createDialogTextArea(2);
+
+                if (detail != null) {
+                    cboLoaiPhongDialog.setSelectedItem(detail.loaiPhong);
+                    cboBangGiaDialog.setSelectedItem(detail.maBangGia);
+                    cboTrangThaiChiTietDialog.setSelectedItem(detail.trangThaiChiTiet);
+                    txtYeuCauKhacDialog.setText(detail.yeuCauKhac);
+                    txtGhiChuChiTietDialog.setText(detail.ghiChu);
+                }
+
+                addFormRow(form, gbc, 0, "Loại phòng", cboLoaiPhongDialog);
+                addFormRow(form, gbc, 1, "Phòng cụ thể", txtPhongDialog);
+                addFormRow(form, gbc, 2, "Check-in dự kiến", txtCheckInDialog);
+                addFormRow(form, gbc, 3, "Check-out dự kiến", txtCheckOutDialog);
+                addFormRow(form, gbc, 4, "Số người", txtSoNguoiDialog);
+                addFormRow(form, gbc, 5, "Bảng giá", cboBangGiaDialog);
+                addFormRow(form, gbc, 6, "Chi tiết bảng giá", txtChiTietBangGiaDialog);
+                addFormRow(form, gbc, 7, "Giá áp dụng", txtGiaApDungDialog);
+                addFormRow(form, gbc, 8, "Tiền cọc chi tiết", txtDatCocDialog);
+                addFormRow(form, gbc, 9, "Trạng thái chi tiết", cboTrangThaiChiTietDialog);
+                addFormRow(form, gbc, 10, "Yêu cầu khác", new JScrollPane(txtYeuCauKhacDialog));
+                addFormRow(form, gbc, 11, "Ghi chú", new JScrollPane(txtGhiChuChiTietDialog));
+
+                JPanel card = createDialogCardPanel();
+                card.add(form, BorderLayout.CENTER);
+                content.add(card, BorderLayout.CENTER);
+
+                JButton btnPrimary = createPrimaryButton(detail == null ? "Lưu dòng" : "Lưu cập nhật", new Color(37, 99, 235), Color.WHITE, e -> submit(false));
+                JButton btnSaveNext = createOutlineButton("Lưu và thêm tiếp", new Color(22, 163, 74), e -> submit(true));
+                btnSaveNext.setVisible(detail == null);
+                JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
+                content.add(buildDialogButtons(btnCancel, btnSaveNext, btnPrimary), BorderLayout.SOUTH);
+                add(content, BorderLayout.CENTER);
+            }
+
+            private void submit(boolean keepOpen) {
+                String loaiPhong = valueOf(cboLoaiPhongDialog.getSelectedItem());
+                if (loaiPhong.isEmpty()) {
+                    showError("Loại phòng là bắt buộc.");
+                    return;
+                }
+                LocalDate checkIn = requireDate(txtCheckInDialog.getText().trim(), "Check-in dự kiến không hợp lệ.");
+                LocalDate checkOut = requireDate(txtCheckOutDialog.getText().trim(), "Check-out dự kiến không hợp lệ.");
+                if (checkIn == null || checkOut == null) {
+                    return;
+                }
+                if (!checkOut.isAfter(checkIn)) {
+                    showError("Check-out dự kiến phải lớn hơn check-in dự kiến.");
+                    return;
+                }
+                int soNguoi;
+                try {
+                    soNguoi = Integer.parseInt(txtSoNguoiDialog.getText().trim());
+                } catch (NumberFormatException ex) {
+                    showError("Số người phải hợp lệ.");
+                    return;
+                }
+                if (soNguoi <= 0) {
+                    showError("Số người phải lớn hơn 0.");
+                    return;
+                }
+
+                double giaApDung = parseMoney(txtGiaApDungDialog.getText().trim());
+                double tienCoc = parseMoney(txtDatCocDialog.getText().trim());
+                if (giaApDung < 0 || tienCoc < 0) {
+                    showError("Giá áp dụng và cọc chi tiết phải hợp lệ.");
+                    return;
+                }
+
+                BookingDetailRecord target = editingDetail == null
+                        ? BookingDetailRecord.create(
+                        txtMaBooking.getText().trim() + "-CT" + (detailRows.size() + 1),
+                        loaiPhong,
+                        txtPhongDialog.getText().trim(),
+                        valueOf(cboBangGiaDialog.getSelectedItem()),
+                        txtChiTietBangGiaDialog.getText().trim(),
+                        checkIn,
+                        checkOut,
+                        soNguoi,
+                        giaApDung,
+                        tienCoc,
+                        valueOf(cboTrangThaiChiTietDialog.getSelectedItem()),
+                        txtYeuCauKhacDialog.getText().trim(),
+                        txtGhiChuChiTietDialog.getText().trim()
+                )
+                        : editingDetail;
+
+                target.loaiPhong = loaiPhong;
+                target.maPhong = txtPhongDialog.getText().trim();
+                target.maBangGia = valueOf(cboBangGiaDialog.getSelectedItem());
+                target.maChiTietBangGia = txtChiTietBangGiaDialog.getText().trim();
+                target.checkInDuKien = checkIn;
+                target.checkOutDuKien = checkOut;
+                target.soNguoi = soNguoi;
+                target.giaApDung = giaApDung;
+                target.tienDatCocChiTiet = tienCoc;
+                target.trangThaiChiTiet = valueOf(cboTrangThaiChiTietDialog.getSelectedItem());
+                target.yeuCauKhac = txtYeuCauKhacDialog.getText().trim();
+                target.ghiChu = txtGhiChuChiTietDialog.getText().trim();
+
+                if (editingDetail == null) {
+                    detailRows.add(target);
+                }
+                refillBookingDetailDialogTable();
+
+                if (keepOpen && editingDetail == null) {
+                    txtPhongDialog.setText("");
+                    txtCheckInDialog.setText("20/03/2026");
+                    txtCheckOutDialog.setText("21/03/2026");
+                    txtSoNguoiDialog.setText("2");
+                    txtChiTietBangGiaDialog.setText("");
+                    txtGiaApDungDialog.setText("850000");
+                    txtDatCocDialog.setText("0");
+                    txtYeuCauKhacDialog.setText("");
+                    txtGhiChuChiTietDialog.setText("");
+                } else {
+                    dispose();
+                }
             }
         }
     }
@@ -1590,52 +1854,195 @@ public class DatPhongGUI extends JFrame {
         private String khachHang;
         private String soDienThoai;
         private String cccd;
+        private LocalDate ngayDat;
+        private String nguonDat;
+        private double tongTienDatCoc;
+        private String trangThai;
+        private String ghiChu;
+        private final List<BookingDetailRecord> details = new ArrayList<BookingDetailRecord>();
+
+        // Compatibility fields for legacy dialogs and summaries.
         private String loaiPhong;
         private boolean ganPhongTruoc;
         private String soPhong;
         private LocalDate ngayNhanPhong;
         private LocalDate ngayTraPhong;
-        private String trangThai;
-        private String nguonDat;
         private int soNguoi;
         private String bangGiaApDung;
         private double tamTinh;
         private double tienCoc;
         private String yeuCauKhac;
-        private String ghiChu;
+        private String maChiTietBangGia;
 
-        private static BookingRecord create(String maDatPhong, String maKhachHang, String khachHang, String soDienThoai, String cccd,
-                                            String nguonDat, String loaiPhong, boolean ganPhongTruoc, String soPhong,
-                                            LocalDate ngayNhanPhong, LocalDate ngayTraPhong, int soNguoi, String bangGiaApDung,
-                                            double tamTinh, double tienCoc, String trangThai, String ghiChu) {
+        private static BookingRecord createHeader(String maDatPhong, String maKhachHang, String khachHang, String soDienThoai, String cccd,
+                                                  LocalDate ngayDat, String nguonDat, String trangThai, String ghiChu) {
             BookingRecord booking = new BookingRecord();
             booking.maDatPhong = maDatPhong;
             booking.maKhachHang = maKhachHang;
             booking.khachHang = khachHang;
             booking.soDienThoai = soDienThoai;
             booking.cccd = cccd;
+            booking.ngayDat = ngayDat;
             booking.nguonDat = nguonDat;
-            booking.loaiPhong = loaiPhong;
-            booking.ganPhongTruoc = ganPhongTruoc;
-            booking.soPhong = soPhong;
-            booking.ngayNhanPhong = ngayNhanPhong;
-            booking.ngayTraPhong = ngayTraPhong;
-            booking.soNguoi = soNguoi;
-            booking.bangGiaApDung = bangGiaApDung;
-            booking.tamTinh = tamTinh;
-            booking.tienCoc = tienCoc;
             booking.trangThai = trangThai;
             booking.ghiChu = ghiChu;
             booking.yeuCauKhac = "";
             return booking;
         }
 
+        private static BookingRecord create(String maDatPhong, String maKhachHang, String khachHang, String soDienThoai, String cccd,
+                                            String nguonDat, String loaiPhong, boolean ganPhongTruoc, String soPhong,
+                                            LocalDate ngayNhanPhong, LocalDate ngayTraPhong, int soNguoi, String bangGiaApDung,
+                                            double tamTinh, double tienCoc, String trangThai, String ghiChu) {
+            BookingRecord booking = createHeader(maDatPhong, maKhachHang, khachHang, soDienThoai, cccd, LocalDate.now(), nguonDat, trangThai, ghiChu);
+            booking.details.add(BookingDetailRecord.create(
+                    maDatPhong + "-01",
+                    loaiPhong,
+                    ganPhongTruoc ? soPhong : "",
+                    bangGiaApDung,
+                    "",
+                    ngayNhanPhong,
+                    ngayTraPhong,
+                    soNguoi,
+                    tamTinh,
+                    tienCoc,
+                    trangThai,
+                    "",
+                    ghiChu
+            ));
+            booking.syncDerivedData();
+            return booking;
+        }
+
+        private void syncDerivedData() {
+            tongTienDatCoc = 0;
+            tamTinh = 0;
+            soNguoi = 0;
+
+            if (details.isEmpty()) {
+                loaiPhong = "";
+                soPhong = "";
+                ngayNhanPhong = LocalDate.now();
+                ngayTraPhong = LocalDate.now();
+                bangGiaApDung = "";
+                tienCoc = 0;
+                yeuCauKhac = "";
+                maChiTietBangGia = "";
+                return;
+            }
+
+            BookingDetailRecord primary = details.get(0);
+            loaiPhong = primary.loaiPhong;
+            soPhong = primary.maPhong == null ? "" : primary.maPhong;
+            ganPhongTruoc = soPhong != null && !soPhong.trim().isEmpty();
+            ngayNhanPhong = primary.checkInDuKien;
+            ngayTraPhong = primary.checkOutDuKien;
+            bangGiaApDung = primary.maBangGia;
+            yeuCauKhac = primary.yeuCauKhac;
+            maChiTietBangGia = primary.maChiTietBangGia;
+
+            for (BookingDetailRecord detail : details) {
+                tongTienDatCoc += detail.tienDatCocChiTiet;
+                tamTinh += detail.giaApDung;
+                soNguoi += detail.soNguoi;
+                if (detail.checkInDuKien.isBefore(ngayNhanPhong)) {
+                    ngayNhanPhong = detail.checkInDuKien;
+                }
+                if (detail.checkOutDuKien.isAfter(ngayTraPhong)) {
+                    ngayTraPhong = detail.checkOutDuKien;
+                }
+            }
+            tienCoc = tongTienDatCoc;
+        }
+
+        private boolean matchesRoomType(String roomType) {
+            for (BookingDetailRecord detail : details) {
+                if (roomType.equals(detail.loaiPhong)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private int getTotalGuests() {
+            int totalGuests = 0;
+            for (BookingDetailRecord detail : details) {
+                totalGuests += detail.soNguoi;
+            }
+            return totalGuests;
+        }
+
+        private String getRoomTypeSummary() {
+            StringBuilder summary = new StringBuilder();
+            for (int i = 0; i < details.size(); i++) {
+                if (i > 0) {
+                    summary.append(", ");
+                }
+                summary.append(details.get(i).loaiPhong);
+            }
+            return summary.length() == 0 ? "-" : summary.toString();
+        }
+
+        private String formatNgayDat() {
+            return ngayDat == null ? "-" : ngayDat.format(DATE_FORMAT);
+        }
+
         private String formatNgayNhanPhong() {
-            return ngayNhanPhong.format(DATE_FORMAT);
+            return ngayNhanPhong == null ? "-" : ngayNhanPhong.format(DATE_FORMAT);
         }
 
         private String formatNgayTraPhong() {
-            return ngayTraPhong.format(DATE_FORMAT);
+            return ngayTraPhong == null ? "-" : ngayTraPhong.format(DATE_FORMAT);
+        }
+    }
+
+    private static final class BookingDetailRecord {
+        private String maChiTietDatPhong;
+        private String loaiPhong;
+        private String maPhong;
+        private String maBangGia;
+        private String maChiTietBangGia;
+        private LocalDate checkInDuKien;
+        private LocalDate checkOutDuKien;
+        private int soNguoi;
+        private double giaApDung;
+        private double tienDatCocChiTiet;
+        private String trangThaiChiTiet;
+        private String yeuCauKhac;
+        private String ghiChu;
+
+        private static BookingDetailRecord create(String maChiTietDatPhong, String loaiPhong, String maPhong, String maBangGia,
+                                                  String maChiTietBangGia, LocalDate checkInDuKien, LocalDate checkOutDuKien,
+                                                  int soNguoi, double giaApDung, double tienDatCocChiTiet,
+                                                  String trangThaiChiTiet, String yeuCauKhac, String ghiChu) {
+            BookingDetailRecord detail = new BookingDetailRecord();
+            detail.maChiTietDatPhong = maChiTietDatPhong;
+            detail.loaiPhong = loaiPhong;
+            detail.maPhong = maPhong;
+            detail.maBangGia = maBangGia;
+            detail.maChiTietBangGia = maChiTietBangGia;
+            detail.checkInDuKien = checkInDuKien;
+            detail.checkOutDuKien = checkOutDuKien;
+            detail.soNguoi = soNguoi;
+            detail.giaApDung = giaApDung;
+            detail.tienDatCocChiTiet = tienDatCocChiTiet;
+            detail.trangThaiChiTiet = trangThaiChiTiet;
+            detail.yeuCauKhac = yeuCauKhac;
+            detail.ghiChu = ghiChu;
+            return detail;
+        }
+
+        private BookingDetailRecord copy() {
+            return create(maChiTietDatPhong, loaiPhong, maPhong, maBangGia, maChiTietBangGia,
+                    checkInDuKien, checkOutDuKien, soNguoi, giaApDung, tienDatCocChiTiet, trangThaiChiTiet, yeuCauKhac, ghiChu);
+        }
+
+        private String formatCheckIn() {
+            return checkInDuKien == null ? "-" : checkInDuKien.format(DATE_FORMAT);
+        }
+
+        private String formatCheckOut() {
+            return checkOutDuKien == null ? "-" : checkOutDuKien.format(DATE_FORMAT);
         }
     }
 

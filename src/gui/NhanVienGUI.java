@@ -262,14 +262,7 @@ public class NhanVienGUI extends JFrame {
                 }
             }
         });
-        tblNhanVien.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                if (e.getClickCount() == 2 && tblNhanVien.getSelectedRow() >= 0) {
-                    openEmployeeDetailDialog();
-                }
-            }
-        });
+        ScreenUIHelper.registerTableDoubleClick(tblNhanVien, this::openUpdateEmployeeDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblNhanVien);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

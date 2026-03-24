@@ -18,10 +18,11 @@ public class AppFrame extends JFrame {
 
     private AppFrame() {
         setTitle("Hotel PMS");
-        setExtendedState(JFrame.MAXIMIZED_BOTH);
         setMinimumSize(new Dimension(1024, 700));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setContentPane(container);
+        setLocationRelativeTo(null);
+        setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
     }
 
     public static AppFrame get() {

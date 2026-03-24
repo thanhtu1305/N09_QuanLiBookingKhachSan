@@ -273,6 +273,7 @@ public class PhongGUI extends JFrame {
                 }
             }
         });
+        ScreenUIHelper.registerTableDoubleClick(tblPhong, this::openUpdateStatusDialog);
 
         JScrollPane scrollPane = new JScrollPane(tblPhong);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

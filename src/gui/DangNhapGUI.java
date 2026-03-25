@@ -1,5 +1,7 @@
 package gui;
 
+import dao.TaiKhoanDAO;
+import entity.TaiKhoan;
 import gui.common.AppBranding;
 import gui.common.AppFrame;
 import utils.NavigationUtil;
@@ -29,6 +31,7 @@ import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 
+
 public class DangNhapGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
     private static final Color CARD_BG = Color.WHITE;
@@ -53,6 +56,7 @@ public class DangNhapGUI extends JFrame {
         setMinimumSize(new java.awt.Dimension(800, 600));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         initUI();
+        setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
     }
 
     private void initUI() {
@@ -278,12 +282,25 @@ public class DangNhapGUI extends JFrame {
         }
 
         String role = rdoLeTan.isSelected() ? "Lễ tân" : "Quản lí";
+
+        TaiKhoanDAO taiKhoanDAO = new TaiKhoanDAO();
+        TaiKhoan tk = taiKhoanDAO.dangNhap(username, password, role);
+
+        if (tk == null) {
+            JOptionPane.showMessageDialog(
+                    this,
+                    "Sai tên đăng nhập, mật khẩu, vai trò hoặc tài khoản bị khóa.",
+                    "Đăng nhập thất bại",
+                    JOptionPane.ERROR_MESSAGE
+            );
+            return;
+        }
+
         AppFrame mainFrame = AppFrame.get();
-        NavigationUtil.navigate(null, null, ScreenKey.DASHBOARD, username, role);
+        NavigationUtil.navigate(null, null, ScreenKey.DASHBOARD, tk.getTenDangNhap(), tk.getVaiTro());
         mainFrame.setExtendedState(mainFrame.getExtendedState() | JFrame.MAXIMIZED_BOTH);
         mainFrame.setLocationRelativeTo(null);
         mainFrame.setVisible(true);
-        // Ẩn cửa sổ login (AppFrame đã hiện)
         this.setVisible(false);
     }
 

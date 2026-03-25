@@ -498,9 +498,6 @@ public class TaiKhoanGUI extends JFrame {
 
     private void seedSampleData() {
         allAccounts.clear();
-        allAccounts.add(new AccountRecord("letan01", "Nguyễn Hải", "Lễ tân", "Hoạt động", "09/03/2026 07:50", "letan01@hotel.com", "Tài khoản ca sáng", true, true, true, true, true, false, false, false));
-        allAccounts.add(new AccountRecord("qltruong", "Trần Anh", "Quản lý", "Hoạt động", "08/03/2026 21:15", "manager@hotel.com", "Theo dõi vận hành và phê duyệt báo cáo", true, true, true, true, true, true, true, true));
-        allAccounts.add(new AccountRecord("letan02", "Lê Quỳnh", "Lễ tân", "Khóa", "06/03/2026 21:30", "letan02@hotel.com", "Khóa tạm do nghỉ phép", true, true, true, false, true, false, false, false));
     }
 
     private void reloadSampleData(boolean showMessage) {

@@ -448,24 +448,6 @@ public class BangGiaGUI extends JFrame {
 
     private void seedSampleData() {
         allPrices.clear();
-        PriceRecord bg01 = PriceRecord.create("BG01", "Giá thường Standard", "Standard", "01/03/2026", "31/12/2026", "Đang áp dụng", "Áp dụng cho ngày thường, không bao gồm lễ.");
-        bg01.details.add(new PriceDetailRecord("Ngày thường", "Qua đêm", 850000, 120000, 150000, 1, "Áp dụng mặc định"));
-        bg01.details.add(new PriceDetailRecord("Cuối tuần", "Qua đêm", 930000, 130000, 150000, 2, "Tăng nhẹ cuối tuần"));
-        allPrices.add(bg01);
-
-        PriceRecord bg02 = PriceRecord.create("BG02", "Giá cuối tuần Deluxe", "Deluxe", "01/03/2026", "30/09/2026", "Đang áp dụng", "Áp dụng tối thứ Sáu đến hết Chủ nhật.");
-        bg02.details.add(new PriceDetailRecord("Cuối tuần", "Qua đêm", 1450000, 180000, 200000, 1, "Gói cuối tuần"));
-        bg02.details.add(new PriceDetailRecord("Ngày thường", "Theo giờ 3h đầu", 1250000, 160000, 180000, 2, "Áp dụng ngoài cuối tuần"));
-        allPrices.add(bg02);
-
-        PriceRecord bg03 = PriceRecord.create("BG03", "Giá lễ Suite", "Suite", "20/04/2026", "05/05/2026", "Đang áp dụng", "Áp dụng cho dịp lễ lớn và kỳ nghỉ kéo dài.");
-        bg03.details.add(new PriceDetailRecord("Ngày lễ", "Qua đêm", 2800000, 250000, 300000, 1, "Lễ chính"));
-        bg03.details.add(new PriceDetailRecord("Mùa cao điểm", "Theo giờ", 2400000, 220000, 280000, 2, "Backup"));
-        allPrices.add(bg03);
-
-        PriceRecord bg04 = PriceRecord.create("BG04", "Giá cao điểm Deluxe", "Deluxe", "01/06/2025", "31/08/2025", "Ngừng áp dụng", "Bảng giá cũ của mùa du lịch cao điểm.");
-        bg04.details.add(new PriceDetailRecord("Mùa cao điểm", "Qua đêm", 1950000, 210000, 220000, 1, "Lưu lịch sử"));
-        allPrices.add(bg04);
     }
 
     private void reloadSampleData(boolean showMessage) {
@@ -1011,13 +993,7 @@ public class BangGiaGUI extends JFrame {
 
         private void loadSampleDetailRows() {
             detailRows.clear();
-            detailRows.add(new PriceDetailRecord("Thường", "14:00 - 12:00", 650000, 120000, 0, 1, "Ngày thường"));
-            detailRows.add(new PriceDetailRecord("Cuối tuần", "14:00 - 12:00", 750000, 150000, 0, 2, "Thứ 6, Thứ 7, Chủ nhật"));
-            detailRows.add(new PriceDetailRecord("Ngày lễ", "14:00 - 12:00", 900000, 180000, 50000, 3, "Áp dụng ngày lễ"));
             refillDetailTable();
-            if (detailTableRef.getRowCount() > 0) {
-                detailTableRef.setRowSelectionInterval(0, 0);
-            }
         }
 
         private void refillDetailTable() {

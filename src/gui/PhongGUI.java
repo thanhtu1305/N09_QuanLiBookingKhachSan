@@ -557,12 +557,6 @@ public class PhongGUI extends JFrame {
 
     private void seedSampleData() {
         allRooms.clear();
-        allRooms.add(RoomRecord.create("101", "Standard", "Tầng 1", 2, 3, "Trống", "Khu A", "Sẵn sàng bán ngay."));
-        allRooms.add(RoomRecord.create("202", "Deluxe", "Tầng 2", 2, 4, "Đã đặt", "Khu B", "Giữ phòng cho booking DP240302."));
-        allRooms.add(RoomRecord.create("303", "Deluxe", "Tầng 3", 2, 4, "Đang ở", "Khu B", "Khách lưu trú dài ngày."));
-        allRooms.add(RoomRecord.create("404", "Standard", "Tầng 4", 2, 3, "Dọn dẹp", "Khu C", "Đang thay ga và kiểm tra minibar."));
-        allRooms.add(RoomRecord.create("501", "Suite", "Tầng 5", 3, 5, "Bảo trì", "Khu VIP", "Tạm khóa để bảo trì điều hòa."));
-        allRooms.add(RoomRecord.create("502", "Suite", "Tầng 5", 3, 5, "Đang ở", "Khu VIP", "Khách VIP, ưu tiên yên tĩnh."));
     }
 
     private void reloadSampleData(boolean showMessage) {

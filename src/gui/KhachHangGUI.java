@@ -491,34 +491,6 @@ public class KhachHangGUI extends JFrame {
 
     private void seedSampleData() {
         allCustomers.clear();
-
-        CustomerRecord kh1 = CustomerRecord.create("KH001", "Cá nhân", "Nguyễn Lan", "0901001001", "079200000111",
-                "12/07/1995", "Nữ", "lan.nguyen@email.com", "Quận 1, TP.HCM", "Việt Nam", "Vàng", "Hoạt động", username,
-                "Khách quay lại nhiều lần, ưu tiên phòng tầng cao.");
-        kh1.lichSuLuuTru.add(StayHistoryRecord.create("02/03/2026", "03/03/2026", "P203", 1, 1650000, "Đã hoàn tất"));
-        kh1.lichSuLuuTru.add(StayHistoryRecord.create("12/02/2026", "14/02/2026", "P502", 2, 5400000, "Đã hoàn tất"));
-        allCustomers.add(kh1);
-
-        CustomerRecord kh2 = CustomerRecord.create("KH002", "Cá nhân", "Trần Phú", "0902002002", "079200000222",
-                "23/03/1993", "Nam", "phu.tran@email.com", "Quận 3, TP.HCM", "Việt Nam", "Bạc", "Hoạt động", username,
-                "Ưu tiên phòng yên tĩnh, gần thang máy.");
-        kh2.lichSuLuuTru.add(StayHistoryRecord.create("20/01/2026", "21/01/2026", "P104", 1, 980000, "Đã hoàn tất"));
-        kh2.lichSuLuuTru.add(StayHistoryRecord.create("15/12/2025", "16/12/2025", "P203", 1, 1560000, "Đã hoàn tất"));
-        allCustomers.add(kh2);
-
-        CustomerRecord kh3 = CustomerRecord.create("KH003", "Doanh nghiệp", "Lê Mỹ", "0903003003", "079200000333",
-                "05/11/1988", "Nữ", "my.le@email.com", "Hà Nội", "Việt Nam", "Kim cương", "Hoạt động", username,
-                "Khách VIP doanh nghiệp, thường đặt nhiều phòng.");
-        kh3.lichSuLuuTru.add(StayHistoryRecord.create("05/01/2026", "07/01/2026", "P305", 2, 4200000, "Đã hoàn tất"));
-        kh3.lichSuLuuTru.add(StayHistoryRecord.create("28/11/2025", "30/11/2025", "P502", 2, 6100000, "Đã hoàn tất"));
-        kh3.coBookingDangMo = true;
-        allCustomers.add(kh3);
-
-        CustomerRecord kh4 = CustomerRecord.create("KH004", "Cá nhân", "Phạm Hưng", "0904004004", "079200000444",
-                "18/01/1990", "Nam", "hung.pham@email.com", "Đà Nẵng", "Việt Nam", "Đồng", "Ngừng giao dịch", username,
-                "Từng hủy booking sát giờ.");
-        kh4.lichSuLuuTru.add(StayHistoryRecord.create("10/10/2025", "11/10/2025", "P101", 1, 850000, "Đã hoàn tất"));
-        allCustomers.add(kh4);
     }
 
     private void reloadSampleData(boolean showMessage) {

@@ -543,38 +543,6 @@ public class ThanhToanGUI extends JFrame {
 
     private void seedSampleData() {
         allInvoices.clear();
-        allInvoices.add(createSampleInvoice("HD240501", "HS240401", "Nguyễn Minh Anh", "P101, P102, P201", "0901234567", "Chờ thanh toán", "", "10/03/2026",
-                500000,
-                createInvoiceLine("CTHD240501-01", "TIEN_PHONG", "Phòng 101 - 1 đêm", 1, 650000, 650000, 1, ""),
-                createInvoiceLine("CTHD240501-02", "TIEN_PHONG", "Phòng 102 - 1 đêm", 1, 650000, 650000, 2, ""),
-                createInvoiceLine("CTHD240501-03", "TIEN_PHONG", "Phòng 201 - 2 đêm", 2, 900000, 1800000, 3, ""),
-                createInvoiceLine("CTHD240501-04", "DICH_VU", "Minibar", 2, 20000, 40000, 4, ""),
-                createInvoiceLine("CTHD240501-05", "DICH_VU", "Giặt ủi", 1, 120000, 120000, 5, ""),
-                createInvoiceLine("CTHD240501-06", "GIAM_GIA", "Khách VIP", 1, -200000, -200000, 6, "")));
-        allInvoices.add(createSampleInvoice("HD240502", "HS240402", "Trần Hoài Nam", "P202", "0912345678", "Chờ thanh toán", "", "11/03/2026",
-                1000000,
-                createInvoiceLine("CTHD240502-01", "TIEN_PHONG", "Phòng 202 - 2 đêm", 2, 1200000, 2400000, 1, ""),
-                createInvoiceLine("CTHD240502-02", "DICH_VU", "Ăn sáng", 4, 80000, 320000, 2, ""),
-                createInvoiceLine("CTHD240502-03", "GIAM_GIA", "Khuyến mãi OTA", 1, -120000, -120000, 3, "")));
-        allInvoices.add(createSampleInvoice("HD240503", "HS240403", "Lê Thu Hà", "P502", "0988555777", "Đã thanh toán", "Thẻ", "12/03/2026",
-                2500000,
-                createInvoiceLine("CTHD240503-01", "TIEN_PHONG", "Phòng 502 - 2 đêm", 2, 2100000, 4200000, 1, ""),
-                createInvoiceLine("CTHD240503-02", "DICH_VU", "Spa", 2, 240000, 480000, 2, ""),
-                createInvoiceLine("CTHD240503-03", "DICH_VU", "Minibar", 3, 100000, 300000, 3, ""),
-                createInvoiceLine("CTHD240503-04", "PHU_THU", "Check-out trễ", 1, 150000, 150000, 4, ""),
-                createInvoiceLine("CTHD240503-05", "GIAM_GIA", "Voucher doanh nghiệp", 1, -300000, -300000, 5, "")));
-        allInvoices.add(createSampleInvoice("HD240504", "HS240404", "Phạm Quốc Bảo", "P103", "0977666111", "Chờ thanh toán", "", "13/03/2026",
-                0,
-                createInvoiceLine("CTHD240504-01", "TIEN_PHONG", "Phòng 103 - 1 đêm", 1, 1200000, 1200000, 1, "")));
-        allInvoices.add(createSampleInvoice("HD240505", "HS240405", "Võ Ngọc Linh", "P303", "0933222444", "Đã thanh toán", "Kết hợp", "14/03/2026",
-                800000,
-                createInvoiceLine("CTHD240505-01", "TIEN_PHONG", "Phòng 303 - 2 đêm", 2, 1550000, 3100000, 1, ""),
-                createInvoiceLine("CTHD240505-02", "DICH_VU", "Ăn sáng", 2, 70000, 140000, 2, ""),
-                createInvoiceLine("CTHD240505-03", "DICH_VU", "Đưa đón sân bay", 1, 80000, 80000, 3, ""),
-                createInvoiceLine("CTHD240505-04", "GIAM_GIA", "Khuyến mãi thành viên", 1, -150000, -150000, 4, "")));
-        allInvoices.add(createSampleInvoice("HD240506", "HS240406", "Đặng Gia Huy", "P501", "0966777888", "Đã hoàn cọc", "Chuyển khoản", "15/03/2026",
-                500000,
-                createInvoiceLine("CTHD240506-01", "TIEN_PHONG", "Phòng 501 - 1 đêm", 1, 2000000, 2000000, 1, "")));
     }
 
     private InvoiceRecord createSampleInvoice(String maHoaDon, String maHoSo, String khachHang, String soPhong, String soDienThoai,

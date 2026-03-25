@@ -570,14 +570,6 @@ public class BaoCaoGUI extends JFrame {
             return;
         }
         tableModel.setRowCount(0);
-        tableModel.addRow(new Object[]{"05/03/2026", "34", "18", "16", "152.000.000"});
-        tableModel.addRow(new Object[]{"06/03/2026", "36", "19", "17", "161.500.000"});
-        tableModel.addRow(new Object[]{"07/03/2026", "40", "22", "20", "174.000.000"});
-        tableModel.addRow(new Object[]{"08/03/2026", "42", "24", "21", "183.200.000"});
-        tableModel.addRow(new Object[]{"09/03/2026", "39", "20", "18", "168.700.000"});
-        if (tableModel.getRowCount() > 0) {
-            tblThongKe.setRowSelectionInterval(0, 0);
-        }
     }
 
     private void openReportFilterDialog() {

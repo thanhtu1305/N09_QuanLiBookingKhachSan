@@ -512,34 +512,6 @@ public class DatPhongGUI extends JFrame {
 
     private void seedSampleData() {
         allBookings.clear();
-        allBookings.add(createSampleBooking("DP240301", "KH001", "Nguyễn Minh Anh", "0901234567", "079203001234",
-                LocalDate.of(2026, 3, 8), "Đặt trước", "Mới tạo", "Khách yêu cầu 2 phòng gần nhau.",
-                createSampleBookingDetail("CTDP240301-01", "Standard", "", "BG01 - Standard", "CTBG01",
-                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11), 2, 850000, 300000, "Giữ chỗ", "Gần thang máy", ""),
-                createSampleBookingDetail("CTDP240301-02", "Standard", "", "BG01 - Standard", "CTBG02",
-                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 11), 2, 850000, 200000, "Giữ chỗ", "Phòng yên tĩnh", "")));
-        allBookings.add(createSampleBooking("DP240302", "KH002", "Trần Hoài Nam", "0912345678", "079203001235",
-                LocalDate.of(2026, 3, 9), "Đặt trước", "Đã xác nhận", "Đến sau 20:00, giữ phòng muộn.",
-                createSampleBookingDetail("CTDP240302-01", "Deluxe", "202", "BG02 - Deluxe", "CTBG03",
-                        LocalDate.of(2026, 3, 10), LocalDate.of(2026, 3, 12), 2, 2500000, 1000000, "Đã xác nhận", "Giữ phòng muộn", "")));
-        allBookings.add(createSampleBooking("DP240303", "KH003", "Lê Thu Hà", "0988555777", "079203001236",
-                LocalDate.of(2026, 3, 10), "Đặt trước", "Đã cọc", "Cần xuất hóa đơn công ty.",
-                createSampleBookingDetail("CTDP240303-01", "Deluxe", "302", "BG02 - Deluxe", "CTBG04",
-                        LocalDate.of(2026, 3, 11), LocalDate.of(2026, 3, 13), 2, 2200000, 1200000, "Đã xác nhận", "Phòng cho đồng nghiệp 1", ""),
-                createSampleBookingDetail("CTDP240303-02", "Suite", "502", "BG03 - Suite", "CTBG05",
-                        LocalDate.of(2026, 3, 11), LocalDate.of(2026, 3, 13), 3, 4200000, 1300000, "Đã cọc", "Phòng cho đồng nghiệp 2", "")));
-        allBookings.add(createSampleBooking("DP240304", "KH004", "Phạm Quốc Bảo", "0977666111", "079203001237",
-                LocalDate.of(2026, 3, 11), "Đặt trước", "Mới tạo", "Gọi trước khi check-in 30 phút.",
-                createSampleBookingDetail("CTDP240304-01", "Standard", "", "BG01 - Standard", "CTBG01",
-                        LocalDate.of(2026, 3, 12), LocalDate.of(2026, 3, 13), 1, 850000, 0, "Giữ chỗ", "Gọi trước 30 phút", "")));
-        allBookings.add(createSampleBooking("DP240305", "KH005", "Võ Ngọc Linh", "0933222444", "079203001238",
-                LocalDate.of(2026, 3, 12), "Walk-in", "Đã xác nhận", "Ưu tiên tầng cao, không hút thuốc.",
-                createSampleBookingDetail("CTDP240305-01", "Deluxe", "203", "BG02 - Deluxe", "CTBG03",
-                        LocalDate.of(2026, 3, 13), LocalDate.of(2026, 3, 15), 2, 2900000, 800000, "Đã xác nhận", "Tầng cao", "")));
-        allBookings.add(createSampleBooking("DP240306", "KH006", "Đặng Gia Huy", "0966777888", "079203001239",
-                LocalDate.of(2026, 3, 13), "Đặt trước", "Đã hủy", "Khách hủy do thay đổi lịch công tác.",
-                createSampleBookingDetail("CTDP240306-01", "Suite", "", "BG03 - Suite", "CTBG05",
-                        LocalDate.of(2026, 3, 14), LocalDate.of(2026, 3, 16), 2, 4200000, 0, "Đã hủy", "Chưa gán phòng", "")));
     }
 
     private BookingRecord createSampleBooking(String maDatPhong, String maKhachHang, String khachHang, String soDienThoai, String cccd,
@@ -1172,54 +1144,6 @@ public class DatPhongGUI extends JFrame {
 
         private void loadSampleBookingDetailRows() {
             detailRows.clear();
-            String bookingCode = txtMaBooking != null && !txtMaBooking.getText().trim().isEmpty()
-                    ? txtMaBooking.getText().trim()
-                    : (editing && editingBooking != null ? editingBooking.maDatPhong : "DP_DEMO");
-            detailRows.add(createSampleDetailRow(
-                    bookingCode + "-CT01",
-                    "Standard",
-                    "P101",
-                    "BG01 - Standard",
-                    "CTBG01",
-                    LocalDate.of(2026, 3, 10),
-                    LocalDate.of(2026, 3, 11),
-                    2,
-                    650000,
-                    200000,
-                    "Mới tạo",
-                    "Phòng gần cửa sổ",
-                    "Demo detail 1"
-            ));
-            detailRows.add(createSampleDetailRow(
-                    bookingCode + "-CT02",
-                    "Standard",
-                    "P102",
-                    "BG01 - Standard",
-                    "CTBG02",
-                    LocalDate.of(2026, 3, 10),
-                    LocalDate.of(2026, 3, 11),
-                    2,
-                    650000,
-                    200000,
-                    "Mới tạo",
-                    "Phòng không hút thuốc",
-                    "Demo detail 2"
-            ));
-            detailRows.add(createSampleDetailRow(
-                    bookingCode + "-CT03",
-                    "Deluxe",
-                    "P201",
-                    "BG02 - Deluxe",
-                    "CTBG03",
-                    LocalDate.of(2026, 3, 10),
-                    LocalDate.of(2026, 3, 12),
-                    3,
-                    900000,
-                    300000,
-                    "Mới tạo",
-                    "Thêm nệm phụ",
-                    "Demo detail 3"
-            ));
         }
 
         private BookingDetailRecord createSampleDetailRow(String maChiTiet, String loaiPhong, String maPhong, String maBangGia,

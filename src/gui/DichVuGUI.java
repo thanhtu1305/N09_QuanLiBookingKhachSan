@@ -447,16 +447,7 @@ public class DichVuGUI extends JFrame {
 
     private void seedSampleData() {
         serviceCatalogs.clear();
-        serviceCatalogs.add(new ServiceCatalogRecord("DV001", "Nước suối", "Minibar", 15000, "chai", "Đang áp dụng", "Nước suối 500ml đặt trong minibar."));
-        serviceCatalogs.add(new ServiceCatalogRecord("DV002", "Giặt ủi", "Giặt là", 50000, "kg", "Đang áp dụng", "Giặt và giao lại trong ngày cho khách lưu trú."));
-        serviceCatalogs.add(new ServiceCatalogRecord("DV003", "Bữa sáng", "Ăn uống", 90000, "suất", "Đang áp dụng", "Buffet sáng tại nhà hàng từ 6h00 đến 9h30."));
-        serviceCatalogs.add(new ServiceCatalogRecord("DV004", "Đưa đón sân bay", "Di chuyển", 250000, "lượt", "Ngừng áp dụng", "Dịch vụ xe riêng theo khung giờ đặt trước."));
-
         allServiceUsages.clear();
-        allServiceUsages.add(ServiceUsageRecord.create("PSDV001", "HS001", "Nguyễn Minh Anh / P202", "Đang ở", serviceCatalogs.get(0), 2, "10:30 19/03/2026", "Lễ tân Lan", "Mới ghi nhận"));
-        allServiceUsages.add(ServiceUsageRecord.create("PSDV002", "HS002", "Lê Thu Hà / P502", "Đang ở", serviceCatalogs.get(2), 3, "07:15 19/03/2026", "Lễ tân Minh", "Mới ghi nhận"));
-        allServiceUsages.add(ServiceUsageRecord.create("PSDV003", "HS002", "Lê Thu Hà / P502", "Đang ở", serviceCatalogs.get(1), 1, "12:00 18/03/2026", "Lễ tân Minh", "Đã chốt"));
-        allServiceUsages.add(ServiceUsageRecord.create("PSDV004", "HS003", "Trần Hoài Nam / P203", "Đã check-out", serviceCatalogs.get(3), 1, "08:00 17/03/2026", "Lễ tân Huy", "Đã chốt"));
     }
 
     private void reloadSampleData(boolean showMessage) {

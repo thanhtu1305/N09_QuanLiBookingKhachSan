@@ -483,20 +483,6 @@ public class NhanVienGUI extends JFrame {
 
     private void seedSampleData() {
         allEmployees.clear();
-        allEmployees.add(EmployeeRecord.create("NV001", "Nguyễn Hải", "10/10/1992", "Nam", "079100000111", "0901111111",
-                "Lễ tân", "Trưởng ca", "Ca sáng", "01/03/2022", "Hoạt động", "hai.nguyen@hotel.com", "Quận 7, TP.HCM",
-                "Quản lý khu vực lễ tân buổi sáng.", true));
-        allEmployees.add(EmployeeRecord.create("NV002", "Trần Mai", "21/06/1996", "Nữ", "079100000222", "0902222222",
-                "Lễ tân", "Nhân viên", "Ca chiều", "15/08/2023", "Hoạt động", "mai.tran@hotel.com", "Quận 10, TP.HCM",
-                "Ưu tiên xử lý phòng VIP.", false));
-        allEmployees.add(EmployeeRecord.create("NV003", "Phạm Khôi", "03/01/1989", "Nam", "079100000333", "0903333333",
-                "Lễ tân", "Nhân viên", "Giờ hành chính", "20/02/2021", "Hoạt động", "khoi.pham@hotel.com", "Bình Thạnh, TP.HCM",
-                "Theo dõi đối soát doanh thu.", true));
-        EmployeeRecord nv4 = EmployeeRecord.create("NV004", "Lê Quỳnh", "15/12/1997", "Nữ", "079100000444", "0904444444",
-                "Lễ tân", "Nhân viên", "Ca tối", "09/11/2024", "Tạm ngừng", "quynh.le@hotel.com", "Thủ Đức, TP.HCM",
-                "Đang tạm nghỉ theo lịch cá nhân.", true);
-        nv4.username = "quynh.le";
-        allEmployees.add(nv4);
     }
 
     private void reloadSampleData(boolean showMessage) {

@@ -187,13 +187,12 @@ public class DashboardGUI extends JFrame {
         kpiSection.setAlignmentX(Component.LEFT_ALIGNMENT);
         kpiSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, kpiSection.getPreferredSize().height));
 
-        // Wrap JSplitPane trong một JPanel để căn trái đúng
+        // Wrap JSplitPane trong mot JPanel de can trai dung
         JSplitPane splitPane = buildMainSplitPanels();
         JPanel splitWrapper = new JPanel(new BorderLayout());
         splitWrapper.setOpaque(false);
         splitWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
         splitWrapper.add(splitPane, BorderLayout.CENTER);
-
         content.add(kpiSection);
         content.add(Box.createVerticalStrut(12));
         content.add(splitWrapper);
@@ -501,11 +500,7 @@ public class DashboardGUI extends JFrame {
     }
 
     private void seedTaskTable() {
-        taskTableModel.addRow(new Object[]{"DP0268", "Nguyễn Lan", "14:00", "Chờ CI"});
-        taskTableModel.addRow(new Object[]{"DP0269", "Trần Phú", "Ngay", "Chưa gán phòng"});
-        taskTableModel.addRow(new Object[]{"ST0316", "P203", "11:30", "Sắp check-out"});
-        taskTableModel.addRow(new Object[]{"HD1050", "P502", "Ngay", "Chờ thanh toán"});
-        taskTableModel.addRow(new Object[]{"P105", "Điều hòa", "Trong ngày", "Bảo trì"});
+        taskTableModel.setRowCount(0);
     }
 
     private void updateTaskDetail(int row) {

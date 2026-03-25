@@ -549,10 +549,6 @@ public class LoaiPhongGUI extends JFrame {
 
     private void seedSampleData() {
         allTypes.clear();
-        allTypes.add(RoomTypeRecord.create("LP01", "Standard", "Phòng tiêu chuẩn cho khách công tác và lưu trú ngắn ngày.", 2, 3, 24.0, "1 giường Queen", "Đang áp dụng", 650000));
-        allTypes.add(RoomTypeRecord.create("LP02", "Deluxe", "Phòng cao cấp với không gian rộng hơn và góc làm việc riêng.", 2, 4, 32.0, "1 giường King", "Đang áp dụng", 950000));
-        allTypes.add(RoomTypeRecord.create("LP03", "Suite", "Phòng hạng sang dành cho khách VIP và gia đình nhỏ.", 3, 5, 45.0, "1 giường King + Sofa bed", "Đang áp dụng", 1450000));
-        allTypes.add(RoomTypeRecord.create("LP04", "Family", "Phòng gia đình diện tích lớn, phù hợp khách đoàn nhỏ.", 4, 6, 50.0, "2 giường đôi", "Ngừng áp dụng", 1250000));
     }
 
     private void reloadSampleData(boolean showMessage) {

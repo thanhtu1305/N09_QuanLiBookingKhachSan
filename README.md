@@ -42,6 +42,22 @@ N09_HotelPMS/
 - `docs/`: tai lieu bo sung cua do an
 - `lib/`: thu vien `.jar` duoc them thu cong
 
+## Cau hinh SQL Server
+- Project ket noi SQL Server bang JDBC qua `src/db/ConnectDB.java`.
+- Cau hinh mac dinh:
+  - `DB_HOST=localhost`
+  - `DB_PORT=1433`
+  - `DB_NAME=QLKS`
+  - `DB_USER=sa`
+  - `DB_PASSWORD=123456`
+- Co the doi cau hinh theo 2 cach:
+  - Dat bien moi truong Windows theo file mau `db.example.properties`
+  - Hoac them VM options trong IntelliJ, vi du:
+    `-DDB_HOST=localhost -DDB_PORT=1433 -DDB_NAME=QLKS -DDB_USER=sa -DDB_PASSWORD=your_password`
+- JDBC URL duoc tao theo mau:
+  `jdbc:sqlserver://<host>:<port>;databaseName=<db>;encrypt=true;trustServerCertificate=true`
+- Can add SQL Server JDBC driver vao module dependency, vi du `mssql-jdbc-12.x.x.jre11.jar`.
+
 ## Luu y khi dua len GitHub
 - Khong dua `out/`, `.idea/`, `*.iml`, `*.class` len repo
 - Neu da tung commit cac file build, can remove khoi Git tracking truoc khi push

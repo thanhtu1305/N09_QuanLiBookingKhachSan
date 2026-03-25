@@ -552,12 +552,6 @@ public class CheckInOutGUI extends JFrame {
 
     private void seedSampleData() {
         allRecords.clear();
-        allRecords.add(new StayRecord("HS240401", "DP240301", "Nguyễn Minh Anh", "101", "Standard", "Đã đặt", "500.000", "150.000", "Khách đến sớm, giữ phòng gần sảnh.", "08:30", "12:00 11/03", "Chờ check-in", "Tầng 1", "Ca sáng"));
-        allRecords.add(new StayRecord("HS240402", "DP240302", "Trần Hoài Nam", "202", "Deluxe", "Đang ở", "1.000.000", "320.000", "Đã dùng minibar và giặt ủi.", "14:05", "12:00 12/03", "Đang ở", "Tầng 2", "Ca chiều"));
-        allRecords.add(new StayRecord("HS240403", "DP240303", "Lê Thu Hà", "502", "Suite", "Đang ở", "2.500.000", "780.000", "Khách VIP, ưu tiên check-out nhanh.", "15:20", "12:00 13/03", "Chờ check-out", "Tầng 5", "Ca tối"));
-        allRecords.add(new StayRecord("HS240404", "DP240304", "Phạm Quốc Bảo", "103", "Standard", "Dọn dẹp", "0", "0", "Chưa check-in, phòng đang hoàn tất vệ sinh.", "17:10", "12:00 13/03", "Chờ check-in", "Tầng 1", "Ca chiều"));
-        allRecords.add(new StayRecord("HS240405", "DP240305", "Võ Ngọc Linh", "303", "Deluxe", "Đang ở", "800.000", "220.000", "Cần hỗ trợ thêm gối phụ.", "11:15", "12:00 15/03", "Đang ở", "Tầng 3", "Ca sáng"));
-        allRecords.add(new StayRecord("HS240406", "DP240306", "Đặng Gia Huy", "501", "Suite", "Bảo trì", "0", "0", "Phòng khóa để bảo trì, booking đã hủy.", "19:00", "12:00 16/03", "Đã check-out", "Tầng 5", "Ca tối"));
     }
 
     private void reloadSampleData(boolean showMessage) {

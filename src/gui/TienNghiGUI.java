@@ -1,5 +1,7 @@
 package gui;
 
+import dao.TienNghiDAO;
+import entity.TienNghi;
 import gui.common.AppBranding;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -13,6 +15,7 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -37,7 +40,6 @@ import java.awt.GridLayout;
 import java.awt.Insets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public class TienNghiGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -54,6 +56,7 @@ public class TienNghiGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private final TienNghiDAO tienNghiDAO = new TienNghiDAO();
     private JPanel rootPanel;
     private final List<AmenityRecord> allAmenities = new ArrayList<AmenityRecord>();
     private final List<AmenityRecord> filteredAmenities = new ArrayList<AmenityRecord>();
@@ -158,7 +161,7 @@ public class TienNghiGUI extends JFrame {
         card.add(createPrimaryButton("Thêm tiện nghi", new Color(22, 163, 74), Color.WHITE, e -> openCreateAmenityDialog()));
         card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateAmenityDialog()));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateAmenityDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true)));
+        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> resetForm(true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -477,50 +480,59 @@ public class TienNghiGUI extends JFrame {
 
     private void seedSampleData() {
         allAmenities.clear();
-        allAmenities.add(AmenityRecord.create("TN001", "WiFi", "Cơ bản", "Đang áp dụng", 1, "Internet tốc độ cao phủ toàn bộ phòng.", "Có mặt ở hầu hết các phòng.", "Deluxe, Superior, Standard", "P101, P203, P502"));
-        allAmenities.add(AmenityRecord.create("TN002", "TV", "Giải trí", "Đang áp dụng", 2, "TV màn hình phẳng với truyền hình cáp.", "Dùng làm tiện nghi mặc định phổ biến.", "Deluxe, Superior", "P101, P202"));
-        allAmenities.add(AmenityRecord.create("TN003", "Điều hòa", "Cơ bản", "Đang áp dụng", 3, "Điều hòa inverter hai chiều.", "Bắt buộc với hầu hết cấu hình mới.", "Deluxe, Superior, Standard", "P101, P103, P202"));
-        allAmenities.add(AmenityRecord.create("TN004", "Bồn tắm", "Phòng tắm", "Đang áp dụng", 6, "Bồn tắm nằm dành cho phòng hạng sang.", "Chỉ áp dụng cho hạng phòng cao cấp.", "Suite, Deluxe", "P502"));
-        allAmenities.add(AmenityRecord.create("TN005", "Máy sấy tóc", "Tiện nghi bổ sung", "Ngừng áp dụng", 7, "Máy sấy tóc công suất 1200W.", "Lịch sử cũ vẫn được giữ nguyên.", "Suite", "P404"));
-        allAmenities.add(AmenityRecord.create("TN006", "Khóa từ", "An toàn", "Đang áp dụng", 4, "Khóa từ tích hợp kiểm soát ra vào.", "Ưu tiên cao trong cấu hình mới.", "Deluxe, Superior", "P101, P203"));
+        filteredAmenities.clear();
     }
 
     private void reloadSampleData(boolean showMessage) {
         cboNhomTienNghi.setSelectedIndex(0);
         cboTrangThai.setSelectedIndex(0);
         txtTuKhoa.setText("");
-        applyFilters(false);
+        loadAmenities(null, null, null);
         if (showMessage) {
             showSuccess("Đã làm mới dữ liệu tiện nghi.");
         }
     }
 
+    private void resetForm(boolean showMessage) {
+        tblTienNghi.clearSelection();
+        reloadSampleData(showMessage);
+    }
+
     private void applyFilters(boolean showMessage) {
-        filteredAmenities.clear();
-
-        String nhomTienNghi = valueOf(cboNhomTienNghi.getSelectedItem());
-        String trangThai = valueOf(cboTrangThai.getSelectedItem());
-        String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
-
-        for (AmenityRecord amenity : allAmenities) {
-            if (!"Tất cả".equals(nhomTienNghi) && !amenity.nhomTienNghi.equals(nhomTienNghi)) {
-                continue;
-            }
-            if (!"Tất cả".equals(trangThai) && !amenity.trangThai.equals(trangThai)) {
-                continue;
-            }
-            if (!tuKhoa.isEmpty()) {
-                String source = (amenity.maTienNghi + " " + amenity.tenTienNghi + " " + amenity.nhomTienNghi).toLowerCase(Locale.ROOT);
-                if (!source.contains(tuKhoa)) {
-                    continue;
-                }
-            }
-            filteredAmenities.add(amenity);
-        }
-
-        refillTable();
+        loadAmenities(
+                txtTuKhoa.getText(),
+                normalizeFilterValue(valueOf(cboNhomTienNghi.getSelectedItem())),
+                normalizeFilterValue(valueOf(cboTrangThai.getSelectedItem()))
+        );
         if (showMessage) {
             showSuccess("Đã lọc được " + filteredAmenities.size() + " tiện nghi phù hợp.");
+        }
+    }
+
+    private void loadAmenities(String keyword, String nhomTienNghi, String trangThai) {
+        allAmenities.clear();
+        filteredAmenities.clear();
+        try {
+            List<TienNghi> tienNghiList;
+            if (isBlank(keyword) && isBlank(nhomTienNghi) && isBlank(trangThai)) {
+                tienNghiList = tienNghiDAO.getAll();
+            } else {
+                tienNghiList = tienNghiDAO.search(
+                        keyword == null ? "" : keyword.trim(),
+                        nhomTienNghi == null ? "" : nhomTienNghi.trim(),
+                        trangThai == null ? "" : trangThai.trim()
+                );
+            }
+            for (TienNghi tienNghi : tienNghiList) {
+                AmenityRecord record = AmenityRecord.fromEntity(tienNghi);
+                allAmenities.add(record);
+                filteredAmenities.add(record);
+            }
+            refillTable();
+        } catch (RuntimeException ex) {
+            tableModel.setRowCount(0);
+            clearDetailPanel();
+            showError(ex.getMessage());
         }
     }
 
@@ -606,7 +618,7 @@ public class TienNghiGUI extends JFrame {
 
     private void refreshAmenityViews(AmenityRecord amenity, String message) {
         applyFilters(false);
-        selectAmenity(amenity);
+        selectAmenityById(parseAmenityId(amenity == null ? null : amenity.maTienNghi));
         showSuccess(message);
     }
 
@@ -626,6 +638,27 @@ public class TienNghiGUI extends JFrame {
         }
     }
 
+    private void selectAmenityById(int maTienNghi) {
+        if (maTienNghi <= 0) {
+            if (!filteredAmenities.isEmpty()) {
+                tblTienNghi.setRowSelectionInterval(0, 0);
+                updateDetailPanel(filteredAmenities.get(0));
+            } else {
+                clearDetailPanel();
+            }
+            return;
+        }
+        for (int i = 0; i < filteredAmenities.size(); i++) {
+            AmenityRecord amenity = filteredAmenities.get(i);
+            if (parseAmenityId(amenity.maTienNghi) == maTienNghi) {
+                tblTienNghi.setRowSelectionInterval(i, i);
+                updateDetailPanel(amenity);
+                return;
+            }
+        }
+        clearDetailPanel();
+    }
+
     private JPanel buildFooter() {
         return ScreenUIHelper.createShortcutBar(
                 CARD_BG,
@@ -643,7 +676,7 @@ public class TienNghiGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F1", "tiennghi-f1", this::openCreateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "F2", "tiennghi-f2", this::openUpdateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "tiennghi-f3", this::openDeactivateAmenityDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "tiennghi-f5", () -> reloadSampleData(true));
+        ScreenUIHelper.registerShortcut(this, "F5", "tiennghi-f5", () -> resetForm(true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "tiennghi-enter", this::openAmenityDetailDialog);
     }
 
@@ -653,6 +686,26 @@ public class TienNghiGUI extends JFrame {
 
     private String valueOf(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private String normalizeFilterValue(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return "Tất cả".equalsIgnoreCase(normalized) ? "" : normalized;
+    }
+
+    private int parseAmenityId(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     private int parsePositiveInteger(String value, int fallback) {
@@ -821,15 +874,13 @@ public class TienNghiGUI extends JFrame {
             txtUuTien = createInputField(amenity == null ? "1" : String.valueOf(amenity.uuTienHienThi));
             txtMoTaDialog = createDialogTextArea(4);
             txtGhiChuDialog = createDialogTextArea(3);
+            txtMaTienNghiDialog.setEditable(false);
 
             if (amenity != null) {
                 cboNhomTienNghiDialog.setSelectedItem(amenity.nhomTienNghi);
                 cboTrangThaiDialog.setSelectedItem(amenity.trangThai);
                 txtMoTaDialog.setText(amenity.moTa);
                 txtGhiChuDialog.setText(amenity.ghiChu);
-                if (amenity.isInUse()) {
-                    txtMaTienNghiDialog.setEditable(false);
-                }
             }
 
             addFormRow(form, gbc, 0, "Mã tiện nghi", txtMaTienNghiDialog);
@@ -856,73 +907,104 @@ public class TienNghiGUI extends JFrame {
         }
 
         private void submit(boolean createAnother) {
-            String maTienNghi = txtMaTienNghiDialog.getText().trim();
             String tenTienNghi = txtTenTienNghiDialog.getText().trim();
             String nhomTienNghi = valueOf(cboNhomTienNghiDialog.getSelectedItem());
-            int uuTien = parsePositiveInteger(txtUuTien.getText().trim(), 1);
-
-            if (maTienNghi.isEmpty()) {
-                showError("Mã tiện nghi không được rỗng.");
-                return;
-            }
+            String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem()).trim();
+            String moTa = txtMoTaDialog.getText().trim();
+            String ghiChu = txtGhiChuDialog.getText().trim();
             if (tenTienNghi.isEmpty()) {
-                showError("Tên tiện nghi bắt buộc nhập.");
+                JOptionPane.showMessageDialog(this, "Tên tiện nghi không được để trống.", "Thông báo", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             if (nhomTienNghi.isEmpty()) {
-                showError("Nhóm tiện nghi bắt buộc chọn.");
+                JOptionPane.showMessageDialog(this, "Nhóm tiện nghi không được để trống.", "Thông báo", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            if (uuTien < 0) {
-                showError("Mức ưu tiên hiển thị phải là giá trị hợp lệ.");
+            if (trangThai.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Trạng thái không được để trống.", "Thông báo", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            for (AmenityRecord existing : allAmenities) {
-                if (existing != amenity && existing.maTienNghi.equalsIgnoreCase(maTienNghi)) {
-                    showError("Mã tiện nghi không được trùng.");
-                    return;
-                }
+            int uuTien;
+            try {
+                uuTien = Integer.parseInt(txtUuTien.getText().trim());
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Ưu tiên phải là số nguyên hợp lệ.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                return;
             }
 
             if (amenity == null) {
-                AmenityRecord newAmenity = AmenityRecord.create(
-                        maTienNghi,
+                TienNghi tienNghi = new TienNghi(
                         tenTienNghi,
                         nhomTienNghi,
-                        valueOf(cboTrangThaiDialog.getSelectedItem()),
+                        trangThai,
                         uuTien,
-                        txtMoTaDialog.getText().trim(),
-                        txtGhiChuDialog.getText().trim(),
-                        "Chưa cấu hình",
-                        "Chưa cấu hình"
+                        moTa + (ghiChu.isEmpty() ? "" : System.lineSeparator() + ghiChu)
                 );
-                allAmenities.add(0, newAmenity);
+                try {
+                    if (!tienNghiDAO.insert(tienNghi)) {
+                        showError("Không thể thêm tiện nghi.");
+                        return;
+                    }
+                } catch (RuntimeException ex) {
+                    showError(ex.getMessage());
+                    return;
+                }
                 applyFilters(false);
-                selectAmenity(newAmenity);
+                selectLatestAmenity(tenTienNghi, nhomTienNghi, trangThai, uuTien, moTa, ghiChu);
                 showSuccess("Thêm tiện nghi thành công.");
                 if (createAnother) {
-                    txtMaTienNghiDialog.setText("");
-                    txtTenTienNghiDialog.setText("");
-                    txtUuTien.setText("1");
-                    txtMoTaDialog.setText("");
-                    txtGhiChuDialog.setText("");
-                    cboNhomTienNghiDialog.setSelectedIndex(0);
-                    cboTrangThaiDialog.setSelectedItem("Đang áp dụng");
-                    txtMaTienNghiDialog.requestFocusInWindow();
+                    resetEditorForm();
                 } else {
                     dispose();
                 }
                 return;
             }
 
-            amenity.tenTienNghi = tenTienNghi;
-            amenity.nhomTienNghi = nhomTienNghi;
-            amenity.trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
-            amenity.uuTienHienThi = uuTien;
-            amenity.moTa = txtMoTaDialog.getText().trim();
-            amenity.ghiChu = txtGhiChuDialog.getText().trim();
-            refreshAmenityViews(amenity, "Cập nhật tiện nghi thành công.");
+            TienNghi tienNghi = new TienNghi(
+                    parseAmenityId(amenity.maTienNghi),
+                    tenTienNghi,
+                    nhomTienNghi,
+                    trangThai,
+                    uuTien,
+                    moTa + (ghiChu.isEmpty() ? "" : System.lineSeparator() + ghiChu)
+            );
+            try {
+                if (!tienNghiDAO.update(tienNghi)) {
+                    showError("Không thể cập nhật tiện nghi.");
+                    return;
+                }
+            } catch (RuntimeException ex) {
+                showError(ex.getMessage());
+                return;
+            }
+            refreshAmenityViews(AmenityRecord.fromEntity(tienNghi), "Cập nhật tiện nghi thành công.");
             dispose();
+        }
+
+        private void resetEditorForm() {
+            txtMaTienNghiDialog.setText("");
+            txtTenTienNghiDialog.setText("");
+            txtUuTien.setText("1");
+            txtMoTaDialog.setText("");
+            txtGhiChuDialog.setText("");
+            cboNhomTienNghiDialog.setSelectedIndex(0);
+            cboTrangThaiDialog.setSelectedItem("Đang áp dụng");
+            txtTenTienNghiDialog.requestFocusInWindow();
+        }
+
+        private void selectLatestAmenity(String tenTienNghi, String nhomTienNghi, String trangThai, int uuTien, String moTa, String ghiChu) {
+            for (AmenityRecord item : filteredAmenities) {
+                if (tenTienNghi.equals(item.tenTienNghi)
+                        && nhomTienNghi.equals(item.nhomTienNghi)
+                        && trangThai.equals(item.trangThai)
+                        && uuTien == item.uuTienHienThi
+                        && moTa.equals(item.moTa)
+                        && ghiChu.equals(item.ghiChu)) {
+                    selectAmenity(item);
+                    return;
+                }
+            }
+            selectAmenityById(-1);
         }
     }
 
@@ -970,26 +1052,29 @@ public class TienNghiGUI extends JFrame {
         }
 
         private void submit() {
-            if (txtTuNgay.getText().trim().isEmpty()) {
-                showError("Từ ngày là trường bắt buộc.");
-                return;
-            }
-            if (txtLyDo.getText().trim().isEmpty()) {
-                showError("Vui lòng nhập lý do ngừng áp dụng.");
+            if (parseAmenityId(amenity.maTienNghi) <= 0) {
+                showError("Không xác định được tiện nghi cần xóa.");
                 return;
             }
             if (!showConfirmDialog(
-                    "Xác nhận ngừng áp dụng tiện nghi",
-                    "Tiện nghi này sẽ không còn được dùng cho cấu hình mới. Bạn có muốn tiếp tục không?",
-                    "Đồng ý",
+                    "Xác nhận xóa tiện nghi",
+                    "Tiện nghi này sẽ bị xóa khỏi danh mục. Bạn có muốn tiếp tục không?",
+                    "Xóa",
                     new Color(245, 158, 11)
             )) {
                 return;
             }
-
-            amenity.trangThai = "Ngừng áp dụng";
-            amenity.ghiChu = txtGhiChu.getText().trim().isEmpty() ? txtLyDo.getText().trim() : txtGhiChu.getText().trim();
-            refreshAmenityViews(amenity, "Ngừng áp dụng tiện nghi thành công.");
+            try {
+                if (!tienNghiDAO.delete(parseAmenityId(amenity.maTienNghi))) {
+                    showError("Không thể xóa tiện nghi.");
+                    return;
+                }
+            } catch (RuntimeException ex) {
+                showError(ex.getMessage());
+                return;
+            }
+            reloadSampleData(false);
+            showSuccess("Xóa tiện nghi thành công.");
             dispose();
         }
     }
@@ -1095,6 +1180,29 @@ public class TienNghiGUI extends JFrame {
             record.suDungChoLoaiPhong = suDungChoLoaiPhong;
             record.suDungChoPhong = suDungChoPhong;
             return record;
+        }
+
+        private static AmenityRecord fromEntity(TienNghi tienNghi) {
+            String combined = tienNghi.getMoTa() == null ? "" : tienNghi.getMoTa().trim();
+            String moTa = combined;
+            String ghiChu = "";
+            String separator = System.lineSeparator();
+            int splitIndex = combined.indexOf(separator);
+            if (splitIndex >= 0) {
+                moTa = combined.substring(0, splitIndex).trim();
+                ghiChu = combined.substring(splitIndex + separator.length()).trim();
+            }
+            return create(
+                    String.valueOf(tienNghi.getMaTienNghi()),
+                    tienNghi.getTenTienNghi(),
+                    tienNghi.getNhomTienNghi(),
+                    tienNghi.getTrangThai(),
+                    tienNghi.getUuTien(),
+                    moTa,
+                    ghiChu,
+                    "",
+                    ""
+            );
         }
 
         private boolean isInUse() {

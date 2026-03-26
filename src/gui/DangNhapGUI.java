@@ -48,6 +48,7 @@ public class DangNhapGUI extends JFrame {
     private JPanel rootPanel;
     private JRadioButton rdoLeTan;
     private JRadioButton rdoQuanLi;
+    private JButton btnLogin;
 
     public DangNhapGUI() {
         setTitle("Đăng nhập - " + AppBranding.APP_DISPLAY_NAME);
@@ -69,6 +70,7 @@ public class DangNhapGUI extends JFrame {
 
         rootPanel = root;
         setContentPane(root);
+        getRootPane().setDefaultButton(btnLogin);
     }
 
     private JPanel buildCenterContainer() {
@@ -208,11 +210,13 @@ public class DangNhapGUI extends JFrame {
         JPanel panel = new JPanel(new GridLayout(2, 2, 10, 10));
         panel.setOpaque(false);
 
-        JButton btnLogin = createActionButton("Đăng nhập", new Color(22, 163, 74));
+        btnLogin = createActionButton("Đăng nhập", new Color(22, 163, 74));
         JButton btnClear = createActionButton("Xóa trắng", new Color(37, 99, 235));
         JButton btnForgot = createActionButton("Quên mật khẩu", new Color(245, 158, 11));
         JButton btnExit = createActionButton("Thoát", new Color(220, 38, 38));
 
+        txtUsername.addActionListener(e -> txtPassword.requestFocusInWindow());
+        txtPassword.addActionListener(e -> onLogin());
         btnLogin.addActionListener(e -> onLogin());
         btnClear.addActionListener(e -> onClear());
         btnForgot.addActionListener(e -> JOptionPane.showMessageDialog(

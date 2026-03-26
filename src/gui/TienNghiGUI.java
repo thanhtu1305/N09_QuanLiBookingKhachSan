@@ -289,8 +289,9 @@ public class TienNghiGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
         lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        JPanel body = new JPanel(new GridLayout(5, 2, 10, 8));
+        JPanel body = new JPanel();
         body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
         lblMaTienNghi = createValueLabel();
         lblTenTienNghi = createValueLabel();
@@ -330,8 +331,9 @@ public class TienNghiGUI extends JFrame {
         lblHint.setFont(BODY_FONT);
         lblHint.setForeground(TEXT_MUTED);
 
-        JPanel body = new JPanel(new GridLayout(2, 2, 10, 8));
+        JPanel body = new JPanel();
         body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
         lblUsedByRoomTypes = createValueLabel();
         lblUsedByRooms = createValueLabel();
         addDetailRow(body, "Loại phòng", lblUsedByRoomTypes);
@@ -437,17 +439,25 @@ public class TienNghiGUI extends JFrame {
     }
 
     private void addDetailRow(JPanel panel, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(0, 0, 8, 0));
+
         JLabel lbl = new JLabel(label + ":");
         lbl.setFont(BODY_FONT);
         lbl.setForeground(TEXT_MUTED);
-        panel.add(lbl);
-        panel.add(value);
+        lbl.setPreferredSize(new Dimension(145, 20));
+
+        row.add(lbl, BorderLayout.WEST);
+        row.add(value, BorderLayout.CENTER);
+        panel.add(row);
     }
 
     private JLabel createValueLabel() {
         JLabel label = new JLabel("-");
         label.setFont(new Font("Segoe UI", Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
+        label.setVerticalAlignment(SwingConstants.TOP);
         return label;
     }
 
@@ -455,7 +465,21 @@ public class TienNghiGUI extends JFrame {
         JLabel label = new JLabel(value);
         label.setFont(new Font("Segoe UI", Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
+        label.setVerticalAlignment(SwingConstants.TOP);
         return label;
+    }
+
+    private void setWrappedValue(JLabel label, String value) {
+        String safe = value == null || value.trim().isEmpty() ? "-" : value.trim();
+        String escaped = safe
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .replace("\n", "<br/>");
+        label.setText("<html><div style='width: 240px;'>" + escaped + "</div></html>");
     }
 
     private JPanel createCardPanel(BorderLayout layout) {
@@ -558,28 +582,28 @@ public class TienNghiGUI extends JFrame {
 
     private void updateDetailPanel(AmenityRecord amenity) {
         lblMaTienNghi.setText(amenity.maTienNghi);
-        lblTenTienNghi.setText(amenity.tenTienNghi);
+        setWrappedValue(lblTenTienNghi, amenity.tenTienNghi);
         lblNhomTienNghi.setText(amenity.nhomTienNghi);
         lblTrangThaiChiTiet.setText(amenity.trangThai);
         lblUuTien.setText(String.valueOf(amenity.uuTienHienThi));
         txtMoTa.setText(amenity.moTa);
         txtGhiChu.setText(amenity.ghiChu);
-        lblUsedByRoomTypes.setText(safeValue(amenity.suDungChoLoaiPhong, "Chưa có"));
-        lblUsedByRooms.setText(safeValue(amenity.suDungChoPhong, "Chưa có"));
+        setWrappedValue(lblUsedByRoomTypes, safeValue(amenity.suDungChoLoaiPhong, "Chưa có"));
+        setWrappedValue(lblUsedByRooms, safeValue(amenity.suDungChoPhong, "Chưa có"));
         txtMoTa.setCaretPosition(0);
         txtGhiChu.setCaretPosition(0);
     }
 
     private void clearDetailPanel() {
         lblMaTienNghi.setText("-");
-        lblTenTienNghi.setText("-");
+        setWrappedValue(lblTenTienNghi, "-");
         lblNhomTienNghi.setText("-");
         lblTrangThaiChiTiet.setText("-");
         lblUuTien.setText("-");
         txtMoTa.setText("Không có dữ liệu phù hợp.");
         txtGhiChu.setText("Không có dữ liệu phù hợp.");
-        lblUsedByRoomTypes.setText("-");
-        lblUsedByRooms.setText("-");
+        setWrappedValue(lblUsedByRoomTypes, "-");
+        setWrappedValue(lblUsedByRooms, "-");
     }
 
     private AmenityRecord getSelectedAmenity() {

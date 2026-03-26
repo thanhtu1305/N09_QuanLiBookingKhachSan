@@ -1,5 +1,9 @@
 package gui;
 
+import dao.DichVuDAO;
+import dao.SuDungDichVuDAO;
+import entity.DichVu;
+import entity.SuDungDichVu;
 import gui.common.AppBranding;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -13,6 +17,7 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -20,22 +25,24 @@ import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 public class DichVuGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -48,45 +55,39 @@ public class DichVuGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
-    private static final String[] SERVICE_GROUP_OPTIONS = {"Minibar", "Giặt là", "Ăn uống", "Di chuyển"};
+    private static final String AUTO_CODE_TEXT = "AUTO";
+    private static final String FILTER_ALL = "Tất cả";
 
     private final String username;
     private final String role;
-    private JPanel rootPanel;
-    private final List<ServiceCatalogRecord> serviceCatalogs = new ArrayList<ServiceCatalogRecord>();
-    private final List<ServiceUsageRecord> allServiceUsages = new ArrayList<ServiceUsageRecord>();
-    private final List<ServiceUsageRecord> filteredServiceUsages = new ArrayList<ServiceUsageRecord>();
+    private final DichVuDAO dichVuDAO = new DichVuDAO();
+    private final SuDungDichVuDAO suDungDichVuDAO = new SuDungDichVuDAO();
+    private final List<DichVu> allServices = new ArrayList<DichVu>();
+    private final List<DichVu> filteredServices = new ArrayList<DichVu>();
 
+    private JPanel rootPanel;
     private JTable tblDichVu;
     private DefaultTableModel tableModel;
-    private JComboBox<String> cboNhomDichVu;
-    private JComboBox<String> cboTrangThai;
+    private JComboBox<String> cboDonVi;
     private JTextField txtTuKhoa;
-
-    private JLabel lblMaPhatSinh;
-    private JLabel lblHoSo;
-    private JLabel lblKhachPhong;
-    private JLabel lblNhomDichVu;
+    private JLabel lblMaDichVu;
     private JLabel lblTenDichVu;
-    private JLabel lblThanhTien;
-    private JLabel lblTrangThaiChiTiet;
-    private JTextArea txtMoTa;
+    private JLabel lblDonGia;
+    private JLabel lblDonVi;
+    private JTextArea txtLichSu;
 
     public DichVuGUI() {
         this("guest", "Lễ tân");
     }
 
     public DichVuGUI(String username, String role) {
-        this.username = safeValue(username, "guest");
-        this.role = safeValue(role, "Lễ tân");
-
+        this.username = username == null || username.trim().isEmpty() ? "guest" : username.trim();
+        this.role = role == null || role.trim().isEmpty() ? "Lễ tân" : role.trim();
         setTitle("Quản lý dịch vụ - Hotel PMS");
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-        seedSampleData();
         initUI();
-        reloadSampleData(false);
+        loadServices(true, false);
         registerShortcuts();
     }
 
@@ -94,10 +95,8 @@ public class DichVuGUI extends JFrame {
         JPanel root = new JPanel(new BorderLayout(16, 0));
         root.setBackground(APP_BG);
         root.setBorder(new EmptyBorder(12, 12, 12, 12));
-
         root.add(SidebarFactory.createSidebar(this, ScreenKey.DICH_VU, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
-
         rootPanel = root;
         setContentPane(root);
     }
@@ -105,1187 +104,813 @@ public class DichVuGUI extends JFrame {
     private JPanel buildMainContent() {
         JPanel main = new JPanel(new BorderLayout(0, 12));
         main.setOpaque(false);
-
         JPanel top = new JPanel();
         top.setOpaque(false);
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
         top.add(buildHeader());
         top.add(Box.createVerticalStrut(10));
-        top.add(buildActionBar());
+        top.add(buildActions());
         top.add(Box.createVerticalStrut(10));
-        top.add(buildFilterBar());
-
+        top.add(buildFilters());
         main.add(top, BorderLayout.NORTH);
-        main.add(buildCenterContent(), BorderLayout.CENTER);
-        main.add(buildFooter(), BorderLayout.SOUTH);
+        main.add(buildCenter(), BorderLayout.CENTER);
+        main.add(ScreenUIHelper.createShortcutBar(CARD_BG, BORDER_SOFT, TEXT_MUTED, "F1 Thêm", "F2 Cập nhật", "F3 Xóa", "F4 Sử dụng", "F5 Làm mới"), BorderLayout.SOUTH);
         return main;
     }
 
     private JPanel buildHeader() {
-        JPanel card = createCardPanel(new BorderLayout());
-
+        JPanel card = card(new BorderLayout());
         JPanel left = new JPanel();
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-
-        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("QUẢN LÝ DỊCH VỤ"));
-        lblTitle.setFont(TITLE_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-
-        JLabel lblSub = new JLabel("Theo dõi dịch vụ phát sinh theo hồ sơ lưu trú và quản lý danh mục dịch vụ nền của hệ thống.");
-        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        lblSub.setForeground(TEXT_MUTED);
-
-        JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
-        lblMeta.setFont(BODY_FONT);
-        lblMeta.setForeground(TEXT_MUTED);
-
-        left.add(lblTitle);
+        JLabel title = new JLabel(AppBranding.formatPageTitle("QUẢN LÝ DỊCH VỤ"));
+        title.setFont(TITLE_FONT);
+        title.setForeground(TEXT_PRIMARY);
+        JLabel sub = new JLabel("Quản lý danh mục dịch vụ và ghi nhận dịch vụ phát sinh theo lưu trú từ dữ liệu thật.");
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        sub.setForeground(TEXT_MUTED);
+        JLabel meta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
+        meta.setFont(BODY_FONT);
+        meta.setForeground(TEXT_MUTED);
+        left.add(title);
         left.add(Box.createVerticalStrut(6));
-        left.add(lblSub);
+        left.add(sub);
         left.add(Box.createVerticalStrut(6));
-        left.add(lblMeta);
-
+        left.add(meta);
         card.add(left, BorderLayout.WEST);
         card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "màn hình Dịch vụ"), BorderLayout.EAST);
         return card;
     }
 
-    private JPanel buildActionBar() {
-        JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Thêm dịch vụ", new Color(22, 163, 74), Color.WHITE, e -> openServiceUsageDialog(null)));
-        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateServiceUsageDialog()));
-        card.add(createPrimaryButton("Chốt dịch vụ", new Color(245, 158, 11), TEXT_PRIMARY, e -> openCloseServiceDialog()));
-        card.add(createPrimaryButton("Thêm danh mục", new Color(99, 102, 241), Color.WHITE, e -> openServiceCatalogDialog(null)));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true)));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
+    private JPanel buildActions() {
+        JPanel card = compactCard();
+        card.add(primary("Thêm dịch vụ", new Color(22, 163, 74), e -> openServiceDialog(null)));
+        card.add(primary("Cập nhật", new Color(37, 99, 235), e -> openServiceDialog(getSelectedService(true))));
+        card.add(primary("Xóa dịch vụ", new Color(220, 38, 38), e -> deleteSelectedService()));
+        card.add(primary("Sử dụng dịch vụ", new Color(99, 102, 241), e -> openUsageDialog(getSelectedService(false))));
+        card.add(primary("Làm mới", new Color(107, 114, 128), e -> loadServices(true, true)));
+        card.add(primary("Tìm kiếm", new Color(15, 118, 110), e -> applyFilters(true)));
         return card;
     }
 
-    private JPanel buildFilterBar() {
-        JPanel card = createCardPanel(new BorderLayout(12, 10));
-
+    private JPanel buildFilters() {
+        JPanel card = card(new BorderLayout(12, 10));
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
-
-        cboNhomDichVu = createComboBox(new String[]{"Tất cả", "Minibar", "Giặt là", "Ăn uống", "Di chuyển"});
-        cboTrangThai = createComboBox(new String[]{"Tất cả", "Mới ghi nhận", "Đã chốt", "Đã hủy"});
-        txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(290, 34));
-        txtTuKhoa.setToolTipText("Mã hồ sơ / khách / phòng / dịch vụ");
-
-        left.add(createFieldGroup("Nhóm dịch vụ", cboNhomDichVu));
-        left.add(createFieldGroup("Trạng thái", cboTrangThai));
-
+        cboDonVi = combo(new String[]{FILTER_ALL});
+        left.add(field("Đơn vị", cboDonVi));
+        txtTuKhoa = input("");
+        txtTuKhoa.setPreferredSize(new Dimension(300, 34));
         JPanel right = new JPanel();
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-
-        JLabel lblSearch = new JLabel("Tìm kiếm");
-        lblSearch.setFont(LABEL_FONT);
-        lblSearch.setForeground(TEXT_MUTED);
-        right.add(lblSearch);
+        JLabel lbl = new JLabel("Tìm kiếm");
+        lbl.setFont(LABEL_FONT);
+        lbl.setForeground(TEXT_MUTED);
+        right.add(lbl);
         right.add(Box.createVerticalStrut(4));
-
-        JPanel searchRow = new JPanel(new BorderLayout(8, 0));
-        searchRow.setOpaque(false);
-        searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
-        right.add(searchRow);
-
+        JPanel row = new JPanel(new BorderLayout(8, 0));
+        row.setOpaque(false);
+        row.add(txtTuKhoa, BorderLayout.CENTER);
+        row.add(outline("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
+        right.add(row);
         card.add(left, BorderLayout.CENTER);
         card.add(right, BorderLayout.EAST);
         return card;
     }
 
-    private JSplitPane buildCenterContent() {
-        JPanel left = buildTableCard();
-        JPanel right = buildDetailCard();
-
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
-        splitPane.setOpaque(false);
-        splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.58);
-        splitPane.setDividerSize(8);
-        splitPane.setContinuousLayout(true);
-        return splitPane;
-    }
-
-    private JPanel buildTableCard() {
-        JPanel titleRow = new JPanel(new BorderLayout());
-        titleRow.setOpaque(false);
-
-        JLabel lblTitle = new JLabel("Danh sách phát sinh dịch vụ");
-        lblTitle.setFont(SECTION_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-
-        JLabel lblSub = new JLabel("Chọn một dòng phát sinh để xem chi tiết và trạng thái chốt.");
-        lblSub.setFont(BODY_FONT);
-        lblSub.setForeground(TEXT_MUTED);
-
-        titleRow.add(lblTitle, BorderLayout.WEST);
-        titleRow.add(lblSub, BorderLayout.EAST);
-
-        String[] columns = {"Mã PSDV", "Hồ sơ", "Khách / Phòng", "Nhóm", "Dịch vụ", "Thành tiền", "Trạng thái"};
-        tableModel = new DefaultTableModel(columns, 0) {
+    private JSplitPane buildCenter() {
+        tableModel = new DefaultTableModel(new String[]{"Mã dịch vụ", "Tên dịch vụ", "Đơn giá", "Đơn vị"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
-
         tblDichVu = new JTable(tableModel);
         tblDichVu.setFont(BODY_FONT);
         tblDichVu.setRowHeight(32);
         tblDichVu.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tblDichVu.setGridColor(BORDER_SOFT);
-        tblDichVu.setShowGrid(true);
-        tblDichVu.setFillsViewportHeight(true);
         tblDichVu.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblDichVu.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblDichVu.getTableHeader().setForeground(TEXT_PRIMARY);
-
         tblDichVu.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                int row = tblDichVu.getSelectedRow();
-                if (row >= 0 && row < filteredServiceUsages.size()) {
-                    updateDetailPanel(filteredServiceUsages.get(row));
+                DichVu dichVu = getSelectedService(false);
+                if (dichVu != null) {
+                    updateDetail(dichVu);
                 }
             }
         });
-        ScreenUIHelper.registerTableDoubleClick(tblDichVu, this::openUpdateServiceUsageDialog);
+        ScreenUIHelper.registerTableDoubleClick(tblDichVu, () -> openServiceDialog(getSelectedService(true)));
 
-        JScrollPane scrollPane = new JScrollPane(tblDichVu);
-        scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        JPanel left = card(new BorderLayout(0, 10));
+        JPanel title = new JPanel(new BorderLayout());
+        title.setOpaque(false);
+        JLabel t1 = new JLabel("Danh sách dịch vụ");
+        t1.setFont(SECTION_FONT);
+        t1.setForeground(TEXT_PRIMARY);
+        JLabel t2 = new JLabel("Chọn một dòng để xem chi tiết.");
+        t2.setFont(BODY_FONT);
+        t2.setForeground(TEXT_MUTED);
+        title.add(t1, BorderLayout.WEST);
+        title.add(t2, BorderLayout.EAST);
+        left.add(title, BorderLayout.NORTH);
+        left.add(new JScrollPane(tblDichVu), BorderLayout.CENTER);
 
-        JPanel content = new JPanel(new BorderLayout(0, 10));
-        content.setOpaque(false);
-        content.add(titleRow, BorderLayout.NORTH);
-        content.add(scrollPane, BorderLayout.CENTER);
-
-        JPanel wrapper = createCardPanel(new BorderLayout());
-        wrapper.add(content, BorderLayout.CENTER);
-        return wrapper;
-    }
-
-    private JPanel buildDetailCard() {
-        JPanel card = createCardPanel(new BorderLayout());
-
-        JLabel lblTitle = new JLabel("Chi tiết dịch vụ phát sinh");
-        lblTitle.setFont(SECTION_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-        lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
-
-        JPanel body = new JPanel(new GridLayout(7, 2, 10, 8));
+        JPanel right = card(new BorderLayout(0, 10));
+        JLabel rt = new JLabel("Chi tiết dịch vụ");
+        rt.setFont(SECTION_FONT);
+        rt.setForeground(TEXT_PRIMARY);
+        right.add(rt, BorderLayout.NORTH);
+        JPanel body = new JPanel();
         body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        lblMaDichVu = value("-");
+        lblTenDichVu = value("-");
+        lblDonGia = value("-");
+        lblDonVi = value("-");
+        detailRow(body, "Mã dịch vụ", lblMaDichVu);
+        detailRow(body, "Tên dịch vụ", lblTenDichVu);
+        detailRow(body, "Đơn giá", lblDonGia);
+        detailRow(body, "Đơn vị", lblDonVi);
+        right.add(body, BorderLayout.CENTER);
 
-        lblMaPhatSinh = createValueLabel();
-        lblHoSo = createValueLabel();
-        lblKhachPhong = createValueLabel();
-        lblNhomDichVu = createValueLabel();
-        lblTenDichVu = createValueLabel();
-        lblThanhTien = createValueLabel();
-        lblTrangThaiChiTiet = createValueLabel();
+        txtLichSu = new JTextArea(10, 20);
+        txtLichSu.setEditable(false);
+        txtLichSu.setLineWrap(true);
+        txtLichSu.setWrapStyleWord(true);
+        txtLichSu.setFont(BODY_FONT);
+        txtLichSu.setBackground(PANEL_SOFT);
+        txtLichSu.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JPanel usageCard = new JPanel(new BorderLayout(0, 6));
+        usageCard.setOpaque(false);
+        JLabel usageTitle = new JLabel("Lịch sử sử dụng gần đây");
+        usageTitle.setFont(LABEL_FONT);
+        usageTitle.setForeground(TEXT_MUTED);
+        usageCard.add(usageTitle, BorderLayout.NORTH);
+        usageCard.add(new JScrollPane(txtLichSu), BorderLayout.CENTER);
+        right.add(usageCard, BorderLayout.SOUTH);
 
-        addDetailRow(body, "Mã phát sinh", lblMaPhatSinh);
-        addDetailRow(body, "Hồ sơ lưu trú", lblHoSo);
-        addDetailRow(body, "Khách / Phòng", lblKhachPhong);
-        addDetailRow(body, "Nhóm dịch vụ", lblNhomDichVu);
-        addDetailRow(body, "Tên dịch vụ", lblTenDichVu);
-        addDetailRow(body, "Thành tiền", lblThanhTien);
-        addDetailRow(body, "Trạng thái", lblTrangThaiChiTiet);
-
-        JPanel notePanel = new JPanel(new BorderLayout(0, 6));
-        notePanel.setOpaque(false);
-
-        JLabel lblNote = new JLabel("Ghi chú");
-        lblNote.setFont(LABEL_FONT);
-        lblNote.setForeground(TEXT_MUTED);
-
-        txtMoTa = new JTextArea(5, 20);
-        txtMoTa.setEditable(false);
-        txtMoTa.setLineWrap(true);
-        txtMoTa.setWrapStyleWord(true);
-        txtMoTa.setFont(BODY_FONT);
-        txtMoTa.setForeground(TEXT_PRIMARY);
-        txtMoTa.setBackground(PANEL_SOFT);
-        txtMoTa.setBorder(new EmptyBorder(8, 10, 8, 10));
-
-        JScrollPane noteScroll = new JScrollPane(txtMoTa);
-        noteScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-
-        notePanel.add(lblNote, BorderLayout.NORTH);
-        notePanel.add(noteScroll, BorderLayout.CENTER);
-
-        card.add(lblTitle, BorderLayout.NORTH);
-        card.add(body, BorderLayout.CENTER);
-        card.add(notePanel, BorderLayout.SOUTH);
-        return card;
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
+        split.setBorder(null);
+        split.setResizeWeight(0.58);
+        split.setDividerSize(8);
+        return split;
     }
 
-    private JPanel buildFooter() {
-        return ScreenUIHelper.createShortcutBar(
-                CARD_BG,
-                BORDER_SOFT,
-                TEXT_MUTED,
-                "F1 Thêm dịch vụ",
-                "F2 Cập nhật",
-                "F3 Chốt dịch vụ",
-                "F4 Thêm danh mục",
-                "F5 Làm mới",
-                "Enter Xem chi tiết"
-        );
-    }
-
-    private JPanel createFieldGroup(String label, Component component) {
-        JPanel group = new JPanel();
-        group.setOpaque(false);
-        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
-
-        JLabel lbl = new JLabel(label);
-        lbl.setFont(LABEL_FONT);
-        lbl.setForeground(TEXT_MUTED);
-
-        group.add(lbl);
-        group.add(Box.createVerticalStrut(4));
-        group.add(component);
-        return group;
-    }
-
-    private JComboBox<String> createComboBox(String[] values) {
-        JComboBox<String> comboBox = new JComboBox<String>(values);
-        comboBox.setFont(BODY_FONT);
-        comboBox.setPreferredSize(new Dimension(165, 34));
-        comboBox.setMaximumSize(new Dimension(220, 34));
-        return comboBox;
-    }
-
-    private JTextField createInputField(String value) {
-        JTextField field = new JTextField(value);
-        field.setFont(BODY_FONT);
-        field.setPreferredSize(new Dimension(180, 34));
-        field.setMaximumSize(new Dimension(320, 34));
-        return field;
-    }
-
-    private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
-        JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        button.setForeground(foreground);
-        button.setBackground(background);
-        button.setOpaque(true);
-        button.setContentAreaFilled(true);
-        button.setBorderPainted(true);
-        button.setFocusPainted(false);
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(background.darker(), 1, true),
-                new EmptyBorder(9, 14, 9, 14)
-        ));
-        button.addActionListener(listener);
-        return button;
-    }
-
-    private JButton createOutlineButton(String text, Color borderColor, java.awt.event.ActionListener listener) {
-        JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        button.setForeground(TEXT_PRIMARY);
-        button.setBackground(Color.WHITE);
-        button.setOpaque(true);
-        button.setContentAreaFilled(true);
-        button.setBorderPainted(true);
-        button.setFocusPainted(false);
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(borderColor, 1, true),
-                new EmptyBorder(8, 12, 8, 12)
-        ));
-        button.addActionListener(listener);
-        return button;
-    }
-
-    private void addDetailRow(JPanel panel, String label, JLabel value) {
-        JLabel lbl = new JLabel(label + ":");
-        lbl.setFont(BODY_FONT);
-        lbl.setForeground(TEXT_MUTED);
-        panel.add(lbl);
-        panel.add(value);
-    }
-
-    private JLabel createValueLabel() {
-        JLabel label = new JLabel("-");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        label.setForeground(TEXT_PRIMARY);
-        return label;
-    }
-
-    private JLabel createValueLabel(String value) {
-        JLabel label = new JLabel(value);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        label.setForeground(TEXT_PRIMARY);
-        return label;
-    }
-
-    private JPanel createCardPanel(BorderLayout layout) {
-        JPanel panel = new JPanel(layout);
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(12, 14, 12, 14)
-        ));
-        return panel;
-    }
-
-    private JPanel createCompactCardPanel(FlowLayout layout) {
-        JPanel panel = new JPanel(layout);
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(8, 10, 8, 10)
-        ));
-        return panel;
-    }
-
-    private void seedSampleData() {
-        serviceCatalogs.clear();
-        allServiceUsages.clear();
-    }
-
-    private void reloadSampleData(boolean showMessage) {
-        cboNhomDichVu.setSelectedIndex(0);
-        cboTrangThai.setSelectedIndex(0);
-        txtTuKhoa.setText("");
+    private void loadServices(boolean resetFilter, boolean showMessage) {
+        allServices.clear();
+        allServices.addAll(dichVuDAO.getAll());
+        refreshDonVi(resetFilter);
+        if (resetFilter) {
+            txtTuKhoa.setText("");
+        }
         applyFilters(false);
         if (showMessage) {
-            showSuccess("Đã làm mới dữ liệu dịch vụ.");
+            info("Đã làm mới dữ liệu dịch vụ.");
         }
     }
 
-    private void applyFilters(boolean showMessage) {
-        filteredServiceUsages.clear();
-
-        String nhomDichVu = valueOf(cboNhomDichVu.getSelectedItem());
-        String trangThai = valueOf(cboTrangThai.getSelectedItem());
-        String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
-
-        for (ServiceUsageRecord service : allServiceUsages) {
-            if (!"Tất cả".equals(nhomDichVu) && !service.nhomDichVu.equals(nhomDichVu)) {
-                continue;
+    private void refreshDonVi(boolean resetSelection) {
+        Set<String> ds = new LinkedHashSet<String>();
+        ds.add(FILTER_ALL);
+        for (DichVu d : allServices) {
+            if (d.getDonVi() != null && !d.getDonVi().trim().isEmpty()) {
+                ds.add(d.getDonVi().trim());
             }
-            if (!"Tất cả".equals(trangThai) && !service.trangThai.equals(trangThai)) {
-                continue;
-            }
-            if (!tuKhoa.isEmpty()) {
-                String source = (service.maPhatSinh + " " + service.hoSoLuuTru + " " + service.khachPhong + " " + service.tenDichVu).toLowerCase(Locale.ROOT);
-                if (!source.contains(tuKhoa)) {
-                    continue;
-                }
-            }
-            filteredServiceUsages.add(service);
         }
-
-        refillTable();
-        if (showMessage) {
-            showSuccess("Đã lọc được " + filteredServiceUsages.size() + " dịch vụ phù hợp.");
+        String selected = resetSelection ? FILTER_ALL : item(cboDonVi);
+        cboDonVi.removeAllItems();
+        for (String s : ds) {
+            cboDonVi.addItem(s);
         }
+        cboDonVi.setSelectedItem(ds.contains(selected) ? selected : FILTER_ALL);
     }
 
-    private void refillTable() {
+    private void applyFilters(boolean notify) {
+        filteredServices.clear();
+        String keyword = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
+        String donVi = item(cboDonVi);
+        for (DichVu d : allServices) {
+            if (!FILTER_ALL.equals(donVi) && !safe(d.getDonVi()).equalsIgnoreCase(donVi)) {
+                continue;
+            }
+            String source = (d.getMaDichVu() + " " + safe(d.getTenDichVu()) + " " + safe(d.getDonVi())).toLowerCase(Locale.ROOT);
+            if (!keyword.isEmpty() && !source.contains(keyword)) {
+                continue;
+            }
+            filteredServices.add(d);
+        }
         tableModel.setRowCount(0);
-        for (ServiceUsageRecord service : filteredServiceUsages) {
-            tableModel.addRow(new Object[]{
-                    service.maPhatSinh,
-                    service.hoSoLuuTru,
-                    service.khachPhong,
-                    service.nhomDichVu,
-                    service.tenDichVu,
-                    service.getThanhTienLabel(),
-                    service.trangThai
-            });
+        for (DichVu d : filteredServices) {
+            tableModel.addRow(new Object[]{d.getMaDichVu(), d.getTenDichVu(), money(d.getDonGia()), d.getDonVi()});
         }
-
-        if (!filteredServiceUsages.isEmpty()) {
+        if (!filteredServices.isEmpty()) {
             tblDichVu.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredServiceUsages.get(0));
+            updateDetail(filteredServices.get(0));
         } else {
-            clearDetailPanel();
+            clearDetail();
+        }
+        if (notify) {
+            info("Đã lọc được " + filteredServices.size() + " dịch vụ phù hợp.");
         }
     }
 
-    private void updateDetailPanel(ServiceUsageRecord service) {
-        lblMaPhatSinh.setText(service.maPhatSinh);
-        lblHoSo.setText(service.hoSoLuuTru);
-        lblKhachPhong.setText(service.khachPhong);
-        lblNhomDichVu.setText(service.nhomDichVu);
-        lblTenDichVu.setText(service.tenDichVu);
-        lblThanhTien.setText(service.getThanhTienLabel());
-        lblTrangThaiChiTiet.setText(service.trangThai);
-        txtMoTa.setText(service.buildDetailNote());
-        txtMoTa.setCaretPosition(0);
-    }
-
-    private void clearDetailPanel() {
-        lblMaPhatSinh.setText("-");
-        lblHoSo.setText("-");
-        lblKhachPhong.setText("-");
-        lblNhomDichVu.setText("-");
-        lblTenDichVu.setText("-");
-        lblThanhTien.setText("-");
-        lblTrangThaiChiTiet.setText("-");
-        txtMoTa.setText("Không có dữ liệu phù hợp.");
-    }
-
-    private ServiceUsageRecord getSelectedServiceUsage() {
-        int row = tblDichVu.getSelectedRow();
-        if (row < 0 || row >= filteredServiceUsages.size()) {
-            showWarning("Vui lòng chọn một dòng dịch vụ trong danh sách.");
-            return null;
-        }
-        return filteredServiceUsages.get(row);
-    }
-
-    private void openServiceUsageDialog(ServiceUsageRecord record) {
-        new ServiceUsageDialog(this, record).setVisible(true);
-    }
-
-    private void openUpdateServiceUsageDialog() {
-        ServiceUsageRecord record = getSelectedServiceUsage();
-        if (record != null) {
-            openServiceUsageDialog(record);
-        }
-    }
-
-    private void openCloseServiceDialog() {
-        ServiceUsageRecord record = getSelectedServiceUsage();
-        if (record != null) {
-            new CloseServiceDialog(this, record).setVisible(true);
-        }
-    }
-
-    private void openServiceCatalogDialog(ServiceCatalogRecord record) {
-        new ServiceCatalogDialog(this, record).setVisible(true);
-    }
-
-    private void openServiceUsageDetailDialog() {
-        ServiceUsageRecord record = getSelectedServiceUsage();
-        if (record != null) {
-            new ServiceUsageDetailDialog(this, record).setVisible(true);
-        }
-    }
-
-    private void addServiceUsage(ServiceUsageRecord record, boolean keepOpen) {
-        allServiceUsages.add(0, record);
-        cboNhomDichVu.setSelectedIndex(0);
-        cboTrangThai.setSelectedIndex(0);
-        txtTuKhoa.setText("");
-        applyFilters(false);
-        selectServiceUsage(record);
-        showSuccess(keepOpen ? "Thêm dịch vụ thành công và sẵn sàng ghi nhận tiếp." : "Thêm dịch vụ thành công.");
-    }
-
-    private void refreshServiceUsage(ServiceUsageRecord record, String message) {
-        applyFilters(false);
-        selectServiceUsage(record);
-        showSuccess(message);
-    }
-
-    private void selectServiceUsage(ServiceUsageRecord record) {
-        if (record == null) {
+    private void updateDetail(DichVu dichVu) {
+        lblMaDichVu.setText(String.valueOf(dichVu.getMaDichVu()));
+        lblTenDichVu.setText(safe(dichVu.getTenDichVu()).isEmpty() ? "-" : dichVu.getTenDichVu());
+        lblDonGia.setText(money(dichVu.getDonGia()));
+        lblDonVi.setText(safe(dichVu.getDonVi()).isEmpty() ? "-" : dichVu.getDonVi());
+        List<SuDungDichVu> usages = suDungDichVuDAO.getByMaDichVu(dichVu.getMaDichVu());
+        if (usages.isEmpty()) {
+            txtLichSu.setText("Chưa có dữ liệu sử dụng dịch vụ.");
             return;
         }
-        int index = filteredServiceUsages.indexOf(record);
-        if (index >= 0) {
-            tblDichVu.setRowSelectionInterval(index, index);
-            updateDetailPanel(record);
-        } else if (!filteredServiceUsages.isEmpty()) {
-            tblDichVu.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredServiceUsages.get(0));
-        } else {
-            clearDetailPanel();
+        StringBuilder sb = new StringBuilder();
+        for (SuDungDichVu sd : usages) {
+            if (sb.length() > 0) {
+                sb.append("\n");
+            }
+            sb.append("SD").append(sd.getMaSuDung())
+                    .append(" | Lưu trú ").append(sd.getMaLuuTru())
+                    .append(" | SL ").append(sd.getSoLuong())
+                    .append(" | Thành tiền ").append(money(sd.getThanhTien()));
         }
+        txtLichSu.setText(sb.toString());
+        txtLichSu.setCaretPosition(0);
     }
 
-    private void addCatalog(ServiceCatalogRecord record, boolean keepOpen) {
-        serviceCatalogs.add(0, record);
-        showSuccess(keepOpen ? "Thêm dịch vụ danh mục thành công và sẵn sàng tạo tiếp." : "Thêm dịch vụ danh mục thành công.");
+    private void clearDetail() {
+        lblMaDichVu.setText("-");
+        lblTenDichVu.setText("-");
+        lblDonGia.setText("-");
+        lblDonVi.setText("-");
+        txtLichSu.setText("Không có dữ liệu phù hợp.");
     }
 
-    private void showSuccess(String message) {
-        showMessageDialog("Thành công", message, new Color(22, 163, 74));
+    private DichVu getSelectedService(boolean warnIfMissing) {
+        int row = tblDichVu == null ? -1 : tblDichVu.getSelectedRow();
+        if (row < 0 || row >= filteredServices.size()) {
+            if (warnIfMissing) {
+                warn("Vui lòng chọn một dịch vụ trong danh sách.");
+            }
+            return null;
+        }
+        return filteredServices.get(row);
     }
 
-    private void showWarning(String message) {
-        showMessageDialog("Thông báo", message, new Color(245, 158, 11));
-    }
-
-    private void showError(String message) {
-        showMessageDialog("Cảnh báo", message, new Color(220, 38, 38));
-    }
-
-    private void showMessageDialog(String title, String message, Color accentColor) {
-        AppMessageDialog dialog = new AppMessageDialog(this, title, message, accentColor);
+    private void openServiceDialog(DichVu editing) {
+        ServiceEditor dialog = new ServiceEditor(this, editing);
         dialog.setVisible(true);
     }
 
-    private boolean showConfirmDialog(String title, String message, String confirmText, Color confirmColor) {
-        ConfirmDialog dialog = new ConfirmDialog(this, title, message, confirmText, confirmColor);
+    private void deleteSelectedService() {
+        DichVu dichVu = getSelectedService(true);
+        if (dichVu == null) {
+            return;
+        }
+        if (JOptionPane.showConfirmDialog(this, "Bạn có chắc muốn xóa dịch vụ này không?", "Xác nhận", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+            return;
+        }
+        if (!dichVuDAO.delete(dichVu.getMaDichVu())) {
+            error("Không thể xóa dịch vụ. Có thể dịch vụ đã phát sinh dữ liệu sử dụng.");
+            return;
+        }
+        loadServices(false, false);
+        info("Xóa dịch vụ thành công.");
+    }
+
+    private void openUsageDialog(DichVu preselected) {
+        if (allServices.isEmpty()) {
+            warn("Chưa có dịch vụ để ghi nhận sử dụng.");
+            return;
+        }
+        ServiceUsageEditor dialog = new ServiceUsageEditor(this, preselected);
         dialog.setVisible(true);
-        return dialog.isConfirmed();
     }
 
     private void registerShortcuts() {
-        ScreenUIHelper.registerShortcut(this, "F1", "dichvu-f1", () -> openServiceUsageDialog(null));
-        ScreenUIHelper.registerShortcut(this, "F2", "dichvu-f2", this::openUpdateServiceUsageDialog);
-        ScreenUIHelper.registerShortcut(this, "F3", "dichvu-f3", this::openCloseServiceDialog);
-        ScreenUIHelper.registerShortcut(this, "F4", "dichvu-f4", () -> openServiceCatalogDialog(null));
-        ScreenUIHelper.registerShortcut(this, "F5", "dichvu-f5", () -> reloadSampleData(true));
-        ScreenUIHelper.registerShortcut(this, "ENTER", "dichvu-enter", this::openServiceUsageDetailDialog);
+        ScreenUIHelper.registerShortcut(this, "F1", "dichvu-f1", () -> openServiceDialog(null));
+        ScreenUIHelper.registerShortcut(this, "F2", "dichvu-f2", () -> openServiceDialog(getSelectedService(true)));
+        ScreenUIHelper.registerShortcut(this, "F3", "dichvu-f3", this::deleteSelectedService);
+        ScreenUIHelper.registerShortcut(this, "F4", "dichvu-f4", () -> openUsageDialog(getSelectedService(false)));
+        ScreenUIHelper.registerShortcut(this, "F5", "dichvu-f5", () -> loadServices(true, true));
     }
 
-    private String safeValue(String value, String fallback) {
-        return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    private class ServiceEditor extends JDialog {
+        private ServiceEditor(Frame owner, DichVu editing) {
+            super(owner, editing == null ? "Thêm dịch vụ" : "Cập nhật dịch vụ", true);
+            getContentPane().setBackground(APP_BG);
+            setLayout(new BorderLayout(0, 12));
+            ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
+
+            JTextField txtMa = input(editing == null ? AUTO_CODE_TEXT : String.valueOf(editing.getMaDichVu()));
+            JTextField txtTen = input(editing == null ? "" : editing.getTenDichVu());
+            JTextField txtDonGia = input(editing == null ? "0" : String.valueOf((long) editing.getDonGia()));
+            JTextField txtDonVi = input(editing == null ? "" : editing.getDonVi());
+            txtMa.setEditable(false);
+
+            JPanel form = createForm();
+            addForm(form, 0, "Mã dịch vụ", txtMa);
+            addForm(form, 1, "Tên dịch vụ", txtTen);
+            addForm(form, 2, "Đơn giá", txtDonGia);
+            addForm(form, 3, "Đơn vị", txtDonVi);
+
+            add(dialogHeader(editing == null ? "Thêm dịch vụ mới" : "Cập nhật dịch vụ", "Nhập đúng dữ liệu của bảng DichVu."), BorderLayout.NORTH);
+            add(cardWrap(form), BorderLayout.CENTER);
+            add(buttonBar(
+                    outline("Hủy", new Color(107, 114, 128), e -> dispose()),
+                    primary(editing == null ? "Lưu" : "Lưu cập nhật", new Color(22, 163, 74), e -> {
+                        if (txtTen.getText().trim().isEmpty()) {
+                            warn("Tên dịch vụ không được rỗng.");
+                            return;
+                        }
+                        Double donGia = parseNonNegative(txtDonGia.getText(), "Đơn giá phải là số hợp lệ >= 0.");
+                        if (donGia == null) {
+                            return;
+                        }
+                        if (txtDonVi.getText().trim().isEmpty()) {
+                            warn("Đơn vị không được rỗng.");
+                            return;
+                        }
+                        DichVu dichVu = editing == null
+                                ? new DichVu(txtTen.getText().trim(), donGia, txtDonVi.getText().trim())
+                                : new DichVu(editing.getMaDichVu(), txtTen.getText().trim(), donGia, txtDonVi.getText().trim());
+                        boolean ok = editing == null ? dichVuDAO.insert(dichVu) : dichVuDAO.update(dichVu);
+                        if (!ok) {
+                            error(editing == null ? "Không thể thêm dịch vụ." : "Không thể cập nhật dịch vụ.");
+                            return;
+                        }
+                        loadServices(false, false);
+                        info(editing == null ? "Thêm dịch vụ thành công." : "Cập nhật dịch vụ thành công.");
+                        dispose();
+                    })
+            ), BorderLayout.SOUTH);
+            ScreenUIHelper.prepareDialog(this, owner, 560, 340);
+        }
     }
 
-    private String valueOf(Object value) {
-        return value == null ? "" : value.toString();
+    private class ServiceUsageEditor extends JDialog {
+        private final List<SuDungDichVu> usageRows = new ArrayList<SuDungDichVu>();
+        private final SuDungDichVu[] selected = new SuDungDichVu[1];
+
+        private ServiceUsageEditor(Frame owner, DichVu preselected) {
+            super(owner, "Sử dụng dịch vụ", true);
+            getContentPane().setBackground(APP_BG);
+            setLayout(new BorderLayout(0, 12));
+            ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
+
+            JComboBox<String> cboMaLuuTru = combo(maLuuTruOptions());
+            JComboBox<String> cboDichVu = combo(dichVuOptions());
+            JTextField txtSoLuong = input("1");
+            JTextField txtDonGia = input("0");
+            JTextField txtThanhTien = input("0");
+            txtThanhTien.setEditable(false);
+            if (preselected != null) {
+                cboDichVu.setSelectedItem(display(preselected));
+                txtDonGia.setText(String.valueOf((long) preselected.getDonGia()));
+            }
+
+            DefaultTableModel usageModel = new DefaultTableModel(new String[]{"Mã sử dụng", "Tên dịch vụ", "Số lượng", "Đơn giá", "Thành tiền"}, 0) {
+                @Override
+                public boolean isCellEditable(int row, int column) {
+                    return false;
+                }
+            };
+            JTable tblUsage = new JTable(usageModel);
+
+            Runnable fillPrice = () -> {
+                DichVu dichVu = serviceFromDisplay(item(cboDichVu));
+                if (dichVu != null) {
+                    txtDonGia.setText(String.valueOf((long) dichVu.getDonGia()));
+                }
+                updateThanhTien(txtSoLuong, txtDonGia, txtThanhTien);
+            };
+            Runnable reloadUsage = () -> reloadUsageRows(cboMaLuuTru, usageModel);
+
+            cboDichVu.addActionListener(e -> fillPrice.run());
+            cboMaLuuTru.addActionListener(e -> reloadUsage.run());
+            installAmountListeners(txtSoLuong, txtDonGia, txtThanhTien);
+            tblUsage.getSelectionModel().addListSelectionListener(e -> populateUsageSelection(tblUsage, cboMaLuuTru, cboDichVu, txtSoLuong, txtDonGia, txtThanhTien));
+
+            JPanel form = createForm();
+            addForm(form, 0, "Mã lưu trú", cboMaLuuTru);
+            addForm(form, 1, "Dịch vụ", cboDichVu);
+            addForm(form, 2, "Số lượng", txtSoLuong);
+            addForm(form, 3, "Đơn giá", txtDonGia);
+            addForm(form, 4, "Thành tiền", txtThanhTien);
+
+            JPanel center = new JPanel(new BorderLayout(0, 12));
+            center.setOpaque(false);
+            center.add(cardWrap(form), BorderLayout.NORTH);
+            JPanel tableCard = card(new BorderLayout(0, 8));
+            JLabel title = new JLabel("Danh sách dịch vụ đã dùng theo lưu trú");
+            title.setFont(SECTION_FONT);
+            title.setForeground(TEXT_PRIMARY);
+            tableCard.add(title, BorderLayout.NORTH);
+            tableCard.add(new JScrollPane(tblUsage), BorderLayout.CENTER);
+            center.add(tableCard, BorderLayout.CENTER);
+
+            add(dialogHeader("Ghi nhận sử dụng dịch vụ", "Lưu dữ liệu thật vào bảng SuDungDichVu."), BorderLayout.NORTH);
+            add(center, BorderLayout.CENTER);
+            add(buttonBar(
+                    outline("Đóng", new Color(107, 114, 128), e -> dispose()),
+                    primary("Xóa", new Color(220, 38, 38), e -> deleteUsage()),
+                    primary("Cập nhật", new Color(37, 99, 235), e -> saveUsage(true)),
+                    primary("Thêm", new Color(22, 163, 74), e -> saveUsage(false))
+            ), BorderLayout.SOUTH);
+
+            fillPrice.run();
+            reloadUsage.run();
+            ScreenUIHelper.prepareDialog(this, owner, 820, 620);
+
+            voidUpdateContext = new UsageContext(cboMaLuuTru, cboDichVu, txtSoLuong, txtDonGia, txtThanhTien, usageModel);
+        }
+
+        private final UsageContext voidUpdateContext;
+
+        private void saveUsage(boolean editing) {
+            UsageContext c = voidUpdateContext;
+            SuDungDichVu suDung = usageFromForm(selected[0], editing, c.cboMaLuuTru, c.cboDichVu, c.txtSoLuong, c.txtDonGia);
+            if (suDung == null) {
+                return;
+            }
+            boolean ok = editing ? suDungDichVuDAO.updateSuDungDichVu(suDung) : suDungDichVuDAO.insertSuDungDichVu(suDung);
+            if (!ok) {
+                error(editing ? "Không thể cập nhật dịch vụ sử dụng." : "Không thể thêm dịch vụ sử dụng.");
+                return;
+            }
+            info(editing ? "Cập nhật dịch vụ sử dụng thành công." : "Thêm dịch vụ sử dụng thành công.");
+            reloadUsageRows(c.cboMaLuuTru, c.usageModel);
+            loadServices(false, false);
+            DichVu cur = getSelectedService(false);
+            if (cur != null) {
+                updateDetail(cur);
+            }
+        }
+
+        private void deleteUsage() {
+            if (selected[0] == null) {
+                warn("Vui lòng chọn một dòng dịch vụ đã dùng.");
+                return;
+            }
+            if (JOptionPane.showConfirmDialog(this, "Bạn có chắc muốn xóa dòng sử dụng dịch vụ này không?", "Xác nhận", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) {
+                return;
+            }
+            if (!suDungDichVuDAO.deleteSuDungDichVu(selected[0].getMaSuDung())) {
+                error("Không thể xóa dịch vụ sử dụng.");
+                return;
+            }
+            selected[0] = null;
+            reloadUsageRows(voidUpdateContext.cboMaLuuTru, voidUpdateContext.usageModel);
+            loadServices(false, false);
+            DichVu cur = getSelectedService(false);
+            if (cur != null) {
+                updateDetail(cur);
+            }
+            info("Xóa dịch vụ sử dụng thành công.");
+        }
+
+        private void reloadUsageRows(JComboBox<String> cboMaLuuTru, DefaultTableModel usageModel) {
+            usageModel.setRowCount(0);
+            usageRows.clear();
+            if (item(cboMaLuuTru).isEmpty()) {
+                return;
+            }
+            usageRows.addAll(suDungDichVuDAO.getByMaLuuTru(Integer.parseInt(item(cboMaLuuTru))));
+            for (SuDungDichVu sd : usageRows) {
+                usageModel.addRow(new Object[]{sd.getMaSuDung(), sd.getTenDichVu(), sd.getSoLuong(), money(sd.getDonGia()), money(sd.getThanhTien())});
+            }
+        }
+
+        private void populateUsageSelection(JTable tblUsage, JComboBox<String> cboMaLuuTru, JComboBox<String> cboDichVu, JTextField txtSoLuong, JTextField txtDonGia, JTextField txtThanhTien) {
+            int row = tblUsage.getSelectedRow();
+            if (row < 0 || row >= usageRows.size()) {
+                return;
+            }
+            SuDungDichVu sd = usageRows.get(row);
+            selected[0] = sd;
+            cboMaLuuTru.setSelectedItem(String.valueOf(sd.getMaLuuTru()));
+            cboDichVu.setSelectedItem(serviceDisplayById(sd.getMaDichVu()));
+            txtSoLuong.setText(String.valueOf(sd.getSoLuong()));
+            txtDonGia.setText(String.valueOf((long) sd.getDonGia()));
+            txtThanhTien.setText(money(sd.getThanhTien()));
+        }
     }
 
-    private JPanel createDialogCardPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(14, 16, 14, 16)
-        ));
-        return panel;
+    private static final class UsageContext {
+        private final JComboBox<String> cboMaLuuTru;
+        private final JComboBox<String> cboDichVu;
+        private final JTextField txtSoLuong;
+        private final JTextField txtDonGia;
+        private final JTextField txtThanhTien;
+        private final DefaultTableModel usageModel;
+
+        private UsageContext(JComboBox<String> cboMaLuuTru, JComboBox<String> cboDichVu, JTextField txtSoLuong, JTextField txtDonGia, JTextField txtThanhTien, DefaultTableModel usageModel) {
+            this.cboMaLuuTru = cboMaLuuTru;
+            this.cboDichVu = cboDichVu;
+            this.txtSoLuong = txtSoLuong;
+            this.txtDonGia = txtDonGia;
+            this.txtThanhTien = txtThanhTien;
+            this.usageModel = usageModel;
+        }
     }
 
-    private JPanel createDialogFormPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        return panel;
+    private SuDungDichVu usageFromForm(SuDungDichVu selected, boolean editing, JComboBox<String> cboMaLuuTru, JComboBox<String> cboDichVu, JTextField txtSoLuong, JTextField txtDonGia) {
+        if (item(cboMaLuuTru).isEmpty()) {
+            warn("Mã lưu trú không hợp lệ.");
+            return null;
+        }
+        DichVu dichVu = serviceFromDisplay(item(cboDichVu));
+        if (dichVu == null) {
+            warn("Dịch vụ không hợp lệ.");
+            return null;
+        }
+        Integer soLuong = parsePositive(txtSoLuong.getText(), "Số lượng phải là số nguyên > 0.");
+        if (soLuong == null) {
+            return null;
+        }
+        Double donGia = parseNonNegative(txtDonGia.getText(), "Đơn giá phải là số hợp lệ >= 0.");
+        if (donGia == null) {
+            return null;
+        }
+        SuDungDichVu sd = new SuDungDichVu(Integer.parseInt(item(cboMaLuuTru)), dichVu.getMaDichVu(), soLuong, donGia);
+        if (editing) {
+            if (selected == null) {
+                warn("Vui lòng chọn một dòng dịch vụ đã dùng.");
+                return null;
+            }
+            sd.setMaSuDung(selected.getMaSuDung());
+        }
+        return sd;
     }
 
-    private JTextArea createDialogTextArea(int rows) {
-        JTextArea area = new JTextArea(rows, 20);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setFont(BODY_FONT);
-        area.setForeground(TEXT_PRIMARY);
-        area.setBackground(Color.WHITE);
-        area.setBorder(new EmptyBorder(8, 10, 8, 10));
-        return area;
+    private String[] maLuuTruOptions() {
+        List<Integer> values = suDungDichVuDAO.getAvailableMaLuuTru();
+        String[] options = new String[values.size()];
+        for (int i = 0; i < values.size(); i++) {
+            options[i] = String.valueOf(values.get(i));
+        }
+        return options;
     }
 
-    private void addFormRow(JPanel panel, GridBagConstraints gbc, int row, String label, Component component) {
+    private String[] dichVuOptions() {
+        String[] options = new String[allServices.size()];
+        for (int i = 0; i < allServices.size(); i++) {
+            options[i] = display(allServices.get(i));
+        }
+        return options;
+    }
+
+    private String display(DichVu dichVu) {
+        return dichVu.getMaDichVu() + " - " + dichVu.getTenDichVu();
+    }
+
+    private DichVu serviceFromDisplay(String display) {
+        for (DichVu d : allServices) {
+            if (display(d).equals(display)) {
+                return d;
+            }
+        }
+        return null;
+    }
+
+    private String serviceDisplayById(int maDichVu) {
+        for (DichVu d : allServices) {
+            if (d.getMaDichVu() == maDichVu) {
+                return display(d);
+            }
+        }
+        return "";
+    }
+
+    private void updateThanhTien(JTextField txtSoLuong, JTextField txtDonGia, JTextField txtThanhTien) {
+        Double donGia = parseNonNegativeSilent(txtDonGia.getText());
+        Integer soLuong = parsePositiveSilent(txtSoLuong.getText());
+        txtThanhTien.setText(donGia == null || soLuong == null ? "0" : money(donGia * soLuong));
+    }
+
+    private void installAmountListeners(JTextField txtSoLuong, JTextField txtDonGia, JTextField txtThanhTien) {
+        javax.swing.event.DocumentListener listener = new javax.swing.event.DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                updateThanhTien(txtSoLuong, txtDonGia, txtThanhTien);
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                updateThanhTien(txtSoLuong, txtDonGia, txtThanhTien);
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                updateThanhTien(txtSoLuong, txtDonGia, txtThanhTien);
+            }
+        };
+        txtSoLuong.getDocument().addDocumentListener(listener);
+        txtDonGia.getDocument().addDocumentListener(listener);
+    }
+
+    private JPanel card(BorderLayout layout) {
+        JPanel p = new JPanel(layout);
+        p.setBackground(CARD_BG);
+        p.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true), new EmptyBorder(12, 14, 12, 14)));
+        return p;
+    }
+
+    private JPanel compactCard() {
+        JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
+        p.setBackground(CARD_BG);
+        p.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true), new EmptyBorder(8, 10, 8, 10)));
+        return p;
+    }
+
+    private JPanel cardWrap(Component c) {
+        JPanel p = card(new BorderLayout());
+        p.add(c, BorderLayout.CENTER);
+        return p;
+    }
+
+    private JPanel field(String label, Component c) {
+        JPanel p = new JPanel();
+        p.setOpaque(false);
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+        JLabel l = new JLabel(label);
+        l.setFont(LABEL_FONT);
+        l.setForeground(TEXT_MUTED);
+        p.add(l);
+        p.add(Box.createVerticalStrut(4));
+        p.add(c);
+        return p;
+    }
+
+    private JComboBox<String> combo(String[] values) {
+        JComboBox<String> cb = new JComboBox<String>(values);
+        cb.setFont(BODY_FONT);
+        cb.setPreferredSize(new Dimension(180, 34));
+        return cb;
+    }
+
+    private JTextField input(String value) {
+        JTextField tf = new JTextField(value);
+        tf.setFont(BODY_FONT);
+        tf.setPreferredSize(new Dimension(200, 34));
+        return tf;
+    }
+
+    private JButton primary(String text, Color color, java.awt.event.ActionListener l) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        b.setForeground(Color.WHITE);
+        b.setBackground(color);
+        b.setFocusPainted(false);
+        b.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(color.darker(), 1, true), new EmptyBorder(9, 14, 9, 14)));
+        b.addActionListener(l);
+        return b;
+    }
+
+    private JButton outline(String text, Color color, java.awt.event.ActionListener l) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        b.setForeground(TEXT_PRIMARY);
+        b.setBackground(Color.WHITE);
+        b.setFocusPainted(false);
+        b.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(color, 1, true), new EmptyBorder(8, 12, 8, 12)));
+        b.addActionListener(l);
+        return b;
+    }
+
+    private JLabel value(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        l.setForeground(TEXT_PRIMARY);
+        l.setVerticalAlignment(SwingConstants.TOP);
+        return l;
+    }
+
+    private void detailRow(JPanel panel, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(0, 0, 8, 0));
+        JLabel lbl = new JLabel(label + ":");
+        lbl.setFont(BODY_FONT);
+        lbl.setForeground(TEXT_MUTED);
+        lbl.setPreferredSize(new Dimension(120, 20));
+        row.add(lbl, BorderLayout.WEST);
+        row.add(value, BorderLayout.CENTER);
+        panel.add(row);
+    }
+
+    private JPanel createForm() {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setOpaque(false);
+        return p;
+    }
+
+    private void addForm(JPanel panel, int row, String label, Component component) {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new java.awt.Insets(6, 0, 6, 12);
+        gbc.anchor = GridBagConstraints.WEST;
         gbc.gridx = 0;
         gbc.gridy = row;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-
         JLabel lbl = new JLabel(label + ":");
         lbl.setFont(BODY_FONT);
         lbl.setForeground(TEXT_MUTED);
         panel.add(lbl, gbc);
-
         gbc.gridx = 1;
         gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         panel.add(component, gbc);
     }
 
-    private String formatMoney(double amount) {
+    private JPanel dialogHeader(String title, String sub) {
+        JPanel p = card(new BorderLayout());
+        JPanel body = new JPanel();
+        body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        JLabel t = new JLabel(title);
+        t.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        t.setForeground(TEXT_PRIMARY);
+        JLabel s = new JLabel("<html>" + sub + "</html>");
+        s.setFont(BODY_FONT);
+        s.setForeground(TEXT_MUTED);
+        body.add(t);
+        body.add(Box.createVerticalStrut(6));
+        body.add(s);
+        p.add(body, BorderLayout.CENTER);
+        return p;
+    }
+
+    private JPanel buttonBar(JButton... buttons) {
+        JPanel p = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        p.setOpaque(false);
+        for (JButton b : buttons) {
+            p.add(b);
+        }
+        return p;
+    }
+
+    private String money(double amount) {
         return String.format(Locale.US, "%,.0f", amount).replace(',', '.');
     }
 
-    private double parseMoney(String value) {
-        if (value == null || value.trim().isEmpty()) {
-            return 0;
+    private String item(JComboBox<String> cb) {
+        return cb == null || cb.getSelectedItem() == null ? "" : cb.getSelectedItem().toString();
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value.trim();
+    }
+
+    private Double parseNonNegative(String value, String message) {
+        Double parsed = parseNonNegativeSilent(value);
+        if (parsed == null) {
+            warn(message);
         }
+        return parsed;
+    }
+
+    private Integer parsePositive(String value, String message) {
+        Integer parsed = parsePositiveSilent(value);
+        if (parsed == null) {
+            warn(message);
+        }
+        return parsed;
+    }
+
+    private Double parseNonNegativeSilent(String value) {
         try {
-            return Double.parseDouble(value.trim().replace(".", ""));
-        } catch (NumberFormatException ex) {
-            return -1;
+            double parsed = Double.parseDouble(value.trim());
+            return parsed < 0 ? null : parsed;
+        } catch (Exception ex) {
+            return null;
         }
     }
 
-    private ServiceCatalogRecord findCatalogByDisplay(String display) {
-        for (ServiceCatalogRecord catalog : serviceCatalogs) {
-            if ((catalog.maDichVu + " - " + catalog.tenDichVu).equals(display)) {
-                return catalog;
-            }
-        }
-        return null;
-    }
-
-    private abstract class BaseServiceDialog extends JDialog {
-        private final int minimumWidth;
-        private final int minimumHeight;
-
-        protected BaseServiceDialog(Frame owner, String title, int width, int height) {
-            super(ScreenUIHelper.resolveDialogOwner(owner), title, true);
-            this.minimumWidth = width;
-            this.minimumHeight = height;
-            setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
-            getContentPane().setBackground(APP_BG);
-            ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
-            setLayout(new BorderLayout());
-            setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        }
-
-        @Override
-        public void setVisible(boolean visible) {
-            if (visible) {
-                ScreenUIHelper.prepareDialog(this, getOwner(), minimumWidth, minimumHeight);
-            }
-            super.setVisible(visible);
-        }
-
-        protected JPanel buildDialogHeader(String title, String subtitle) {
-            JPanel panel = createDialogCardPanel();
-            JPanel content = new JPanel();
-            content.setOpaque(false);
-            content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-
-            JLabel lblTitle = new JLabel(title);
-            lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
-            lblTitle.setForeground(TEXT_PRIMARY);
-
-            JLabel lblSub = new JLabel("<html>" + subtitle + "</html>");
-            lblSub.setFont(BODY_FONT);
-            lblSub.setForeground(TEXT_MUTED);
-
-            content.add(lblTitle);
-            content.add(Box.createVerticalStrut(6));
-            content.add(lblSub);
-            panel.add(content, BorderLayout.CENTER);
-            return panel;
-        }
-
-        protected JPanel buildDialogButtons(JButton... buttons) {
-            JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
-            panel.setOpaque(false);
-            for (JButton button : buttons) {
-                panel.add(button);
-            }
-            return panel;
+    private Integer parsePositiveSilent(String value) {
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            return parsed > 0 ? parsed : null;
+        } catch (Exception ex) {
+            return null;
         }
     }
 
-    private final class ServiceUsageDialog extends BaseServiceDialog {
-        private final ServiceUsageRecord editingRecord;
-        private final boolean editing;
-        private JComboBox<String> cboHoSo;
-        private JTextField txtKhachPhong;
-        private JTextField txtTrangThaiHoSo;
-        private JComboBox<String> cboNhom;
-        private JComboBox<String> cboDichVuDanhMuc;
-        private JTextField txtDonGiaMoi;
-        private JTextField txtSoLuong;
-        private JTextField txtThanhTien;
-        private JTextField txtThoiGianSuDung;
-        private JTextField txtNguoiGhiNhan;
-        private JTextArea txtGhiChuMoi;
-
-        private ServiceUsageDialog(Frame owner, ServiceUsageRecord record) {
-            super(owner, record == null ? "Thêm dịch vụ phát sinh" : "Cập nhật dịch vụ phát sinh", 760, 560);
-            this.editingRecord = record;
-            this.editing = record != null;
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(
-                    editing ? "CẬP NHẬT DỊCH VỤ PHÁT SINH" : "THÊM DỊCH VỤ PHÁT SINH",
-                    "Ghi nhận dịch vụ thực tế cho khách đang ở, khác với dịch vụ danh mục nền của hệ thống."
-            ), BorderLayout.NORTH);
-
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            cboHoSo = createComboBox(new String[]{"HS001", "HS002", "HS003"});
-            txtKhachPhong = createInputField(editing ? editingRecord.khachPhong : "Nguyễn Minh Anh / P202");
-            txtTrangThaiHoSo = createInputField(editing ? editingRecord.trangThaiHoSo : "Đang ở");
-            txtTrangThaiHoSo.setEditable(false);
-            cboNhom = createComboBox(SERVICE_GROUP_OPTIONS);
-            cboDichVuDanhMuc = createComboBox(getCatalogNames());
-            txtDonGiaMoi = createInputField(editing ? formatMoney(editingRecord.donGia) : "15000");
-            txtSoLuong = createInputField(editing ? String.valueOf(editingRecord.soLuong) : "1");
-            txtThanhTien = createInputField(editing ? editingRecord.getThanhTienLabel() : "15000");
-            txtThanhTien.setEditable(false);
-            txtThoiGianSuDung = createInputField(editing ? editingRecord.thoiGianSuDung : "10:30 19/03/2026");
-            txtNguoiGhiNhan = createInputField(editing ? editingRecord.nguoiGhiNhan : "Lễ tân Lan");
-            txtGhiChuMoi = createDialogTextArea(3);
-
-            if (editing) {
-                cboHoSo.setSelectedItem(editingRecord.hoSoLuuTru);
-                cboNhom.setSelectedItem(editingRecord.nhomDichVu);
-                cboDichVuDanhMuc.setSelectedItem(editingRecord.maDanhMuc + " - " + editingRecord.tenDichVu);
-                txtGhiChuMoi.setText(editingRecord.ghiChu);
-            }
-
-            cboDichVuDanhMuc.addActionListener(e -> fillCatalogPrice());
-
-            addFormRow(form, gbc, 0, "Hồ sơ lưu trú", cboHoSo);
-            addFormRow(form, gbc, 1, "Khách / Phòng", txtKhachPhong);
-            addFormRow(form, gbc, 2, "Trạng thái hồ sơ", txtTrangThaiHoSo);
-            addFormRow(form, gbc, 3, "Nhóm dịch vụ", cboNhom);
-            addFormRow(form, gbc, 4, "Dịch vụ", cboDichVuDanhMuc);
-            addFormRow(form, gbc, 5, "Đơn giá", txtDonGiaMoi);
-            addFormRow(form, gbc, 6, "Số lượng", txtSoLuong);
-            addFormRow(form, gbc, 7, "Thành tiền", txtThanhTien);
-            addFormRow(form, gbc, 8, "Thời gian sử dụng", txtThoiGianSuDung);
-            addFormRow(form, gbc, 9, "Người ghi nhận", txtNguoiGhiNhan);
-            addFormRow(form, gbc, 10, "Ghi chú", new JScrollPane(txtGhiChuMoi));
-
-            JPanel card = createDialogCardPanel();
-            card.add(form, BorderLayout.CENTER);
-            content.add(card, BorderLayout.CENTER);
-
-            JButton btnSave = createPrimaryButton(editing ? "Lưu cập nhật" : "Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit(false));
-            JButton btnSaveNext = createOutlineButton("Lưu và thêm tiếp", new Color(37, 99, 235), e -> submit(true));
-            btnSaveNext.setVisible(!editing);
-            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnSaveNext, btnSave), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-
-        private String[] getCatalogNames() {
-            String[] values = new String[serviceCatalogs.size()];
-            for (int i = 0; i < serviceCatalogs.size(); i++) {
-                values[i] = serviceCatalogs.get(i).maDichVu + " - " + serviceCatalogs.get(i).tenDichVu;
-            }
-            return values;
-        }
-
-        private void fillCatalogPrice() {
-            ServiceCatalogRecord catalog = findCatalogByDisplay(valueOf(cboDichVuDanhMuc.getSelectedItem()));
-            if (catalog != null) {
-                cboNhom.setSelectedItem(catalog.nhomDichVu);
-                txtDonGiaMoi.setText(formatMoney(catalog.donGiaMacDinh));
-                updateThanhTien();
-            }
-        }
-
-        private void updateThanhTien() {
-            double donGia = parseMoney(txtDonGiaMoi.getText().trim());
-            int soLuong;
-            try {
-                soLuong = Integer.parseInt(txtSoLuong.getText().trim());
-            } catch (NumberFormatException ex) {
-                soLuong = 0;
-            }
-            txtThanhTien.setText(donGia < 0 || soLuong <= 0 ? "0" : formatMoney(donGia * soLuong));
-        }
-
-        private void submit(boolean keepOpen) {
-            if ("Đã check-out".equals(txtTrangThaiHoSo.getText().trim())) {
-                showError("Không cho thêm nếu hồ sơ đã check-out.");
-                return;
-            }
-            if (editing && "Đã chốt".equals(editingRecord.trangThai)) {
-                showError("Không cho sửa nếu dịch vụ đã bị chốt.");
-                return;
-            }
-
-            ServiceCatalogRecord catalog = findCatalogByDisplay(valueOf(cboDichVuDanhMuc.getSelectedItem()));
-            if (catalog == null) {
-                showError("Dịch vụ bắt buộc chọn.");
-                return;
-            }
-
-            double donGia = parseMoney(txtDonGiaMoi.getText().trim());
-            int soLuong;
-            try {
-                soLuong = Integer.parseInt(txtSoLuong.getText().trim());
-            } catch (NumberFormatException ex) {
-                showError("Số lượng > 0.");
-                return;
-            }
-            if (donGia < 0 || soLuong <= 0) {
-                showError("Đơn giá hợp lệ và số lượng phải > 0.");
-                return;
-            }
-
-            ServiceUsageRecord target = editing
-                    ? editingRecord
-                    : ServiceUsageRecord.create(
-                    "PSDV" + String.format(Locale.US, "%03d", allServiceUsages.size() + 1),
-                    valueOf(cboHoSo.getSelectedItem()),
-                    txtKhachPhong.getText().trim(),
-                    txtTrangThaiHoSo.getText().trim(),
-                    catalog,
-                    soLuong,
-                    txtThoiGianSuDung.getText().trim(),
-                    txtNguoiGhiNhan.getText().trim(),
-                    "Mới ghi nhận"
-            );
-
-            target.hoSoLuuTru = valueOf(cboHoSo.getSelectedItem());
-            target.khachPhong = txtKhachPhong.getText().trim();
-            target.trangThaiHoSo = txtTrangThaiHoSo.getText().trim();
-            target.maDanhMuc = catalog.maDichVu;
-            target.tenDichVu = catalog.tenDichVu;
-            target.nhomDichVu = catalog.nhomDichVu;
-            target.donViTinh = catalog.donViTinh;
-            target.donGia = donGia;
-            target.soLuong = soLuong;
-            target.thanhTien = donGia * soLuong;
-            target.thoiGianSuDung = txtThoiGianSuDung.getText().trim();
-            target.nguoiGhiNhan = txtNguoiGhiNhan.getText().trim();
-            target.ghiChu = txtGhiChuMoi.getText().trim();
-
-            if (editing) {
-                refreshServiceUsage(target, "Cập nhật dịch vụ thành công.");
-                dispose();
-            } else {
-                addServiceUsage(target, keepOpen);
-                if (keepOpen) {
-                    txtSoLuong.setText("1");
-                    txtThanhTien.setText(txtDonGiaMoi.getText().trim());
-                    txtGhiChuMoi.setText("");
-                } else {
-                    dispose();
-                }
-            }
-        }
+    private void info(String message) {
+        JOptionPane.showMessageDialog(this, message, "Thông báo", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private final class CloseServiceDialog extends BaseServiceDialog {
-        private final ServiceUsageRecord record;
-
-        private CloseServiceDialog(Frame owner, ServiceUsageRecord record) {
-            super(owner, "Chốt dịch vụ", 560, 360);
-            this.record = record;
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader("CHỐT DỊCH VỤ", "Sau khi chốt, dịch vụ của hồ sơ này sẽ bị khóa chỉnh sửa và được chuyển vào tính hóa đơn."), BorderLayout.NORTH);
-
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            JTextArea txtGhiChuMoi = createDialogTextArea(3);
-            addFormRow(form, gbc, 0, "Hồ sơ lưu trú", createValueLabel(record.hoSoLuuTru));
-            addFormRow(form, gbc, 1, "Khách / Phòng", createValueLabel(record.khachPhong));
-            addFormRow(form, gbc, 2, "Số dòng dịch vụ", createValueLabel(String.valueOf(countByHoSo(record.hoSoLuuTru))));
-            addFormRow(form, gbc, 3, "Tổng tiền dịch vụ", createValueLabel(formatMoney(sumByHoSo(record.hoSoLuuTru))));
-            addFormRow(form, gbc, 4, "Ghi chú", new JScrollPane(txtGhiChuMoi));
-
-            JPanel card = createDialogCardPanel();
-            card.add(form, BorderLayout.CENTER);
-            content.add(card, BorderLayout.CENTER);
-
-            JButton btnConfirm = createPrimaryButton("Xác nhận chốt", new Color(245, 158, 11), TEXT_PRIMARY, e -> submit(txtGhiChuMoi));
-            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-
-        private void submit(JTextArea txtGhiChuMoi) {
-            if (!showConfirmDialog(
-                    "Xác nhận chốt dịch vụ",
-                    "Dịch vụ của hồ sơ này sẽ bị khóa chỉnh sửa. Bạn có muốn tiếp tục không?",
-                    "Đồng ý",
-                    new Color(245, 158, 11)
-            )) {
-                return;
-            }
-            for (ServiceUsageRecord service : allServiceUsages) {
-                if (service.hoSoLuuTru.equals(record.hoSoLuuTru)) {
-                    service.trangThai = "Đã chốt";
-                    if (!txtGhiChuMoi.getText().trim().isEmpty()) {
-                        service.ghiChu = txtGhiChuMoi.getText().trim();
-                    }
-                }
-            }
-            refreshServiceUsage(record, "Chốt dịch vụ thành công.");
-            dispose();
-        }
+    private void warn(String message) {
+        JOptionPane.showMessageDialog(this, message, "Thông báo", JOptionPane.WARNING_MESSAGE);
     }
 
-    private final class ServiceCatalogDialog extends BaseServiceDialog {
-        private final ServiceCatalogRecord editingRecord;
-        private final boolean editing;
-
-        private ServiceCatalogDialog(Frame owner, ServiceCatalogRecord record) {
-            super(owner, record == null ? "Thêm dịch vụ danh mục" : "Cập nhật dịch vụ danh mục", 620, 460);
-            this.editingRecord = record;
-            this.editing = record != null;
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(
-                    editing ? "CẬP NHẬT DỊCH VỤ DANH MỤC" : "THÊM DỊCH VỤ DANH MỤC",
-                    "Danh mục dịch vụ là lớp dữ liệu nền của hệ thống, dùng để chọn khi ghi nhận dịch vụ phát sinh."
-            ), BorderLayout.NORTH);
-
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            JTextField txtMa = createInputField(editing ? editingRecord.maDichVu : "");
-            txtMa.setEditable(!editing);
-            JTextField txtTen = createInputField(editing ? editingRecord.tenDichVu : "");
-            JComboBox<String> cboNhom = createComboBox(SERVICE_GROUP_OPTIONS);
-            JTextField txtDonGia = createInputField(editing ? formatMoney(editingRecord.donGiaMacDinh) : "0");
-            JTextField txtDonVi = createInputField(editing ? editingRecord.donViTinh : "");
-            JComboBox<String> cboStatus = createComboBox(new String[]{"Đang áp dụng", "Ngừng áp dụng"});
-            JTextArea txtMoTaMoi = createDialogTextArea(3);
-
-            if (editing) {
-                cboNhom.setSelectedItem(editingRecord.nhomDichVu);
-                cboStatus.setSelectedItem(editingRecord.trangThai);
-                txtMoTaMoi.setText(editingRecord.moTa);
-            }
-
-            addFormRow(form, gbc, 0, "Mã dịch vụ", txtMa);
-            addFormRow(form, gbc, 1, "Tên dịch vụ", txtTen);
-            addFormRow(form, gbc, 2, "Nhóm dịch vụ", cboNhom);
-            addFormRow(form, gbc, 3, "Đơn giá mặc định", txtDonGia);
-            addFormRow(form, gbc, 4, "Đơn vị tính", txtDonVi);
-            addFormRow(form, gbc, 5, "Trạng thái đầu", cboStatus);
-            addFormRow(form, gbc, 6, "Mô tả", new JScrollPane(txtMoTaMoi));
-
-            JPanel card = createDialogCardPanel();
-            card.add(form, BorderLayout.CENTER);
-            content.add(card, BorderLayout.CENTER);
-
-            JButton btnSave = createPrimaryButton(editing ? "Lưu cập nhật" : "Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit(false, txtMa, txtTen, cboNhom, txtDonGia, txtDonVi, cboStatus, txtMoTaMoi));
-            JButton btnSaveNew = createOutlineButton("Lưu và tạo mới", new Color(37, 99, 235), e -> submit(true, txtMa, txtTen, cboNhom, txtDonGia, txtDonVi, cboStatus, txtMoTaMoi));
-            btnSaveNew.setVisible(!editing);
-            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnSaveNew, btnSave), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-
-        private void submit(boolean keepOpen, JTextField txtMa, JTextField txtTen, JComboBox<String> cboNhom, JTextField txtDonGia, JTextField txtDonVi, JComboBox<String> cboStatus, JTextArea txtMoTaMoi) {
-            if (txtMa.getText().trim().isEmpty()) {
-                showError("Mã dịch vụ không được để trống.");
-                return;
-            }
-            if (!editing) {
-                for (ServiceCatalogRecord catalog : serviceCatalogs) {
-                    if (catalog.maDichVu.equalsIgnoreCase(txtMa.getText().trim())) {
-                        showError("Mã dịch vụ không được trùng.");
-                        return;
-                    }
-                }
-            }
-            if (txtTen.getText().trim().isEmpty()) {
-                showError("Tên dịch vụ không được để trống.");
-                return;
-            }
-            double donGia = parseMoney(txtDonGia.getText().trim());
-            if (donGia < 0 || valueOf(cboNhom.getSelectedItem()).isEmpty()) {
-                showError("Đơn giá mặc định >= 0 và nhóm dịch vụ bắt buộc chọn.");
-                return;
-            }
-
-            ServiceCatalogRecord target = editing
-                    ? editingRecord
-                    : new ServiceCatalogRecord(txtMa.getText().trim(), txtTen.getText().trim(), valueOf(cboNhom.getSelectedItem()), donGia, txtDonVi.getText().trim(), valueOf(cboStatus.getSelectedItem()), txtMoTaMoi.getText().trim());
-
-            target.tenDichVu = txtTen.getText().trim();
-            target.nhomDichVu = valueOf(cboNhom.getSelectedItem());
-            target.donGiaMacDinh = donGia;
-            target.donViTinh = txtDonVi.getText().trim();
-            target.trangThai = valueOf(cboStatus.getSelectedItem());
-            target.moTa = txtMoTaMoi.getText().trim();
-
-            if (editing) {
-                showSuccess("Cập nhật dịch vụ danh mục thành công.");
-                dispose();
-            } else {
-                addCatalog(target, keepOpen);
-                if (keepOpen) {
-                    txtMa.setText("");
-                    txtTen.setText("");
-                    txtDonGia.setText("0");
-                    txtDonVi.setText("");
-                    txtMoTaMoi.setText("");
-                } else {
-                    dispose();
-                }
-            }
-        }
+    private void error(String message) {
+        JOptionPane.showMessageDialog(this, message, "Cảnh báo", JOptionPane.ERROR_MESSAGE);
     }
 
-    private final class ServiceUsageDetailDialog extends BaseServiceDialog {
-        private ServiceUsageDetailDialog(Frame owner, ServiceUsageRecord record) {
-            super(owner, "Chi tiết dịch vụ phát sinh", 620, 420);
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader("CHI TIẾT DỊCH VỤ PHÁT SINH", "Thông tin chi tiết của một dòng dịch vụ thực tế đã ghi nhận."), BorderLayout.NORTH);
-
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            addFormRow(form, gbc, 0, "Hồ sơ lưu trú", createValueLabel(record.hoSoLuuTru));
-            addFormRow(form, gbc, 1, "Khách / Phòng", createValueLabel(record.khachPhong));
-            addFormRow(form, gbc, 2, "Nhóm dịch vụ", createValueLabel(record.nhomDichVu));
-            addFormRow(form, gbc, 3, "Dịch vụ", createValueLabel(record.tenDichVu));
-            addFormRow(form, gbc, 4, "Đơn giá", createValueLabel(formatMoney(record.donGia)));
-            addFormRow(form, gbc, 5, "Số lượng", createValueLabel(String.valueOf(record.soLuong)));
-            addFormRow(form, gbc, 6, "Thành tiền", createValueLabel(record.getThanhTienLabel()));
-            addFormRow(form, gbc, 7, "Thời gian sử dụng", createValueLabel(record.thoiGianSuDung));
-            addFormRow(form, gbc, 8, "Người ghi nhận", createValueLabel(record.nguoiGhiNhan));
-            addFormRow(form, gbc, 9, "Ghi chú", new JScrollPane(createReadonlyViewArea(record.ghiChu)));
-
-            JPanel card = createDialogCardPanel();
-            card.add(form, BorderLayout.CENTER);
-            content.add(card, BorderLayout.CENTER);
-            content.add(buildDialogButtons(createPrimaryButton("Đóng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-    }
-
-    private JTextArea createReadonlyViewArea(String text) {
-        JTextArea area = createDialogTextArea(3);
-        area.setEditable(false);
-        area.setBackground(PANEL_SOFT);
-        area.setText(text);
-        return area;
-    }
-
-    private int countByHoSo(String hoSo) {
-        int count = 0;
-        for (ServiceUsageRecord service : allServiceUsages) {
-            if (service.hoSoLuuTru.equals(hoSo)) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private double sumByHoSo(String hoSo) {
-        double total = 0;
-        for (ServiceUsageRecord service : allServiceUsages) {
-            if (service.hoSoLuuTru.equals(hoSo)) {
-                total += service.thanhTien;
-            }
-        }
-        return total;
-    }
-
-    private final class ConfirmDialog extends BaseServiceDialog {
-        private boolean confirmed;
-
-        private ConfirmDialog(Frame owner, String title, String message, String confirmText, Color confirmColor) {
-            super(owner, title, 430, 220);
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(title, message), BorderLayout.CENTER);
-            JButton btnSkip = createOutlineButton("Bỏ qua", new Color(107, 114, 128), e -> dispose());
-            JButton btnConfirm = createPrimaryButton(confirmText, confirmColor, Color.WHITE, e -> {
-                confirmed = true;
-                dispose();
-            });
-            content.add(buildDialogButtons(btnSkip, btnConfirm), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-
-        private boolean isConfirmed() {
-            return confirmed;
-        }
-    }
-
-    private final class AppMessageDialog extends BaseServiceDialog {
-        private AppMessageDialog(Frame owner, String title, String message, Color accentColor) {
-            super(owner, title, 430, 220);
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(title, message), BorderLayout.CENTER);
-            content.add(buildDialogButtons(createPrimaryButton("Đóng", accentColor, Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-    }
-
-    private static final class ServiceUsageRecord {
-        private String maPhatSinh;
-        private String hoSoLuuTru;
-        private String khachPhong;
-        private String trangThaiHoSo;
-        private String maDanhMuc;
-        private String tenDichVu;
-        private String nhomDichVu;
-        private String donViTinh;
-        private double donGia;
-        private int soLuong;
-        private double thanhTien;
-        private String thoiGianSuDung;
-        private String nguoiGhiNhan;
-        private String trangThai;
-        private String ghiChu;
-
-        private static ServiceUsageRecord create(String maPhatSinh, String hoSoLuuTru, String khachPhong, String trangThaiHoSo,
-                                                 ServiceCatalogRecord catalog, int soLuong, String thoiGianSuDung, String nguoiGhiNhan,
-                                                 String trangThai) {
-            ServiceUsageRecord record = new ServiceUsageRecord();
-            record.maPhatSinh = maPhatSinh;
-            record.hoSoLuuTru = hoSoLuuTru;
-            record.khachPhong = khachPhong;
-            record.trangThaiHoSo = trangThaiHoSo;
-            record.maDanhMuc = catalog.maDichVu;
-            record.tenDichVu = catalog.tenDichVu;
-            record.nhomDichVu = catalog.nhomDichVu;
-            record.donViTinh = catalog.donViTinh;
-            record.donGia = catalog.donGiaMacDinh;
-            record.soLuong = soLuong;
-            record.thanhTien = catalog.donGiaMacDinh * soLuong;
-            record.thoiGianSuDung = thoiGianSuDung;
-            record.nguoiGhiNhan = nguoiGhiNhan;
-            record.trangThai = trangThai;
-            record.ghiChu = catalog.moTa;
-            return record;
-        }
-
-        private String getThanhTienLabel() {
-            return String.format(Locale.US, "%,.0f", thanhTien).replace(',', '.');
-        }
-
-        private String buildDetailNote() {
-            return "Đơn giá: " + String.format(Locale.US, "%,.0f", donGia).replace(',', '.')
-                    + " | Số lượng: " + soLuong
-                    + " | Thời gian: " + thoiGianSuDung
-                    + " | Người ghi nhận: " + nguoiGhiNhan
-                    + (ghiChu == null || ghiChu.trim().isEmpty() ? "" : "\n" + ghiChu);
-        }
-    }
-
-    private static final class ServiceCatalogRecord {
-        private String maDichVu;
-        private String tenDichVu;
-        private String nhomDichVu;
-        private double donGiaMacDinh;
-        private String donViTinh;
-        private String trangThai;
-        private String moTa;
-
-        private ServiceCatalogRecord(String maDichVu, String tenDichVu, String nhomDichVu, double donGiaMacDinh,
-                                     String donViTinh, String trangThai, String moTa) {
-            this.maDichVu = maDichVu;
-            this.tenDichVu = tenDichVu;
-            this.nhomDichVu = nhomDichVu;
-            this.donGiaMacDinh = donGiaMacDinh;
-            this.donViTinh = donViTinh;
-            this.trangThai = trangThai;
-            this.moTa = moTa;
-        }
-    }
-
-    /**
-     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
-     */
     public JPanel buildPanel() {
-        if (rootPanel == null) initUI();
+        if (rootPanel == null) {
+            initUI();
+        }
         return rootPanel;
     }
-
 }

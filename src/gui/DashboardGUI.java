@@ -340,8 +340,9 @@ public class DashboardGUI extends JFrame {
         lblDetailTitle.setFont(SECTION_FONT);
         lblDetailTitle.setForeground(TEXT_PRIMARY);
 
-        JPanel detailBody = new JPanel(new GridLayout(5, 2, 10, 8));
+        JPanel detailBody = new JPanel();
         detailBody.setOpaque(false);
+        detailBody.setLayout(new BoxLayout(detailBody, BoxLayout.Y_AXIS));
 
         lblChiTietMa = createValueLabel();
         lblChiTietDoiTuong = createValueLabel();
@@ -544,11 +545,18 @@ public class DashboardGUI extends JFrame {
     }
 
     private void addDetailRow(JPanel panel, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(0, 0, 8, 0));
+
         JLabel lbl = new JLabel(label + ":");
         lbl.setFont(BODY_FONT);
         lbl.setForeground(TEXT_MUTED);
-        panel.add(lbl);
-        panel.add(value);
+        lbl.setPreferredSize(new Dimension(120, 20));
+
+        row.add(lbl, BorderLayout.WEST);
+        row.add(value, BorderLayout.CENTER);
+        panel.add(row);
     }
 
     private JLabel createValueLabel() {

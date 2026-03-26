@@ -305,8 +305,9 @@ public class PhongGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
         lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        JPanel body = new JPanel(new GridLayout(6, 2, 10, 8));
+        JPanel body = new JPanel();
         body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
         lblSoPhong = createValueLabel();
         lblLoaiPhong = createValueLabel();
@@ -521,17 +522,25 @@ public class PhongGUI extends JFrame {
     }
 
     private void addDetailRow(JPanel panel, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(0, 0, 8, 0));
+
         JLabel lbl = new JLabel(label + ":");
         lbl.setFont(BODY_FONT);
         lbl.setForeground(TEXT_MUTED);
-        panel.add(lbl);
-        panel.add(value);
+        lbl.setPreferredSize(new Dimension(150, 20));
+
+        row.add(lbl, BorderLayout.WEST);
+        row.add(value, BorderLayout.CENTER);
+        panel.add(row);
     }
 
     private JLabel createValueLabel() {
         JLabel label = new JLabel("-");
         label.setFont(new Font("Segoe UI", Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
+        label.setVerticalAlignment(SwingConstants.TOP);
         return label;
     }
 

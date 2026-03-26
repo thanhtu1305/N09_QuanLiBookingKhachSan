@@ -1,5 +1,9 @@
 package gui;
 
+import dao.LoaiPhongDAO;
+import dao.TienNghiDAO;
+import entity.LoaiPhong;
+import entity.TienNghi;
 import gui.common.AppBranding;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -14,6 +18,7 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -35,9 +40,15 @@ import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 public class LoaiPhongGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -55,23 +66,31 @@ public class LoaiPhongGUI extends JFrame {
     private static final boolean[] DEFAULT_DELUXE_AMENITIES = {true, true, true, true, true, true, true, true, true, false, true, true};
     private static final boolean[] DEFAULT_SUITE_AMENITIES = {true, true, true, true, true, true, true, true, true, true, true, true};
     private static final boolean[] DEFAULT_FAMILY_AMENITIES = {true, true, true, true, true, true, false, true, true, true, true, true};
+    private static final String FILTER_ALL = "\u0054\u1ea5t c\u1ea3";
+    private static final String STATUS_ACTIVE = "\u0110ang \u00e1p d\u1ee5ng";
+    private static final String STATUS_INACTIVE = "Ng\u1eebng \u00e1p d\u1ee5ng";
+    private static final String AUTO_CODE_TEXT = "T\u1ef1 \u0111\u1ed9ng";
+    private static final String DEFAULT_EMPTY_DESCRIPTION = "Ch\u01b0a c\u00f3 m\u00f4 t\u1ea3.";
 
     private final String username;
     private final String role;
+    private final LoaiPhongDAO loaiPhongDAO = new LoaiPhongDAO();
+    private final TienNghiDAO tienNghiDAO = new TienNghiDAO();
     private JPanel rootPanel;
     private final List<RoomTypeRecord> allTypes = new ArrayList<RoomTypeRecord>();
     private final List<RoomTypeRecord> filteredTypes = new ArrayList<RoomTypeRecord>();
+    private final List<TienNghi> amenityCatalog = new ArrayList<TienNghi>();
+    private final Map<Integer, TienNghi> amenityById = new LinkedHashMap<Integer, TienNghi>();
+    private final Map<String, TienNghi> amenityByKey = new LinkedHashMap<String, TienNghi>();
 
     private JTable tblLoaiPhong;
     private DefaultTableModel tableModel;
     private JComboBox<String> cboTrangThai;
-    private JComboBox<String> cboSucChua;
     private JTextField txtTuKhoa;
 
     private JLabel lblMaLoai;
     private JLabel lblTenLoai;
     private JTextArea txtMoTa;
-    private JLabel lblSucChuaChuan;
     private JLabel lblKhachToiDa;
     private JLabel lblDienTich;
     private JLabel lblLoaiGiuong;
@@ -91,9 +110,8 @@ public class LoaiPhongGUI extends JFrame {
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        seedSampleData();
         initUI();
-        reloadSampleData(false);
+        loadRoomTypes(false, false);
         registerShortcuts();
     }
 
@@ -139,7 +157,7 @@ public class LoaiPhongGUI extends JFrame {
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Thiết lập sức chứa, diện tích, mô tả và tiện nghi mặc định áp dụng chung cho các phòng thuộc cùng loại.");
+        JLabel lblSub = new JLabel("Thiết lập diện tích, khách tối đa, mô tả và tiện nghi mặc định áp dụng chung cho các phòng thuộc cùng loại.");
         lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSub.setForeground(TEXT_MUTED);
 
@@ -165,7 +183,7 @@ public class LoaiPhongGUI extends JFrame {
         JButton btnCapNhat = createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateRoomTypeDialog());
         JButton btnNgungApDung = createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomTypeDialog());
         JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
-        JButton btnLamMoi = createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true));
+        JButton btnLamMoi = createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> loadRoomTypes(true, true));
         JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
 
         btnTienNghiMacDinh.setToolTipText("Thiết lập bộ tiện nghi mặc định áp dụng chung cho mọi phòng thuộc loại này.");
@@ -186,13 +204,11 @@ public class LoaiPhongGUI extends JFrame {
         left.setOpaque(false);
 
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Đang áp dụng", "Ngừng áp dụng"});
-        cboSucChua = createComboBox(new String[]{"Tất cả", "2 người", "3 người", "4 người"});
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(290, 34));
         txtTuKhoa.setToolTipText("Mã loại / tên loại phòng");
 
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
-        left.add(createFieldGroup("Sức chứa", cboSucChua));
 
         JPanel right = new JPanel();
         right.setOpaque(false);
@@ -260,7 +276,6 @@ public class LoaiPhongGUI extends JFrame {
         String[] columns = {
                 "Mã loại",
                 "Tên loại phòng",
-                "Sức chứa chuẩn",
                 "Khách tối đa",
                 "Diện tích",
                 "Trạng thái"
@@ -324,12 +339,12 @@ public class LoaiPhongGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
         lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        JPanel body = new JPanel(new GridLayout(8, 2, 10, 8));
+        JPanel body = new JPanel();
         body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
         lblMaLoai = createValueLabel();
         lblTenLoai = createValueLabel();
-        lblSucChuaChuan = createValueLabel();
         lblKhachToiDa = createValueLabel();
         lblDienTich = createValueLabel();
         lblLoaiGiuong = createValueLabel();
@@ -338,7 +353,6 @@ public class LoaiPhongGUI extends JFrame {
 
         addDetailRow(body, "Mã loại", lblMaLoai);
         addDetailRow(body, "Tên loại", lblTenLoai);
-        addDetailRow(body, "Sức chứa", lblSucChuaChuan);
         addDetailRow(body, "Khách tối đa", lblKhachToiDa);
         addDetailRow(body, "Diện tích", lblDienTich);
         addDetailRow(body, "Loại giường", lblLoaiGiuong);
@@ -513,17 +527,25 @@ public class LoaiPhongGUI extends JFrame {
     }
 
     private void addDetailRow(JPanel panel, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(0, 0, 8, 0));
+
         JLabel lbl = new JLabel(label + ":");
         lbl.setFont(BODY_FONT);
         lbl.setForeground(TEXT_MUTED);
-        panel.add(lbl);
-        panel.add(value);
+        lbl.setPreferredSize(new Dimension(150, 20));
+
+        row.add(lbl, BorderLayout.WEST);
+        row.add(value, BorderLayout.CENTER);
+        panel.add(row);
     }
 
     private JLabel createValueLabel() {
         JLabel label = new JLabel("-");
         label.setFont(new Font("Segoe UI", Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
+        label.setVerticalAlignment(SwingConstants.TOP);
         return label;
     }
 
@@ -551,28 +573,98 @@ public class LoaiPhongGUI extends JFrame {
         allTypes.clear();
     }
 
-    private void reloadSampleData(boolean showMessage) {
-        cboTrangThai.setSelectedIndex(0);
-        cboSucChua.setSelectedIndex(0);
-        txtTuKhoa.setText("");
+    private void loadRoomTypes(boolean resetFilter, boolean showMessage) {
+        if (resetFilter) {
+            cboTrangThai.setSelectedIndex(0);
+            txtTuKhoa.setText("");
+        }
+
+        loadAmenityCatalog();
+        allTypes.clear();
+        for (LoaiPhong loaiPhong : loaiPhongDAO.getAll()) {
+            allTypes.add(buildRoomTypeRecord(loaiPhong));
+        }
+
         applyFilters(false);
         if (showMessage) {
-            showSuccess("Đã làm mới dữ liệu loại phòng.");
+            showSuccess("\u0110\u00e3 l\u00e0m m\u1edbi d\u1eef li\u1ec7u lo\u1ea1i ph\u00f2ng.");
         }
+    }
+
+    private void loadAmenityCatalog() {
+        amenityCatalog.clear();
+        amenityById.clear();
+        amenityByKey.clear();
+        for (TienNghi tienNghi : tienNghiDAO.getAll()) {
+            amenityCatalog.add(tienNghi);
+            amenityById.put(tienNghi.getMaTienNghi(), tienNghi);
+            amenityByKey.put(normalizeAmenityKey(tienNghi.getTenTienNghi()), tienNghi);
+        }
+    }
+
+    private RoomTypeRecord buildRoomTypeRecord(LoaiPhong loaiPhong) {
+        RoomTypeRecord type = RoomTypeRecord.fromEntity(loaiPhong);
+        type.setAmenityIds(loaiPhongDAO.getTienNghiIdsByLoaiPhong(loaiPhong.getMaLoaiPhong()), amenityById);
+        return type;
+    }
+
+    private void refreshRoomTypeViewsFromDb(int maLoaiPhong, String message) {
+        loadRoomTypes(false, false);
+        selectRoomTypeById(maLoaiPhong);
+        showSuccess(message);
+    }
+
+    private void selectRoomTypeById(int maLoaiPhong) {
+        if (maLoaiPhong <= 0) {
+            return;
+        }
+        for (int i = 0; i < filteredTypes.size(); i++) {
+            RoomTypeRecord type = filteredTypes.get(i);
+            if (type.maLoaiPhong == maLoaiPhong) {
+                tblLoaiPhong.setRowSelectionInterval(i, i);
+                updateDetailPanel(type);
+                return;
+            }
+        }
+        if (!filteredTypes.isEmpty()) {
+            tblLoaiPhong.setRowSelectionInterval(0, 0);
+            updateDetailPanel(filteredTypes.get(0));
+        } else {
+            clearDetailPanel();
+        }
+    }
+
+    private boolean isAllFilterValue(String value) {
+        return normalizeText(value).isEmpty() || FILTER_ALL.equals(value) || "tat ca".equals(normalizeText(value));
+    }
+
+    private String normalizeText(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replace('\u0111', 'd')
+                .replace('\u0110', 'D')
+                .replaceAll("\\p{M}+", "");
+        return normalized.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeAmenityKey(String value) {
+        return normalizeText(value).replace(" ", "");
+    }
+
+    private void reloadSampleData(boolean showMessage) {
+        loadRoomTypes(true, showMessage);
     }
 
     private void applyFilters(boolean showMessage) {
         filteredTypes.clear();
 
         String trangThai = valueOf(cboTrangThai.getSelectedItem());
-        String sucChua = valueOf(cboSucChua.getSelectedItem());
         String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
 
         for (RoomTypeRecord type : allTypes) {
             if (!"Tất cả".equals(trangThai) && !type.trangThai.equals(trangThai)) {
-                continue;
-            }
-            if (!"Tất cả".equals(sucChua) && !type.getSucChuaChuanLabel().equals(sucChua)) {
                 continue;
             }
             if (!tuKhoa.isEmpty()) {
@@ -596,7 +688,6 @@ public class LoaiPhongGUI extends JFrame {
             tableModel.addRow(new Object[]{
                     type.maLoai,
                     type.tenLoaiPhong,
-                    type.getSucChuaChuanLabel(),
                     type.getKhachToiDaLabel(),
                     type.getDienTichLabel(),
                     type.trangThai
@@ -614,7 +705,6 @@ public class LoaiPhongGUI extends JFrame {
     private void updateDetailPanel(RoomTypeRecord type) {
         lblMaLoai.setText(type.maLoai);
         lblTenLoai.setText(type.tenLoaiPhong);
-        lblSucChuaChuan.setText(type.getSucChuaChuanLabel());
         lblKhachToiDa.setText(type.getKhachToiDaLabel());
         lblDienTich.setText(type.getDienTichLabel());
         lblLoaiGiuong.setText(type.loaiGiuong);
@@ -629,7 +719,6 @@ public class LoaiPhongGUI extends JFrame {
     private void clearDetailPanel() {
         lblMaLoai.setText("-");
         lblTenLoai.setText("-");
-        lblSucChuaChuan.setText("-");
         lblKhachToiDa.setText("-");
         lblDienTich.setText("-");
         lblLoaiGiuong.setText("-");
@@ -686,7 +775,7 @@ public class LoaiPhongGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "loaiphong-f2", this::openUpdateRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "loaiphong-f3", this::openDeactivateRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "loaiphong-f4", this::openDefaultAmenitiesDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "loaiphong-f5", () -> reloadSampleData(true));
+        ScreenUIHelper.registerShortcut(this, "F5", "loaiphong-f5", () -> loadRoomTypes(true, true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "loaiphong-enter", () -> {
             RoomTypeRecord type = getSelectedRoomType();
             if (type != null) {
@@ -706,7 +795,6 @@ public class LoaiPhongGUI extends JFrame {
     private void addRoomType(RoomTypeRecord type, boolean keepDialogOpen) {
         allTypes.add(0, type);
         cboTrangThai.setSelectedIndex(0);
-        cboSucChua.setSelectedIndex(0);
         txtTuKhoa.setText("");
         applyFilters(false);
         selectRoomType(type);
@@ -866,7 +954,6 @@ public class LoaiPhongGUI extends JFrame {
     private final class CreateRoomTypeDialog extends BaseRoomTypeDialog {
         private final JTextField txtMaLoai;
         private final JTextField txtTenLoai;
-        private final JTextField txtSucChuaChuanDialog;
         private final JTextField txtKhachToiDaDialog;
         private final JTextField txtDienTichDialog;
         private final JTextField txtGiaThamChieuDialog;
@@ -887,9 +974,10 @@ public class LoaiPhongGUI extends JFrame {
             gbc.anchor = GridBagConstraints.WEST;
 
             txtMaLoai = createInputField("");
+            txtMaLoai.setEditable(false);
+            txtMaLoai.setText(AUTO_CODE_TEXT);
             txtTenLoai = createInputField("");
-            txtSucChuaChuanDialog = createInputField("");
-            txtKhachToiDaDialog = createInputField("");
+                txtKhachToiDaDialog = createInputField("");
             txtDienTichDialog = createInputField("");
             txtGiaThamChieuDialog = createInputField("");
             cboTrangThaiDialog = createComboBox(ROOM_TYPE_STATUS_OPTIONS);
@@ -897,12 +985,11 @@ public class LoaiPhongGUI extends JFrame {
 
             addFormRow(form, gbc, 0, "Mã loại phòng", txtMaLoai);
             addFormRow(form, gbc, 1, "Tên loại phòng", txtTenLoai);
-            addFormRow(form, gbc, 2, "Sức chứa chuẩn", txtSucChuaChuanDialog);
-            addFormRow(form, gbc, 3, "Khách tối đa", txtKhachToiDaDialog);
-            addFormRow(form, gbc, 4, "Diện tích", txtDienTichDialog);
-            addFormRow(form, gbc, 5, "Giá tham chiếu", txtGiaThamChieuDialog);
-            addFormRow(form, gbc, 6, "Trạng thái đầu", cboTrangThaiDialog);
-            addFormRow(form, gbc, 7, "Mô tả", new JScrollPane(txtMoTaDialog));
+            addFormRow(form, gbc, 2, "Khách tối đa", txtKhachToiDaDialog);
+            addFormRow(form, gbc, 3, "Diện tích", txtDienTichDialog);
+            addFormRow(form, gbc, 4, "Giá tham chiếu", txtGiaThamChieuDialog);
+            addFormRow(form, gbc, 5, "Trạng thái đầu", cboTrangThaiDialog);
+            addFormRow(form, gbc, 6, "Mô tả", new JScrollPane(txtMoTaDialog));
 
             card.add(form, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
@@ -915,56 +1002,56 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         private void submit(boolean keepOpen) {
-            String maLoai = txtMaLoai.getText().trim();
             String tenLoai = txtTenLoai.getText().trim();
-            if (maLoai.isEmpty()) {
-                showError("Mã loại phòng không được để trống.");
-                return;
-            }
-            for (RoomTypeRecord type : allTypes) {
-                if (type.maLoai.equalsIgnoreCase(maLoai)) {
-                    showError("Mã loại phòng đã tồn tại.");
-                    return;
-                }
-            }
             if (tenLoai.isEmpty()) {
-                showError("Tên loại phòng không được để trống.");
+                showValidationMessage("\u0054\u00ean lo\u1ea1i ph\u00f2ng kh\u00f4ng \u0111\u01b0\u1ee3c \u0111\u1ec3 tr\u1ed1ng.");
                 return;
             }
 
-            Integer sucChuaChuan = parsePositiveInt(txtSucChuaChuanDialog.getText().trim(), "Sức chứa chuẩn phải lớn hơn 0.");
-            if (sucChuaChuan == null) {
+            Integer khachToiDa = parsePositiveInt(txtKhachToiDaDialog.getText().trim(), "Kh\u00e1ch t\u1ed1i \u0111a ph\u1ea3i l\u00e0 s\u1ed1 nguy\u00ean h\u1ee3p l\u1ec7.");
+            if (khachToiDa == null) {
                 return;
             }
-            Integer khachToiDa = parsePositiveInt(txtKhachToiDaDialog.getText().trim(), "Khách tối đa phải là số hợp lệ và không nhỏ hơn sức chứa chuẩn.");
-            if (khachToiDa == null || khachToiDa < sucChuaChuan) {
-                showError("Khách tối đa phải là số hợp lệ và không nhỏ hơn sức chứa chuẩn.");
+            Double dienTich = parsePositiveDouble(txtDienTichDialog.getText().trim(), "Di\u1ec7n t\u00edch ph\u1ea3i l\u00e0 s\u1ed1 h\u1ee3p l\u1ec7 > 0.");
+            if (dienTich == null) {
                 return;
             }
-            Double dienTich = parseNonNegativeDouble(txtDienTichDialog.getText().trim(), "Diện tích phải là số hợp lệ.");
-            if (dienTich == null || dienTich <= 0) {
-                showError("Diện tích phải lớn hơn 0.");
-                return;
-            }
-            Double giaThamChieu = parseNonNegativeDouble(txtGiaThamChieuDialog.getText().trim(), "Giá tham chiếu phải là số hợp lệ.");
+            Double giaThamChieu = parseNonNegativeDouble(txtGiaThamChieuDialog.getText().trim(), "Gi\u00e1 tham chi\u1ebfu ph\u1ea3i l\u00e0 s\u1ed1 h\u1ee3p l\u1ec7 >= 0.");
             if (giaThamChieu == null) {
                 return;
             }
 
-            RoomTypeRecord type = RoomTypeRecord.create(
-                    maLoai,
+            String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
+            if (trangThai.trim().isEmpty()) {
+                showValidationMessage("Tr\u1ea1ng th\u00e1i kh\u00f4ng \u0111\u01b0\u1ee3c \u0111\u1ec3 tr\u1ed1ng.");
+                return;
+            }
+
+            String loaiGiuong = inferBedType(tenLoai);
+            if (loaiGiuong.trim().isEmpty()) {
+                showValidationMessage("Lo\u1ea1i gi\u01b0\u1eddng kh\u00f4ng \u0111\u01b0\u1ee3c \u0111\u1ec3 tr\u1ed1ng.");
+                return;
+            }
+
+            LoaiPhong loaiPhong = new LoaiPhong(
                     tenLoai,
-                    txtMoTaDialog.getText().trim().isEmpty() ? "Loại phòng mới được tạo từ popup." : txtMoTaDialog.getText().trim(),
-                    sucChuaChuan,
                     khachToiDa,
                     dienTich,
-                    inferBedType(tenLoai),
-                    valueOf(cboTrangThaiDialog.getSelectedItem()),
-                    giaThamChieu
+                    loaiGiuong,
+                    giaThamChieu,
+                    trangThai,
+                    txtMoTaDialog.getText().trim()
             );
-            type.applyDefaultAmenitiesByName(type.tenLoaiPhong);
+            if (!loaiPhongDAO.insert(loaiPhong)) {
+                showError("Kh\u00f4ng th\u1ec3 th\u00eam lo\u1ea1i ph\u00f2ng.");
+                return;
+            }
 
-            addRoomType(type, keepOpen);
+            loadRoomTypes(true, false);
+            selectRoomTypeById(loaiPhong.getMaLoaiPhong());
+            showSuccess(keepOpen
+                    ? "Th\u00eam lo\u1ea1i ph\u00f2ng th\u00e0nh c\u00f4ng v\u00e0 s\u1eb5n s\u00e0ng t\u1ea1o lo\u1ea1i ph\u00f2ng m\u1edbi."
+                    : "Th\u00eam lo\u1ea1i ph\u00f2ng th\u00e0nh c\u00f4ng.");
             if (keepOpen) {
                 resetForm();
             } else {
@@ -973,15 +1060,14 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         private void resetForm() {
-            txtMaLoai.setText("");
+            txtMaLoai.setText(AUTO_CODE_TEXT);
             txtTenLoai.setText("");
-            txtSucChuaChuanDialog.setText("");
             txtKhachToiDaDialog.setText("");
             txtDienTichDialog.setText("");
             txtGiaThamChieuDialog.setText("");
             cboTrangThaiDialog.setSelectedIndex(0);
             txtMoTaDialog.setText("");
-            txtMaLoai.requestFocusInWindow();
+            txtTenLoai.requestFocusInWindow();
         }
     }
 
@@ -989,7 +1075,6 @@ public class LoaiPhongGUI extends JFrame {
         private final RoomTypeRecord type;
         private final JTextField txtMaLoai;
         private final JTextField txtTenLoai;
-        private final JTextField txtSucChuaChuanDialog;
         private final JTextField txtKhachToiDaDialog;
         private final JTextField txtDienTichDialog;
         private final JTextField txtGiaThamChieuDialog;
@@ -1013,7 +1098,6 @@ public class LoaiPhongGUI extends JFrame {
             txtMaLoai = createInputField(type.maLoai);
             txtMaLoai.setEditable(false);
             txtTenLoai = createInputField(type.tenLoaiPhong);
-            txtSucChuaChuanDialog = createInputField(String.valueOf(type.sucChuaChuan));
             txtKhachToiDaDialog = createInputField(String.valueOf(type.khachToiDa));
             txtDienTichDialog = createInputField(String.valueOf(type.dienTich));
             txtGiaThamChieuDialog = createInputField(String.valueOf((long) type.giaThamChieu));
@@ -1024,12 +1108,11 @@ public class LoaiPhongGUI extends JFrame {
 
             addFormRow(form, gbc, 0, "Mã loại phòng", txtMaLoai);
             addFormRow(form, gbc, 1, "Tên loại phòng", txtTenLoai);
-            addFormRow(form, gbc, 2, "Sức chứa chuẩn", txtSucChuaChuanDialog);
-            addFormRow(form, gbc, 3, "Khách tối đa", txtKhachToiDaDialog);
-            addFormRow(form, gbc, 4, "Diện tích", txtDienTichDialog);
-            addFormRow(form, gbc, 5, "Giá tham chiếu", txtGiaThamChieuDialog);
-            addFormRow(form, gbc, 6, "Trạng thái", cboTrangThaiDialog);
-            addFormRow(form, gbc, 7, "Mô tả", new JScrollPane(txtMoTaDialog));
+            addFormRow(form, gbc, 2, "Khách tối đa", txtKhachToiDaDialog);
+            addFormRow(form, gbc, 3, "Diện tích", txtDienTichDialog);
+            addFormRow(form, gbc, 4, "Giá tham chiếu", txtGiaThamChieuDialog);
+            addFormRow(form, gbc, 5, "Trạng thái", cboTrangThaiDialog);
+            addFormRow(form, gbc, 6, "Mô tả", new JScrollPane(txtMoTaDialog));
 
             card.add(form, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
@@ -1043,38 +1126,51 @@ public class LoaiPhongGUI extends JFrame {
         private void submit() {
             String tenLoai = txtTenLoai.getText().trim();
             if (tenLoai.isEmpty()) {
-                showError("Tên loại phòng không được để trống.");
+                showValidationMessage("Tên loại phòng không được để trống.");
                 return;
             }
-            Integer sucChuaChuan = parsePositiveInt(txtSucChuaChuanDialog.getText().trim(), "Sức chứa chuẩn phải lớn hơn 0.");
-            if (sucChuaChuan == null) {
+
+            Integer khachToiDa = parsePositiveInt(txtKhachToiDaDialog.getText().trim(), "Khách tối đa phải là số nguyên > 0.");
+            if (khachToiDa == null) {
                 return;
             }
-            Integer khachToiDa = parsePositiveInt(txtKhachToiDaDialog.getText().trim(), "Khách tối đa phải là số hợp lệ.");
-            if (khachToiDa == null || khachToiDa < sucChuaChuan) {
-                showError("Khách tối đa phải là số hợp lệ và không nhỏ hơn sức chứa chuẩn.");
+            Double dienTich = parsePositiveDouble(txtDienTichDialog.getText().trim(), "Diện tích phải là số hợp lệ > 0.");
+            if (dienTich == null) {
                 return;
             }
-            Double dienTich = parseNonNegativeDouble(txtDienTichDialog.getText().trim(), "Diện tích phải là số hợp lệ.");
-            if (dienTich == null || dienTich <= 0) {
-                showError("Diện tích phải lớn hơn 0.");
-                return;
-            }
-            Double giaThamChieu = parseNonNegativeDouble(txtGiaThamChieuDialog.getText().trim(), "Giá tham chiếu phải là số hợp lệ.");
+            Double giaThamChieu = parseNonNegativeDouble(txtGiaThamChieuDialog.getText().trim(), "Giá tham chiếu phải là số hợp lệ >= 0.");
             if (giaThamChieu == null) {
                 return;
             }
 
-            type.tenLoaiPhong = tenLoai;
-            type.sucChuaChuan = sucChuaChuan;
-            type.khachToiDa = khachToiDa;
-            type.dienTich = dienTich;
-            type.giaThamChieu = giaThamChieu;
-            type.trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
-            type.moTa = txtMoTaDialog.getText().trim().isEmpty() ? type.moTa : txtMoTaDialog.getText().trim();
-            type.loaiGiuong = inferBedType(tenLoai);
+            String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
+            if (trangThai.trim().isEmpty()) {
+                showValidationMessage("Trạng thái không được để trống.");
+                return;
+            }
 
-            refreshRoomTypeViews(type, "Cập nhật loại phòng thành công.");
+            String loaiGiuong = inferBedType(tenLoai);
+            if (loaiGiuong.trim().isEmpty()) {
+                showValidationMessage("Loại giường không được để trống.");
+                return;
+            }
+
+            LoaiPhong loaiPhong = new LoaiPhong(
+                    type.maLoaiPhong,
+                    tenLoai,
+                    khachToiDa,
+                    dienTich,
+                    loaiGiuong,
+                    giaThamChieu,
+                    trangThai,
+                    txtMoTaDialog.getText().trim()
+            );
+            if (!loaiPhongDAO.update(loaiPhong)) {
+                showError("Không thể cập nhật loại phòng.");
+                return;
+            }
+
+            refreshRoomTypeViewsFromDb(type.maLoaiPhong, "Cập nhật loại phòng thành công.");
             dispose();
         }
     }
@@ -1121,7 +1217,7 @@ public class LoaiPhongGUI extends JFrame {
 
         private void submit() {
             if (txtLyDo.getText().trim().isEmpty()) {
-                showError("Vui lòng nhập lý do ngừng áp dụng.");
+                showValidationMessage("Vui lòng nhập lý do ngừng áp dụng.");
                 return;
             }
             if (!showConfirmDialog(
@@ -1133,10 +1229,22 @@ public class LoaiPhongGUI extends JFrame {
                 return;
             }
 
-            type.trangThai = "Ngừng áp dụng";
-            type.moTa = "Ngừng áp dụng từ " + txtTuNgay.getText().trim() + ". " + txtLyDo.getText().trim()
-                    + (txtGhiChuDialog.getText().trim().isEmpty() ? "" : " " + txtGhiChuDialog.getText().trim());
-            refreshRoomTypeViews(type, "Ngừng áp dụng loại phòng thành công.");
+            LoaiPhong loaiPhong = new LoaiPhong(
+                    type.maLoaiPhong,
+                    type.tenLoaiPhong,
+                    type.khachToiDa,
+                    type.dienTich,
+                    type.loaiGiuong,
+                    type.giaThamChieu,
+                    STATUS_INACTIVE,
+                    type.moTa
+            );
+            if (!loaiPhongDAO.update(loaiPhong)) {
+                showError("Không thể ngừng áp dụng loại phòng.");
+                return;
+            }
+
+            refreshRoomTypeViewsFromDb(type.maLoaiPhong, "Ngừng áp dụng loại phòng thành công.");
             dispose();
         }
     }
@@ -1242,36 +1350,42 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         private void restoreDefaults() {
-            if (!showConfirmDialog(
-                    "Xác nhận khôi phục tiện nghi mặc định",
-                    "Hệ thống sẽ khôi phục danh sách tiện nghi mặc định của loại phòng. Bạn có muốn tiếp tục không?",
-                    "Đồng ý",
-                    new Color(245, 158, 11)
-            )) {
+            applyAmenitiesToChecks(type);
+        }
+
+        private List<Integer> buildSelectedAmenityIds() {
+            List<Integer> selectedIds = new ArrayList<Integer>(type.unmappedAmenityIds);
+            addAmenityIfSelected(selectedIds, chkDieuHoa);
+            addAmenityIfSelected(selectedIds, chkTv);
+            addAmenityIfSelected(selectedIds, chkWifi);
+            addAmenityIfSelected(selectedIds, chkNuocNong);
+            addAmenityIfSelected(selectedIds, chkBonTam);
+            addAmenityIfSelected(selectedIds, chkBanLamViec);
+            addAmenityIfSelected(selectedIds, chkMinibar);
+            addAmenityIfSelected(selectedIds, chkMaySayToc);
+            addAmenityIfSelected(selectedIds, chkKhoaTu);
+            addAmenityIfSelected(selectedIds, chkSofa);
+            addAmenityIfSelected(selectedIds, chkBanTra);
+            addAmenityIfSelected(selectedIds, chkTuQuanAoLon);
+            return new ArrayList<Integer>(new LinkedHashSet<Integer>(selectedIds));
+        }
+
+        private void addAmenityIfSelected(List<Integer> selectedIds, JCheckBox checkBox) {
+            if (!checkBox.isSelected()) {
                 return;
             }
-            RoomTypeRecord snapshot = RoomTypeRecord.create(type.maLoai, type.tenLoaiPhong, type.moTa, type.sucChuaChuan, type.khachToiDa, type.dienTich, type.loaiGiuong, type.trangThai, type.giaThamChieu);
-            snapshot.applyDefaultAmenitiesByName(type.tenLoaiPhong);
-            applyAmenitiesToChecks(snapshot);
+            int maTienNghi = findAmenityIdByLabel(checkBox.getText());
+            if (maTienNghi > 0) {
+                selectedIds.add(maTienNghi);
+            }
         }
 
         private void submit() {
-            type.dieuHoa = chkDieuHoa.isSelected();
-            type.tv = chkTv.isSelected();
-            type.wifi = chkWifi.isSelected();
-            type.nuocNong = chkNuocNong.isSelected();
-            type.bonTam = chkBonTam.isSelected();
-            type.banLamViec = chkBanLamViec.isSelected();
-            type.minibar = chkMinibar.isSelected();
-            type.maySayToc = chkMaySayToc.isSelected();
-            type.khoaTu = chkKhoaTu.isSelected();
-            type.sofa = chkSofa.isSelected();
-            type.banTra = chkBanTra.isSelected();
-            type.tuQuanAoLon = chkTuQuanAoLon.isSelected();
-            if (!txtGhiChuDialog.getText().trim().isEmpty()) {
-                type.moTa = txtGhiChuDialog.getText().trim();
+            if (!loaiPhongDAO.updateTienNghiLoaiPhong(type.maLoaiPhong, buildSelectedAmenityIds())) {
+                showError("Không thể cập nhật tiện nghi mặc định.");
+                return;
             }
-            refreshRoomTypeViews(type, "Cập nhật tiện nghi mặc định thành công.");
+            refreshRoomTypeViewsFromDb(type.maLoaiPhong, "Cập nhật tiện nghi mặc định thành công.");
             dispose();
         }
     }
@@ -1311,16 +1425,34 @@ public class LoaiPhongGUI extends JFrame {
         }
     }
 
+    private void showValidationMessage(String message) {
+        JOptionPane.showMessageDialog(this, message, "Thông báo", JOptionPane.WARNING_MESSAGE);
+    }
+
     private Integer parsePositiveInt(String value, String errorMessage) {
         try {
             int parsed = Integer.parseInt(value);
             if (parsed <= 0) {
-                showError(errorMessage);
+                showValidationMessage(errorMessage);
                 return null;
             }
             return parsed;
         } catch (NumberFormatException ex) {
-            showError(errorMessage);
+            showValidationMessage(errorMessage);
+            return null;
+        }
+    }
+
+    private Double parsePositiveDouble(String value, String errorMessage) {
+        try {
+            double parsed = Double.parseDouble(value);
+            if (parsed <= 0) {
+                showValidationMessage(errorMessage);
+                return null;
+            }
+            return parsed;
+        } catch (NumberFormatException ex) {
+            showValidationMessage(errorMessage);
             return null;
         }
     }
@@ -1329,14 +1461,19 @@ public class LoaiPhongGUI extends JFrame {
         try {
             double parsed = Double.parseDouble(value);
             if (parsed < 0) {
-                showError(errorMessage);
+                showValidationMessage(errorMessage);
                 return null;
             }
             return parsed;
         } catch (NumberFormatException ex) {
-            showError(errorMessage);
+            showValidationMessage(errorMessage);
             return null;
         }
+    }
+
+    private int findAmenityIdByLabel(String label) {
+        TienNghi tienNghi = amenityByKey.get(normalizeAmenityKey(label));
+        return tienNghi == null ? 0 : tienNghi.getMaTienNghi();
     }
 
     private String inferBedType(String tenLoai) {
@@ -1354,15 +1491,18 @@ public class LoaiPhongGUI extends JFrame {
     }
 
     private static final class RoomTypeRecord {
+        private int maLoaiPhong;
         private String maLoai;
         private String tenLoaiPhong;
         private String moTa;
-        private int sucChuaChuan;
         private int khachToiDa;
         private double dienTich;
         private String loaiGiuong;
         private String trangThai;
         private double giaThamChieu;
+        private final List<Integer> amenityIds = new ArrayList<Integer>();
+        private final List<Integer> unmappedAmenityIds = new ArrayList<Integer>();
+        private final List<String> amenityNames = new ArrayList<String>();
         private boolean dieuHoa;
         private boolean tv;
         private boolean wifi;
@@ -1376,49 +1516,122 @@ public class LoaiPhongGUI extends JFrame {
         private boolean banTra;
         private boolean tuQuanAoLon;
 
-        private static RoomTypeRecord create(String maLoai, String tenLoaiPhong, String moTa, int sucChuaChuan,
-                                             int khachToiDa, double dienTich, String loaiGiuong, String trangThai,
-                                             double giaThamChieu) {
+        private static RoomTypeRecord fromEntity(LoaiPhong loaiPhong) {
             RoomTypeRecord type = new RoomTypeRecord();
-            type.maLoai = maLoai;
-            type.tenLoaiPhong = tenLoaiPhong;
-            type.moTa = moTa;
-            type.sucChuaChuan = sucChuaChuan;
-            type.khachToiDa = khachToiDa;
-            type.dienTich = dienTich;
-            type.loaiGiuong = loaiGiuong;
-            type.trangThai = trangThai;
-            type.giaThamChieu = giaThamChieu;
-            type.applyDefaultAmenitiesByName(tenLoaiPhong);
+            type.maLoaiPhong = loaiPhong.getMaLoaiPhong();
+            type.maLoai = String.valueOf(loaiPhong.getMaLoaiPhong());
+            type.tenLoaiPhong = loaiPhong.getTenLoaiPhong();
+            type.moTa = loaiPhong.getMoTa() == null ? "" : loaiPhong.getMoTa();
+            type.khachToiDa = loaiPhong.getKhachToiDa();
+            type.dienTich = loaiPhong.getDienTich();
+            type.loaiGiuong = loaiPhong.getLoaiGiuong() == null ? "" : loaiPhong.getLoaiGiuong();
+            type.trangThai = loaiPhong.getTrangThai() == null ? "" : loaiPhong.getTrangThai();
+            type.giaThamChieu = loaiPhong.getGiaThamChieu();
             return type;
         }
 
-        private void applyDefaultAmenitiesByName(String name) {
-            boolean[] defaults = DEFAULT_STANDARD_AMENITIES;
-            String lower = name.toLowerCase(Locale.ROOT);
-            if (lower.contains("deluxe")) {
-                defaults = DEFAULT_DELUXE_AMENITIES;
-            } else if (lower.contains("suite")) {
-                defaults = DEFAULT_SUITE_AMENITIES;
-            } else if (lower.contains("family")) {
-                defaults = DEFAULT_FAMILY_AMENITIES;
+        private void setAmenityIds(List<Integer> ids, Map<Integer, TienNghi> amenityById) {
+            amenityIds.clear();
+            unmappedAmenityIds.clear();
+            amenityNames.clear();
+            resetAmenityFlags();
+            if (ids == null) {
+                return;
             }
-            dieuHoa = defaults[0];
-            tv = defaults[1];
-            wifi = defaults[2];
-            nuocNong = defaults[3];
-            bonTam = defaults[4];
-            banLamViec = defaults[5];
-            minibar = defaults[6];
-            maySayToc = defaults[7];
-            khoaTu = defaults[8];
-            sofa = defaults[9];
-            banTra = defaults[10];
-            tuQuanAoLon = defaults[11];
+            for (Integer amenityId : ids) {
+                if (amenityId == null || amenityId.intValue() <= 0) {
+                    continue;
+                }
+                amenityIds.add(amenityId);
+                TienNghi tienNghi = amenityById.get(amenityId);
+                if (tienNghi == null) {
+                    unmappedAmenityIds.add(amenityId);
+                    continue;
+                }
+                amenityNames.add(tienNghi.getTenTienNghi());
+                if (!applyAmenityFlag(tienNghi.getTenTienNghi(), true)) {
+                    unmappedAmenityIds.add(amenityId);
+                }
+            }
         }
 
-        private String getSucChuaChuanLabel() {
-            return sucChuaChuan + " người";
+        private void resetAmenityFlags() {
+            dieuHoa = false;
+            tv = false;
+            wifi = false;
+            nuocNong = false;
+            bonTam = false;
+            banLamViec = false;
+            minibar = false;
+            maySayToc = false;
+            khoaTu = false;
+            sofa = false;
+            banTra = false;
+            tuQuanAoLon = false;
+        }
+
+        private boolean applyAmenityFlag(String amenityName, boolean selected) {
+            String key = normalizeAmenityKeyLocal(amenityName);
+            if ("dieuhoa".equals(key)) {
+                dieuHoa = selected;
+                return true;
+            }
+            if ("tv".equals(key)) {
+                tv = selected;
+                return true;
+            }
+            if ("wifi".equals(key)) {
+                wifi = selected;
+                return true;
+            }
+            if ("nuocnong".equals(key)) {
+                nuocNong = selected;
+                return true;
+            }
+            if ("bontam".equals(key)) {
+                bonTam = selected;
+                return true;
+            }
+            if ("banlamviec".equals(key)) {
+                banLamViec = selected;
+                return true;
+            }
+            if ("minibar".equals(key)) {
+                minibar = selected;
+                return true;
+            }
+            if ("maysaytoc".equals(key)) {
+                maySayToc = selected;
+                return true;
+            }
+            if ("khoatu".equals(key)) {
+                khoaTu = selected;
+                return true;
+            }
+            if ("sofa".equals(key)) {
+                sofa = selected;
+                return true;
+            }
+            if ("bantra".equals(key)) {
+                banTra = selected;
+                return true;
+            }
+            if ("tuquanaolon".equals(key)) {
+                tuQuanAoLon = selected;
+                return true;
+            }
+            return false;
+        }
+
+        private static String normalizeAmenityKeyLocal(String value) {
+            if (value == null) {
+                return "";
+            }
+            String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                    .replace('đ', 'd')
+                    .replace('Đ', 'D')
+                    .replaceAll("\\p{M}+", "");
+            return normalized.trim().toLowerCase(Locale.ROOT).replace(" ", "");
         }
 
         private String getKhachToiDaLabel() {
@@ -1434,28 +1647,17 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         private String buildAmenitiesSummary() {
-            List<String> amenities = new ArrayList<String>();
-            if (dieuHoa) amenities.add("Điều hòa");
-            if (tv) amenities.add("TV");
-            if (wifi) amenities.add("Wifi");
-            if (nuocNong) amenities.add("Nước nóng");
-            if (bonTam) amenities.add("Bồn tắm");
-            if (banLamViec) amenities.add("Bàn làm việc");
-            if (minibar) amenities.add("Minibar");
-            if (maySayToc) amenities.add("Máy sấy tóc");
-            if (khoaTu) amenities.add("Khóa từ");
-            if (sofa) amenities.add("Sofa");
-            if (banTra) amenities.add("Bàn trà");
-            if (tuQuanAoLon) amenities.add("Tủ quần áo lớn");
-
+            if (amenityNames.isEmpty()) {
+                return "Chưa cấu hình tiện nghi mặc định.";
+            }
             StringBuilder builder = new StringBuilder();
-            for (int i = 0; i < amenities.size(); i++) {
+            for (int i = 0; i < amenityNames.size(); i++) {
                 if (i > 0) {
                     builder.append(", ");
                 }
-                builder.append(amenities.get(i));
+                builder.append(amenityNames.get(i));
             }
-            return builder.length() == 0 ? "Chưa cấu hình tiện nghi mặc định." : builder.toString();
+            return builder.toString();
         }
     }
 

@@ -1,24 +1,30 @@
 package entity;
 
 public class DichVu {
-    private String maDichVu;
+    private int maDichVu;
     private String tenDichVu;
     private double donGia;
+    private String donVi;
 
     public DichVu() {
     }
 
-    public DichVu(String maDichVu, String tenDichVu, double donGia) {
+    public DichVu(int maDichVu, String tenDichVu, double donGia, String donVi) {
         this.maDichVu = maDichVu;
         this.tenDichVu = tenDichVu;
         this.donGia = donGia;
+        this.donVi = donVi;
     }
 
-    public String getMaDichVu() {
+    public DichVu(String tenDichVu, double donGia, String donVi) {
+        this(0, tenDichVu, donGia, donVi);
+    }
+
+    public int getMaDichVu() {
         return maDichVu;
     }
 
-    public void setMaDichVu(String maDichVu) {
+    public void setMaDichVu(int maDichVu) {
         this.maDichVu = maDichVu;
     }
 
@@ -38,12 +44,21 @@ public class DichVu {
         this.donGia = donGia;
     }
 
+    public String getDonVi() {
+        return donVi;
+    }
+
+    public void setDonVi(String donVi) {
+        this.donVi = donVi;
+    }
+
     @Override
     public String toString() {
         return "DichVu{" +
-                "maDichVu='" + maDichVu + '\'' +
+                "maDichVu=" + maDichVu +
                 ", tenDichVu='" + tenDichVu + '\'' +
                 ", donGia=" + donGia +
+                ", donVi='" + donVi + '\'' +
                 '}';
     }
 }

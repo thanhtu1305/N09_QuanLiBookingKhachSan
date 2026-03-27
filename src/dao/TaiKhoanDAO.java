@@ -37,6 +37,10 @@ public class TaiKhoanDAO {
 
         try {
             Connection con = ConnectDB.getConnection();
+            if (con == null) {
+                System.out.println("Connection null");
+                return null;
+            }
             PreparedStatement ps = con.prepareStatement(sql);
             ps.setInt(1, Integer.parseInt(maTaiKhoan));
             ResultSet rs = ps.executeQuery();

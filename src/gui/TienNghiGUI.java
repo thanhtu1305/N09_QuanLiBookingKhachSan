@@ -512,6 +512,7 @@ public class TienNghiGUI extends JFrame {
         cboTrangThai.setSelectedIndex(0);
         txtTuKhoa.setText("");
         loadAmenities(null, null, null);
+        refreshCurrentView();
         if (showMessage) {
             showSuccess("Đã làm mới dữ liệu tiện nghi.");
         }
@@ -528,6 +529,7 @@ public class TienNghiGUI extends JFrame {
                 normalizeFilterValue(valueOf(cboNhomTienNghi.getSelectedItem())),
                 normalizeFilterValue(valueOf(cboTrangThai.getSelectedItem()))
         );
+        refreshCurrentView();
         if (showMessage) {
             showSuccess("Đã lọc được " + filteredAmenities.size() + " tiện nghi phù hợp.");
         }
@@ -578,6 +580,7 @@ public class TienNghiGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private void updateDetailPanel(AmenityRecord amenity) {
@@ -592,6 +595,7 @@ public class TienNghiGUI extends JFrame {
         setWrappedValue(lblUsedByRooms, safeValue(amenity.suDungChoPhong, "Chưa có"));
         txtMoTa.setCaretPosition(0);
         txtGhiChu.setCaretPosition(0);
+        refreshCurrentView();
     }
 
     private void clearDetailPanel() {
@@ -604,6 +608,7 @@ public class TienNghiGUI extends JFrame {
         txtGhiChu.setText("Không có dữ liệu phù hợp.");
         setWrappedValue(lblUsedByRoomTypes, "-");
         setWrappedValue(lblUsedByRooms, "-");
+        refreshCurrentView();
     }
 
     private AmenityRecord getSelectedAmenity() {
@@ -648,6 +653,7 @@ public class TienNghiGUI extends JFrame {
 
     private void selectAmenity(AmenityRecord amenity) {
         if (amenity == null) {
+            refreshCurrentView();
             return;
         }
         int index = filteredAmenities.indexOf(amenity);
@@ -660,6 +666,7 @@ public class TienNghiGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private void selectAmenityById(int maTienNghi) {
@@ -670,6 +677,7 @@ public class TienNghiGUI extends JFrame {
             } else {
                 clearDetailPanel();
             }
+            refreshCurrentView();
             return;
         }
         for (int i = 0; i < filteredAmenities.size(); i++) {
@@ -677,10 +685,12 @@ public class TienNghiGUI extends JFrame {
             if (parseAmenityId(amenity.maTienNghi) == maTienNghi) {
                 tblTienNghi.setRowSelectionInterval(i, i);
                 updateDetailPanel(amenity);
+                refreshCurrentView();
                 return;
             }
         }
         clearDetailPanel();
+        refreshCurrentView();
     }
 
     private JPanel buildFooter() {
@@ -1238,6 +1248,17 @@ public class TienNghiGUI extends JFrame {
     /**
      * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
      */
+    private void refreshCurrentView() {
+        if (rootPanel != null) {
+            rootPanel.revalidate();
+            rootPanel.repaint();
+        }
+        if (tblTienNghi != null) {
+            tblTienNghi.revalidate();
+            tblTienNghi.repaint();
+        }
+    }
+
     public JPanel buildPanel() {
         if (rootPanel == null) initUI();
         return rootPanel;

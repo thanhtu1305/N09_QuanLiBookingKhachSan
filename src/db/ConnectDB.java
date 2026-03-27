@@ -6,9 +6,9 @@ import java.sql.SQLException;
 
 public class ConnectDB {
     private static final String URL =
-            "jdbc:sqlserver://localhost:1433;databaseName=QLKS;encrypt=true;trustServerCertificate=true";
+            "jdbc:sqlserver://localhost:1433;databaseName=QLKS;encrypt=false;trustServerCertificate=true";
     private static final String USER = "sa";
-    private static final String PASSWORD = "Admin@123";
+    private static final String PASSWORD = "123456";
 
     private static Connection connection;
 
@@ -28,14 +28,5 @@ public class ConnectDB {
             e.printStackTrace();
         }
         return connection;
-    }
-
-    public static void main(String[] args) {
-        Connection con = getConnection();
-        if (con != null) {
-            System.out.println("TEST OK");
-        } else {
-            System.out.println("TEST FAIL");
-        }
     }
 }

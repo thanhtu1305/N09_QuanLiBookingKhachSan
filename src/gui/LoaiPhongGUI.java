@@ -586,6 +586,7 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         applyFilters(false);
+        refreshCurrentView();
         if (showMessage) {
             showSuccess("\u0110\u00e3 l\u00e0m m\u1edbi d\u1eef li\u1ec7u lo\u1ea1i ph\u00f2ng.");
         }
@@ -616,6 +617,7 @@ public class LoaiPhongGUI extends JFrame {
 
     private void selectRoomTypeById(int maLoaiPhong) {
         if (maLoaiPhong <= 0) {
+            refreshCurrentView();
             return;
         }
         for (int i = 0; i < filteredTypes.size(); i++) {
@@ -623,6 +625,7 @@ public class LoaiPhongGUI extends JFrame {
             if (type.maLoaiPhong == maLoaiPhong) {
                 tblLoaiPhong.setRowSelectionInterval(i, i);
                 updateDetailPanel(type);
+                refreshCurrentView();
                 return;
             }
         }
@@ -632,6 +635,7 @@ public class LoaiPhongGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private boolean isAllFilterValue(String value) {
@@ -700,6 +704,7 @@ public class LoaiPhongGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private void updateDetailPanel(RoomTypeRecord type) {
@@ -714,6 +719,7 @@ public class LoaiPhongGUI extends JFrame {
         txtMoTa.setCaretPosition(0);
         txtTienNghi.setText(type.buildAmenitiesSummary());
         txtTienNghi.setCaretPosition(0);
+        refreshCurrentView();
     }
 
     private void clearDetailPanel() {
@@ -726,6 +732,7 @@ public class LoaiPhongGUI extends JFrame {
         lblGiaThamChieu.setText("-");
         txtMoTa.setText("Không có dữ liệu phù hợp.");
         txtTienNghi.setText("Không có dữ liệu.");
+        refreshCurrentView();
     }
 
     private RoomTypeRecord getSelectedRoomType() {
@@ -809,6 +816,7 @@ public class LoaiPhongGUI extends JFrame {
 
     private void selectRoomType(RoomTypeRecord type) {
         if (type == null) {
+            refreshCurrentView();
             return;
         }
         int index = filteredTypes.indexOf(type);
@@ -821,6 +829,7 @@ public class LoaiPhongGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private void showSuccess(String message) {
@@ -1664,6 +1673,17 @@ public class LoaiPhongGUI extends JFrame {
     /**
      * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
      */
+    private void refreshCurrentView() {
+        if (rootPanel != null) {
+            rootPanel.revalidate();
+            rootPanel.repaint();
+        }
+        if (tblLoaiPhong != null) {
+            tblLoaiPhong.revalidate();
+            tblLoaiPhong.repaint();
+        }
+    }
+
     public JPanel buildPanel() {
         if (rootPanel == null) initUI();
         return rootPanel;

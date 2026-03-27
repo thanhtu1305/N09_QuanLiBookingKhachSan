@@ -265,6 +265,7 @@ public class DichVuGUI extends JFrame {
             txtTuKhoa.setText("");
         }
         applyFilters(false);
+        refreshCurrentView();
         if (showMessage) {
             info("Đã làm mới dữ liệu dịch vụ.");
         }
@@ -310,6 +311,7 @@ public class DichVuGUI extends JFrame {
         } else {
             clearDetail();
         }
+        refreshCurrentView();
         if (notify) {
             info("Đã lọc được " + filteredServices.size() + " dịch vụ phù hợp.");
         }
@@ -337,6 +339,7 @@ public class DichVuGUI extends JFrame {
         }
         txtLichSu.setText(sb.toString());
         txtLichSu.setCaretPosition(0);
+        refreshCurrentView();
     }
 
     private void clearDetail() {
@@ -345,6 +348,7 @@ public class DichVuGUI extends JFrame {
         lblDonGia.setText("-");
         lblDonVi.setText("-");
         txtLichSu.setText("Không có dữ liệu phù hợp.");
+        refreshCurrentView();
     }
 
     private DichVu getSelectedService(boolean warnIfMissing) {
@@ -905,6 +909,17 @@ public class DichVuGUI extends JFrame {
 
     private void error(String message) {
         JOptionPane.showMessageDialog(this, message, "Cảnh báo", JOptionPane.ERROR_MESSAGE);
+    }
+
+    private void refreshCurrentView() {
+        if (rootPanel != null) {
+            rootPanel.revalidate();
+            rootPanel.repaint();
+        }
+        if (tblDichVu != null) {
+            tblDichVu.revalidate();
+            tblDichVu.repaint();
+        }
     }
 
     public JPanel buildPanel() {

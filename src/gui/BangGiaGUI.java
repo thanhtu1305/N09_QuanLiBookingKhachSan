@@ -1,5 +1,11 @@
 package gui;
 
+import dao.BangGiaDAO;
+import dao.ChiTietBangGiaDAO;
+import dao.LoaiPhongDAO;
+import entity.BangGia;
+import entity.ChiTietBangGia;
+import entity.LoaiPhong;
 import gui.common.AppBranding;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -13,6 +19,7 @@ import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -20,13 +27,12 @@ import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
-import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -34,6 +40,11 @@ import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Insets;
+import java.sql.Date;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -49,34 +60,43 @@ public class BangGiaGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
-    private static final String[] ROOM_TYPES = {"Standard", "Deluxe", "Suite"};
-    private static final String[] PRICE_STATUS_OPTIONS = {"Đang áp dụng", "Ngừng áp dụng"};
-    private static final String[] DAY_TYPE_OPTIONS = {"Ngày thường", "Cuối tuần", "Ngày lễ", "Mùa cao điểm"};
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final Date INVALID_DATE = Date.valueOf("0001-01-01");
+    private static final String[] TRANG_THAI_OPTIONS = {"Đang áp dụng", "Ngừng áp dụng"};
+    private static final String[] LOAI_NGAY_OPTIONS = {"Ngày thường", "Cuối tuần", "Ngày lễ"};
+
+    private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
+    private final ChiTietBangGiaDAO chiTietBangGiaDAO = new ChiTietBangGiaDAO();
+    private final LoaiPhongDAO loaiPhongDAO = new LoaiPhongDAO();
 
     private final String username;
     private final String role;
+
     private JPanel rootPanel;
-    private final List<PriceRecord> allPrices = new ArrayList<PriceRecord>();
-    private final List<PriceRecord> filteredPrices = new ArrayList<PriceRecord>();
+    private final List<LoaiPhong> allLoaiPhong = new ArrayList<LoaiPhong>();
+    private final List<BangGia> displayedBangGia = new ArrayList<BangGia>();
+    private final List<ChiTietBangGia> displayedChiTiet = new ArrayList<ChiTietBangGia>();
 
     private JTable tblBangGia;
-    private DefaultTableModel tableModel;
+    private JTable tblChiTietBangGia;
+    private DefaultTableModel bangGiaModel;
+    private DefaultTableModel chiTietModel;
     private JComboBox<String> cboLoaiPhong;
-    private JComboBox<String> cboMuaGia;
+    private JComboBox<String> cboLoaiNgay;
     private JComboBox<String> cboTrangThai;
     private JTextField txtTuKhoa;
-
+    private JTextField txtNgayBatDauFilter;
+    private JTextField txtNgayKetThucFilter;
     private JLabel lblMaBangGia;
     private JLabel lblTenBangGia;
     private JLabel lblLoaiPhongChiTiet;
+    private JLabel lblLoaiNgayChiTiet;
     private JLabel lblGiaTheoGio;
     private JLabel lblGiaTheoNgay;
     private JLabel lblGiaCuoiTuan;
     private JLabel lblGiaLe;
-    private JLabel lblPhuThuExtraBed;
-    private JLabel lblPhuThuQuaGio;
+    private JLabel lblPhuThu;
     private JLabel lblTrangThaiChiTiet;
-    private JTextArea txtGhiChu;
 
     public BangGiaGUI() {
         this("guest", "Lễ tân");
@@ -85,14 +105,11 @@ public class BangGiaGUI extends JFrame {
     public BangGiaGUI(String username, String role) {
         this.username = safeValue(username, "guest");
         this.role = safeValue(role, "Lễ tân");
-
         setTitle("Quản lý bảng giá - Hotel PMS");
-        setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-        seedSampleData();
         initUI();
-        reloadSampleData(false);
+        loadLoaiPhongOptions();
+        reloadBangGiaData(true, false);
         registerShortcuts();
     }
 
@@ -100,10 +117,8 @@ public class BangGiaGUI extends JFrame {
         JPanel root = new JPanel(new BorderLayout(16, 0));
         root.setBackground(APP_BG);
         root.setBorder(new EmptyBorder(12, 12, 12, 12));
-
         root.add(SidebarFactory.createSidebar(this, ScreenKey.BANG_GIA, username, role), BorderLayout.WEST);
         root.add(buildMainContent(), BorderLayout.CENTER);
-
         rootPanel = root;
         setContentPane(root);
     }
@@ -111,7 +126,6 @@ public class BangGiaGUI extends JFrame {
     private JPanel buildMainContent() {
         JPanel main = new JPanel(new BorderLayout(0, 12));
         main.setOpaque(false);
-
         JPanel top = new JPanel();
         top.setOpaque(false);
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
@@ -120,7 +134,6 @@ public class BangGiaGUI extends JFrame {
         top.add(buildActionBar());
         top.add(Box.createVerticalStrut(10));
         top.add(buildFilterBar());
-
         main.add(top, BorderLayout.NORTH);
         main.add(buildCenterContent(), BorderLayout.CENTER);
         main.add(buildFooter(), BorderLayout.SOUTH);
@@ -129,29 +142,23 @@ public class BangGiaGUI extends JFrame {
 
     private JPanel buildHeader() {
         JPanel card = createCardPanel(new BorderLayout());
-
         JPanel left = new JPanel();
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-
         JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("QUẢN LÝ BẢNG GIÁ"));
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
-
-        JLabel lblSub = new JLabel("Quản lý giá phòng theo mùa, phụ thu và trạng thái áp dụng bằng dữ liệu mẫu.");
+        JLabel lblSub = new JLabel("Quản lý bảng giá và chi tiết bảng giá từ dữ liệu SQL Server.");
         lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSub.setForeground(TEXT_MUTED);
-
         JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
         lblMeta.setFont(BODY_FONT);
         lblMeta.setForeground(TEXT_MUTED);
-
         left.add(lblTitle);
         left.add(Box.createVerticalStrut(6));
         left.add(lblSub);
         left.add(Box.createVerticalStrut(6));
         left.add(lblMeta);
-
         card.add(left, BorderLayout.WEST);
         card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "màn hình Bảng giá"), BorderLayout.EAST);
         return card;
@@ -159,42 +166,40 @@ public class BangGiaGUI extends JFrame {
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Thêm bảng giá", new Color(22, 163, 74), Color.WHITE, e -> openCreatePriceTableDialog()));
-        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdatePriceTableDialog()));
-        card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivatePriceTableDialog()));
-        card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewPriceTableDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true)));
+        card.add(createPrimaryButton("Thêm bảng giá", new Color(22, 163, 74), Color.WHITE, e -> openBangGiaDialog(null)));
+        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openEditSelectedBangGia()));
+        card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> updateSelectedStatus()));
+        card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedBangGia()));
+        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadBangGiaData(true, true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
     private JPanel buildFilterBar() {
         JPanel card = createCardPanel(new BorderLayout(12, 10));
-
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
-
-        cboLoaiPhong = createComboBox(new String[]{"Tất cả", "Standard", "Deluxe", "Suite"});
-        cboMuaGia = createComboBox(new String[]{"Tất cả", "Thường", "Cuối tuần", "Lễ", "Cao điểm"});
+        cboLoaiPhong = createComboBox(new String[]{"Tất cả"});
+        cboLoaiNgay = createComboBox(new String[]{"Tất cả", "Ngày thường", "Cuối tuần", "Ngày lễ"});
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Đang áp dụng", "Ngừng áp dụng"});
-        txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(290, 34));
-        txtTuKhoa.setToolTipText("Mã bảng giá / tên bảng giá");
-
+        txtNgayBatDauFilter = createInputField("");
+        txtNgayKetThucFilter = createInputField("");
         left.add(createFieldGroup("Loại phòng", cboLoaiPhong));
-        left.add(createFieldGroup("Mùa giá", cboMuaGia));
+        left.add(createFieldGroup("Loại ngày", cboLoaiNgay));
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
+        left.add(createFieldGroup("Ngày bắt đầu", txtNgayBatDauFilter));
+        left.add(createFieldGroup("Ngày kết thúc", txtNgayKetThucFilter));
 
         JPanel right = new JPanel();
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-
         JLabel lblSearch = new JLabel("Tìm kiếm");
         lblSearch.setFont(LABEL_FONT);
         lblSearch.setForeground(TEXT_MUTED);
         right.add(lblSearch);
         right.add(Box.createVerticalStrut(4));
-
+        txtTuKhoa = createInputField("");
+        txtTuKhoa.setPreferredSize(new Dimension(260, 34));
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
@@ -207,10 +212,7 @@ public class BangGiaGUI extends JFrame {
     }
 
     private JSplitPane buildCenterContent() {
-        JPanel left = buildTableCard();
-        JPanel right = buildDetailCard();
-
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildTableCard(), buildDetailCard());
         splitPane.setOpaque(false);
         splitPane.setBorder(null);
         splitPane.setResizeWeight(0.58);
@@ -220,78 +222,37 @@ public class BangGiaGUI extends JFrame {
     }
 
     private JPanel buildTableCard() {
-        JPanel titleRow = new JPanel(new BorderLayout());
-        titleRow.setOpaque(false);
-
-        JLabel lblTitle = new JLabel("Danh sách bảng giá");
-        lblTitle.setFont(SECTION_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-
-        JLabel lblSub = new JLabel("Chọn một dòng để xem chi tiết bảng giá.");
-        lblSub.setFont(BODY_FONT);
-        lblSub.setForeground(TEXT_MUTED);
-
-        titleRow.add(lblTitle, BorderLayout.WEST);
-        titleRow.add(lblSub, BorderLayout.EAST);
-
-        String[] columns = {
-                "Mã bảng giá",
-                "Tên bảng giá",
-                "Loại phòng",
-                "Giá giờ",
-                "Giá ngày",
-                "Trạng thái"
-        };
-
-        tableModel = new DefaultTableModel(columns, 0) {
+        bangGiaModel = new DefaultTableModel(new String[]{
+                "Mã bảng giá", "Tên bảng giá", "Loại phòng", "Ngày bắt đầu", "Ngày kết thúc", "Loại ngày", "Trạng thái"
+        }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
             }
         };
 
-        tblBangGia = new JTable(tableModel);
+        tblBangGia = new JTable(bangGiaModel);
         tblBangGia.setFont(BODY_FONT);
         tblBangGia.setRowHeight(32);
         tblBangGia.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        tblBangGia.setGridColor(BORDER_SOFT);
-        tblBangGia.setShowGrid(true);
         tblBangGia.setFillsViewportHeight(true);
-        tblBangGia.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblBangGia.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblBangGia.getTableHeader().setForeground(TEXT_PRIMARY);
-
         tblBangGia.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
-                int row = tblBangGia.getSelectedRow();
-                if (row >= 0 && row < filteredPrices.size()) {
-                    updateDetailPanel(filteredPrices.get(row));
-                }
+                showSelectedBangGia();
             }
         });
-        ScreenUIHelper.registerTableDoubleClick(tblBangGia, this::openUpdatePriceTableDialog);
+        ScreenUIHelper.registerTableDoubleClick(tblBangGia, this::openEditSelectedBangGia);
 
         JScrollPane scrollPane = new JScrollPane(tblBangGia);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
-
-        JPanel content = new JPanel(new BorderLayout(0, 10));
-        content.setOpaque(false);
-        content.add(titleRow, BorderLayout.NORTH);
-        content.add(scrollPane, BorderLayout.CENTER);
 
         JPanel wrapper = createCardPanel(new BorderLayout());
-        wrapper.add(content, BorderLayout.CENTER);
+        wrapper.add(scrollPane, BorderLayout.CENTER);
         return wrapper;
     }
 
     private JPanel buildDetailCard() {
-        JPanel card = createCardPanel(new BorderLayout());
-
-        JLabel lblTitle = new JLabel("Chi tiết bảng giá");
-        lblTitle.setFont(SECTION_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-        lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
+        JPanel card = createCardPanel(new BorderLayout(0, 10));
 
         JPanel body = new JPanel();
         body.setOpaque(false);
@@ -300,138 +261,428 @@ public class BangGiaGUI extends JFrame {
         lblMaBangGia = createValueLabel();
         lblTenBangGia = createValueLabel();
         lblLoaiPhongChiTiet = createValueLabel();
+        lblLoaiNgayChiTiet = createValueLabel();
         lblGiaTheoGio = createValueLabel();
         lblGiaTheoNgay = createValueLabel();
         lblGiaCuoiTuan = createValueLabel();
         lblGiaLe = createValueLabel();
-        lblPhuThuExtraBed = createValueLabel();
-        lblPhuThuQuaGio = createValueLabel();
+        lblPhuThu = createValueLabel();
         lblTrangThaiChiTiet = createValueLabel();
 
         addDetailRow(body, "Mã bảng giá", lblMaBangGia);
         addDetailRow(body, "Tên bảng giá", lblTenBangGia);
         addDetailRow(body, "Loại phòng", lblLoaiPhongChiTiet);
+        addDetailRow(body, "Loại ngày", lblLoaiNgayChiTiet);
         addDetailRow(body, "Giá theo giờ", lblGiaTheoGio);
         addDetailRow(body, "Giá theo ngày", lblGiaTheoNgay);
         addDetailRow(body, "Giá cuối tuần", lblGiaCuoiTuan);
         addDetailRow(body, "Giá lễ", lblGiaLe);
-        addDetailRow(body, "Phụ thu extra bed", lblPhuThuExtraBed);
-        addDetailRow(body, "Phụ thu quá giờ", lblPhuThuQuaGio);
+        addDetailRow(body, "Phụ thu", lblPhuThu);
         addDetailRow(body, "Trạng thái", lblTrangThaiChiTiet);
 
-        JPanel notePanel = new JPanel(new BorderLayout(0, 6));
-        notePanel.setOpaque(false);
+        chiTietModel = new DefaultTableModel(new String[]{
+                "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+        }, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
 
-        JLabel lblNote = new JLabel("Ghi chú");
-        lblNote.setFont(LABEL_FONT);
-        lblNote.setForeground(TEXT_MUTED);
+        tblChiTietBangGia = new JTable(chiTietModel);
+        tblChiTietBangGia.setFont(BODY_FONT);
+        tblChiTietBangGia.setRowHeight(28);
+        tblChiTietBangGia.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-        txtGhiChu = new JTextArea(4, 20);
-        txtGhiChu.setEditable(false);
-        txtGhiChu.setLineWrap(true);
-        txtGhiChu.setWrapStyleWord(true);
-        txtGhiChu.setFont(BODY_FONT);
-        txtGhiChu.setForeground(TEXT_PRIMARY);
-        txtGhiChu.setBackground(PANEL_SOFT);
-        txtGhiChu.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JScrollPane detailScroll = new JScrollPane(tblChiTietBangGia);
+        detailScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+        detailScroll.setPreferredSize(new Dimension(0, 250));
 
-        JScrollPane noteScroll = new JScrollPane(txtGhiChu);
-        noteScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+        JPanel action = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        action.setOpaque(false);
+        action.add(createPrimaryButton("Thêm CT", new Color(59, 130, 246), Color.WHITE, e -> openChiTietDialog(null)));
+        action.add(createOutlineButton("Sửa CT", new Color(245, 158, 11), e -> openEditSelectedChiTiet()));
+        action.add(createOutlineButton("Xóa CT", new Color(220, 38, 38), e -> deleteSelectedChiTiet()));
 
-        notePanel.add(lblNote, BorderLayout.NORTH);
-        notePanel.add(noteScroll, BorderLayout.CENTER);
+        JPanel south = new JPanel(new BorderLayout(0, 6));
+        south.setOpaque(false);
+        south.add(action, BorderLayout.NORTH);
+        south.add(detailScroll, BorderLayout.CENTER);
 
-        card.add(lblTitle, BorderLayout.NORTH);
+        card.add(new JLabel("Chi tiết bảng giá"), BorderLayout.NORTH);
         card.add(body, BorderLayout.CENTER);
-        card.add(notePanel, BorderLayout.SOUTH);
+        card.add(south, BorderLayout.SOUTH);
         return card;
     }
 
-    private JPanel createFieldGroup(String label, Component component) {
-        JPanel group = new JPanel();
-        group.setOpaque(false);
-        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
-
-        JLabel lbl = new JLabel(label);
-        lbl.setFont(LABEL_FONT);
-        lbl.setForeground(TEXT_MUTED);
-
-        group.add(lbl);
-        group.add(Box.createVerticalStrut(4));
-        group.add(component);
-        return group;
+    private JPanel buildFooter() {
+        return ScreenUIHelper.createShortcutBar(
+                CARD_BG, BORDER_SOFT, TEXT_MUTED,
+                "F1 Thêm bảng giá", "F2 Cập nhật", "F3 Ngừng áp dụng", "F4 Xem chi tiết", "F5 Làm mới", "Enter Cập nhật"
+        );
     }
 
-    private JComboBox<String> createComboBox(String[] values) {
-        JComboBox<String> comboBox = new JComboBox<String>(values);
-        comboBox.setFont(BODY_FONT);
-        comboBox.setPreferredSize(new Dimension(165, 34));
-        comboBox.setMaximumSize(new Dimension(180, 34));
-        return comboBox;
+    private void registerShortcuts() {
+        ScreenUIHelper.registerShortcut(this, "F1", "banggia-f1", () -> openBangGiaDialog(null));
+        ScreenUIHelper.registerShortcut(this, "F2", "banggia-f2", this::openEditSelectedBangGia);
+        ScreenUIHelper.registerShortcut(this, "F3", "banggia-f3", this::updateSelectedStatus);
+        ScreenUIHelper.registerShortcut(this, "F4", "banggia-f4", this::openViewSelectedBangGia);
+        ScreenUIHelper.registerShortcut(this, "F5", "banggia-f5", () -> reloadBangGiaData(true, true));
+        ScreenUIHelper.registerShortcut(this, "ENTER", "banggia-enter", this::openEditSelectedBangGia);
     }
 
-    private JTextField createInputField(String value) {
-        JTextField field = new JTextField(value);
-        field.setFont(BODY_FONT);
-        field.setPreferredSize(new Dimension(180, 34));
-        field.setMaximumSize(new Dimension(290, 34));
-        return field;
+    private void loadLoaiPhongOptions() {
+        allLoaiPhong.clear();
+        allLoaiPhong.addAll(loaiPhongDAO.getAll());
+        String selected = valueOf(cboLoaiPhong.getSelectedItem());
+        cboLoaiPhong.removeAllItems();
+        cboLoaiPhong.addItem("Tất cả");
+        for (LoaiPhong loaiPhong : allLoaiPhong) {
+            cboLoaiPhong.addItem(loaiPhong.getTenLoaiPhong());
+        }
+        if (!selected.isEmpty()) {
+            cboLoaiPhong.setSelectedItem(selected);
+        }
     }
 
-    private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
-        JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        button.setForeground(foreground);
-        button.setBackground(background);
-        button.setOpaque(true);
-        button.setContentAreaFilled(true);
-        button.setBorderPainted(true);
-        button.setFocusPainted(false);
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(background.darker(), 1, true),
-                new EmptyBorder(9, 14, 9, 14)
-        ));
-        button.addActionListener(listener);
-        return button;
+    private void reloadBangGiaData(boolean resetFilter, boolean showMessage) {
+        if (resetFilter) {
+            cboLoaiPhong.setSelectedIndex(0);
+            cboLoaiNgay.setSelectedIndex(0);
+            cboTrangThai.setSelectedIndex(0);
+            txtTuKhoa.setText("");
+            txtNgayBatDauFilter.setText("");
+            txtNgayKetThucFilter.setText("");
+        }
+        applyFilters(false);
+        refreshCurrentView();
+        if (showMessage) {
+            JOptionPane.showMessageDialog(this, "Đã làm mới dữ liệu bảng giá.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+        }
     }
 
-    private JButton createOutlineButton(String text, Color borderColor, java.awt.event.ActionListener listener) {
-        JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        button.setForeground(TEXT_PRIMARY);
-        button.setBackground(Color.WHITE);
-        button.setOpaque(true);
-        button.setContentAreaFilled(true);
-        button.setBorderPainted(true);
-        button.setFocusPainted(false);
-        button.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(borderColor, 1, true),
-                new EmptyBorder(8, 12, 8, 12)
-        ));
-        button.addActionListener(listener);
-        return button;
+    private void applyFilters(boolean showMessage) {
+        Date from = parseOptionalDate(txtNgayBatDauFilter.getText().trim(), "Ngày bắt đầu không đúng định dạng dd/MM/yyyy.");
+        if (isInvalidDateMarker(from)) {
+            return;
+        }
+        Date to = parseOptionalDate(txtNgayKetThucFilter.getText().trim(), "Ngày kết thúc không đúng định dạng dd/MM/yyyy.");
+        if (isInvalidDateMarker(to)) {
+            return;
+        }
+        if (from != null && to != null && from.after(to)) {
+            JOptionPane.showMessageDialog(this, "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        LoaiPhong loaiPhong = findLoaiPhongByTen(valueOf(cboLoaiPhong.getSelectedItem()));
+        String maLoaiPhong = loaiPhong == null ? "" : String.valueOf(loaiPhong.getMaLoaiPhong());
+        String loaiNgay = "Tất cả".equals(valueOf(cboLoaiNgay.getSelectedItem())) ? "" : valueOf(cboLoaiNgay.getSelectedItem());
+        String trangThai = valueOf(cboTrangThai.getSelectedItem());
+
+        displayedBangGia.clear();
+        for (BangGia bangGia : bangGiaDAO.search(txtTuKhoa.getText().trim(), maLoaiPhong, from, to, loaiNgay)) {
+            if (!"Tất cả".equals(trangThai) && !safeValue(bangGia.getTrangThai(), "").equals(trangThai)) {
+                continue;
+            }
+            displayedBangGia.add(bangGia);
+        }
+
+        refillBangGiaTable();
+        refreshCurrentView();
+        if (showMessage) {
+            JOptionPane.showMessageDialog(this, "Đã lọc được " + displayedBangGia.size() + " bảng giá phù hợp.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+        }
     }
 
-    private void addDetailRow(JPanel panel, String label, JLabel value) {
-        JPanel row = new JPanel(new BorderLayout(12, 0));
-        row.setOpaque(false);
-        row.setBorder(new EmptyBorder(0, 0, 8, 0));
-
-        JLabel lbl = new JLabel(label + ":");
-        lbl.setFont(BODY_FONT);
-        lbl.setForeground(TEXT_MUTED);
-        lbl.setPreferredSize(new Dimension(140, 20));
-
-        row.add(lbl, BorderLayout.WEST);
-        row.add(value, BorderLayout.CENTER);
-        panel.add(row);
+    private void refillBangGiaTable() {
+        bangGiaModel.setRowCount(0);
+        for (BangGia bangGia : displayedBangGia) {
+            bangGiaModel.addRow(new Object[]{
+                    bangGia.getMaBangGia(),
+                    bangGia.getTenBangGia(),
+                    bangGia.getTenLoaiPhong(),
+                    formatDate(bangGia.getTuNgay()),
+                    formatDate(bangGia.getDenNgay()),
+                    bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()),
+                    bangGia.getTrangThai()
+            });
+        }
+        if (!displayedBangGia.isEmpty()) {
+            tblBangGia.setRowSelectionInterval(0, 0);
+            showSelectedBangGia();
+        } else {
+            clearDetailPanel();
+        }
     }
 
-    private JLabel createValueLabel() {
-        JLabel label = new JLabel("-");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        label.setForeground(TEXT_PRIMARY);
-        return label;
+    private void showSelectedBangGia() {
+        BangGia bangGia = getSelectedBangGia(false);
+        if (bangGia == null) {
+            clearDetailPanel();
+            refreshCurrentView();
+            return;
+        }
+        displayedChiTiet.clear();
+        displayedChiTiet.addAll(chiTietBangGiaDAO.getByMaBangGia(bangGia.getMaBangGia()));
+
+        lblMaBangGia.setText(String.valueOf(bangGia.getMaBangGia()));
+        lblTenBangGia.setText(safeValue(bangGia.getTenBangGia(), "-"));
+        lblLoaiPhongChiTiet.setText(safeValue(bangGia.getTenLoaiPhong(), "-"));
+        lblLoaiNgayChiTiet.setText(safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "-"));
+        lblGiaTheoGio.setText(formatCurrency(findFirstPositive(displayedChiTiet, 0)));
+        lblGiaTheoNgay.setText(formatCurrency(findFirstPositive(displayedChiTiet, 1)));
+        lblGiaCuoiTuan.setText(formatCurrency(findFirstPositive(displayedChiTiet, 2)));
+        lblGiaLe.setText(formatCurrency(findFirstPositive(displayedChiTiet, 3)));
+        lblPhuThu.setText(formatCurrency(findFirstPositive(displayedChiTiet, 4)));
+        lblTrangThaiChiTiet.setText(safeValue(bangGia.getTrangThai(), "-"));
+        refillChiTietTable();
+        refreshCurrentView();
+    }
+
+    private void refillChiTietTable() {
+        chiTietModel.setRowCount(0);
+        for (ChiTietBangGia chiTiet : displayedChiTiet) {
+            chiTietModel.addRow(new Object[]{
+                    chiTiet.getMaChiTietBangGia(),
+                    chiTiet.getLoaiNgay(),
+                    chiTiet.getKhungGio(),
+                    formatCurrency(chiTiet.getGiaTheoGio()),
+                    formatCurrency(chiTiet.getGiaQuaDem()),
+                    formatCurrency(chiTiet.getGiaTheoNgay()),
+                    formatCurrency(chiTiet.getGiaCuoiTuan()),
+                    formatCurrency(chiTiet.getGiaLe()),
+                    formatCurrency(chiTiet.getPhuThu())
+            });
+        }
+        refreshCurrentView();
+    }
+
+    private void clearDetailPanel() {
+        lblMaBangGia.setText("-");
+        lblTenBangGia.setText("-");
+        lblLoaiPhongChiTiet.setText("-");
+        lblLoaiNgayChiTiet.setText("-");
+        lblGiaTheoGio.setText("-");
+        lblGiaTheoNgay.setText("-");
+        lblGiaCuoiTuan.setText("-");
+        lblGiaLe.setText("-");
+        lblPhuThu.setText("-");
+        lblTrangThaiChiTiet.setText("-");
+        displayedChiTiet.clear();
+        refillChiTietTable();
+        refreshCurrentView();
+    }
+
+    private BangGia getSelectedBangGia(boolean showMessage) {
+        int row = tblBangGia.getSelectedRow();
+        if (row < 0 || row >= displayedBangGia.size()) {
+            if (showMessage) {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn một bảng giá.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+            }
+            return null;
+        }
+        return displayedBangGia.get(row);
+    }
+
+    private ChiTietBangGia getSelectedChiTiet(boolean showMessage) {
+        int row = tblChiTietBangGia.getSelectedRow();
+        if (row < 0 || row >= displayedChiTiet.size()) {
+            if (showMessage) {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn một chi tiết bảng giá.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+            }
+            return null;
+        }
+        return displayedChiTiet.get(row);
+    }
+
+    private void selectBangGia(int maBangGia) {
+        for (int i = 0; i < displayedBangGia.size(); i++) {
+            if (displayedBangGia.get(i).getMaBangGia() == maBangGia) {
+                tblBangGia.setRowSelectionInterval(i, i);
+                showSelectedBangGia();
+                refreshCurrentView();
+                return;
+            }
+        }
+        clearDetailPanel();
+        refreshCurrentView();
+    }
+
+    private void refreshCurrentView() {
+        if (rootPanel != null) {
+            rootPanel.revalidate();
+            rootPanel.repaint();
+        }
+        if (tblBangGia != null) {
+            tblBangGia.revalidate();
+            tblBangGia.repaint();
+        }
+        if (tblChiTietBangGia != null) {
+            tblChiTietBangGia.revalidate();
+            tblChiTietBangGia.repaint();
+        }
+    }
+
+    private void openBangGiaDialog(BangGia bangGia) {
+        new BangGiaFormDialog(this, bangGia).setVisible(true);
+    }
+
+    private void openEditSelectedBangGia() {
+        BangGia bangGia = getSelectedBangGia(true);
+        if (bangGia != null) {
+            openBangGiaDialog(bangGia);
+        }
+    }
+
+    private void openViewSelectedBangGia() {
+        BangGia bangGia = getSelectedBangGia(true);
+        if (bangGia != null) {
+            new BangGiaViewDialog(this, bangGia).setVisible(true);
+        }
+    }
+
+    private void updateSelectedStatus() {
+        BangGia bangGia = getSelectedBangGia(true);
+        if (bangGia == null) {
+            return;
+        }
+        int confirm = JOptionPane.showConfirmDialog(this, "Chuyển trạng thái bảng giá này sang \"Ngừng áp dụng\"?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        String loaiNgay = bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia());
+        bangGia.setTrangThai("Ngừng áp dụng");
+        if (bangGiaDAO.update(bangGia, loaiNgay)) {
+            reloadBangGiaData(false, false);
+            selectBangGia(bangGia.getMaBangGia());
+            JOptionPane.showMessageDialog(this, "Đã cập nhật trạng thái bảng giá.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, "Không thể cập nhật trạng thái bảng giá.\nChi tiết: " + safeValue(bangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void openChiTietDialog(ChiTietBangGia chiTiet) {
+        BangGia bangGia = getSelectedBangGia(true);
+        if (bangGia != null) {
+            new ChiTietBangGiaFormDialog(this, bangGia, chiTiet).setVisible(true);
+        }
+    }
+
+    private void openEditSelectedChiTiet() {
+        ChiTietBangGia chiTiet = getSelectedChiTiet(true);
+        if (chiTiet != null) {
+            openChiTietDialog(chiTiet);
+        }
+    }
+
+    private void deleteSelectedChiTiet() {
+        ChiTietBangGia chiTiet = getSelectedChiTiet(true);
+        if (chiTiet == null) {
+            return;
+        }
+        int confirm = JOptionPane.showConfirmDialog(this, "Xóa chi tiết bảng giá đang chọn?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        if (chiTietBangGiaDAO.delete(chiTiet.getMaChiTietBangGia())) {
+            reloadBangGiaData(false, false);
+            selectBangGia(chiTiet.getMaBangGia());
+            JOptionPane.showMessageDialog(this, "Đã xóa chi tiết bảng giá.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, "Không thể xóa chi tiết bảng giá.\nChi tiết: " + safeValue(chiTietBangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private double findFirstPositive(List<ChiTietBangGia> list, int type) {
+        for (ChiTietBangGia chiTiet : list) {
+            double value;
+            if (type == 0) {
+                value = chiTiet.getGiaTheoGio();
+            } else if (type == 1) {
+                value = chiTiet.getGiaTheoNgay();
+            } else if (type == 2) {
+                value = chiTiet.getGiaCuoiTuan();
+            } else if (type == 3) {
+                value = chiTiet.getGiaLe();
+            } else {
+                value = chiTiet.getPhuThu();
+            }
+            if (value > 0) {
+                return value;
+            }
+        }
+        return 0;
+    }
+
+    private String formatCurrency(double amount) {
+        return amount <= 0 ? "-" : String.format(Locale.US, "%,.0f", amount).replace(',', '.');
+    }
+
+    private String formatDate(Date date) {
+        return date == null ? "" : date.toLocalDate().format(DATE_FORMATTER);
+    }
+
+    private Date parseRequiredDate(String value, String message) {
+        if (value == null || value.trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, message, "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            return INVALID_DATE;
+        }
+        try {
+            return Date.valueOf(LocalDate.parse(value.trim(), DATE_FORMATTER));
+        } catch (DateTimeParseException ex) {
+            JOptionPane.showMessageDialog(this, message, "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            return INVALID_DATE;
+        }
+    }
+
+    private Date parseOptionalDate(String value, String message) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Date.valueOf(LocalDate.parse(value.trim(), DATE_FORMATTER));
+        } catch (DateTimeParseException ex) {
+            JOptionPane.showMessageDialog(this, message, "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            return INVALID_DATE;
+        }
+    }
+
+    private boolean isInvalidDateMarker(Date date) {
+        return date != null && INVALID_DATE.equals(date);
+    }
+
+    private double parseMoney(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            return 0;
+        }
+        try {
+            double parsed = Double.parseDouble(value.trim().replace(".", ""));
+            if (parsed < 0) {
+                throw new NumberFormatException();
+            }
+            return parsed;
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, fieldName + " phải là số lớn hơn hoặc bằng 0.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            return -1;
+        }
+    }
+
+    private String safeValue(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private String valueOf(Object value) {
+        return value == null ? "" : value.toString();
+    }
+
+    private LoaiPhong findLoaiPhongByTen(String tenLoaiPhong) {
+        for (LoaiPhong loaiPhong : allLoaiPhong) {
+            if (safeValue(loaiPhong.getTenLoaiPhong(), "").equals(tenLoaiPhong)) {
+                return loaiPhong;
+            }
+        }
+        return null;
     }
 
     private JPanel createCardPanel(BorderLayout layout) {
@@ -454,351 +705,104 @@ public class BangGiaGUI extends JFrame {
         return panel;
     }
 
-    private void seedSampleData() {
-        allPrices.clear();
-    }
-
-    private void reloadSampleData(boolean showMessage) {
-        cboLoaiPhong.setSelectedIndex(0);
-        cboMuaGia.setSelectedIndex(0);
-        cboTrangThai.setSelectedIndex(0);
-        txtTuKhoa.setText("");
-        applyFilters(false);
-        if (showMessage) {
-            showSuccess("Đã làm mới dữ liệu bảng giá.");
-        }
-    }
-
-    private void applyFilters(boolean showMessage) {
-        filteredPrices.clear();
-
-        String loaiPhong = valueOf(cboLoaiPhong.getSelectedItem());
-        String muaGia = valueOf(cboMuaGia.getSelectedItem());
-        String trangThai = valueOf(cboTrangThai.getSelectedItem());
-        String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
-
-        for (PriceRecord price : allPrices) {
-            if (!"Tất cả".equals(loaiPhong) && !price.loaiPhong.equals(loaiPhong)) {
-                continue;
-            }
-            if (!"Tất cả".equals(muaGia) && !price.muaGia.equals(muaGia)) {
-                continue;
-            }
-            if (!"Tất cả".equals(trangThai) && !price.trangThai.equals(trangThai)) {
-                continue;
-            }
-            if (!tuKhoa.isEmpty()) {
-                String source = (price.maBangGia + " " + price.tenBangGia).toLowerCase(Locale.ROOT);
-                if (!source.contains(tuKhoa)) {
-                    continue;
-                }
-            }
-            filteredPrices.add(price);
-        }
-
-        refillTable();
-        if (showMessage) {
-            showSuccess("Đã lọc được " + filteredPrices.size() + " bảng giá phù hợp.");
-        }
-    }
-
-    private void refillTable() {
-        tableModel.setRowCount(0);
-        for (PriceRecord price : filteredPrices) {
-            tableModel.addRow(new Object[]{
-                    price.maBangGia,
-                    price.tenBangGia,
-                    price.loaiPhong,
-                    price.getDisplayGiaTheoGio(),
-                    price.getDisplayGiaTheoNgay(),
-                    price.trangThai
-            });
-        }
-
-        if (!filteredPrices.isEmpty()) {
-            tblBangGia.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredPrices.get(0));
-        } else {
-            clearDetailPanel();
-        }
-    }
-
-    private void updateDetailPanel(PriceRecord price) {
-        lblMaBangGia.setText(price.maBangGia);
-        lblTenBangGia.setText(price.tenBangGia);
-        lblLoaiPhongChiTiet.setText(price.loaiPhong);
-        lblGiaTheoGio.setText(price.getDisplayGiaTheoGio());
-        lblGiaTheoNgay.setText(price.getDisplayGiaTheoNgay());
-        lblGiaCuoiTuan.setText(price.getDisplayGiaCuoiTuan());
-        lblGiaLe.setText(price.getDisplayGiaLe());
-        lblPhuThuExtraBed.setText(price.getDisplayPhuThuExtraBed());
-        lblPhuThuQuaGio.setText(price.getDisplayPhuThuQuaGio());
-        lblTrangThaiChiTiet.setText(price.trangThai);
-        txtGhiChu.setText(price.ghiChu);
-        txtGhiChu.setCaretPosition(0);
-    }
-
-    private void clearDetailPanel() {
-        lblMaBangGia.setText("-");
-        lblTenBangGia.setText("-");
-        lblLoaiPhongChiTiet.setText("-");
-        lblGiaTheoGio.setText("-");
-        lblGiaTheoNgay.setText("-");
-        lblGiaCuoiTuan.setText("-");
-        lblGiaLe.setText("-");
-        lblPhuThuExtraBed.setText("-");
-        lblPhuThuQuaGio.setText("-");
-        lblTrangThaiChiTiet.setText("-");
-        txtGhiChu.setText("Không có dữ liệu phù hợp.");
-    }
-
-    private PriceRecord getSelectedPrice() {
-        int row = tblBangGia.getSelectedRow();
-        if (row < 0 || row >= filteredPrices.size()) {
-            showWarning("Vui lòng chọn một bảng giá trong danh sách.");
-            return null;
-        }
-        return filteredPrices.get(row);
-    }
-
-    private void openCreatePriceTableDialog() {
-        new PriceTableEditorDialog(this, null).setVisible(true);
-    }
-
-    private void openUpdatePriceTableDialog() {
-        PriceRecord price = getSelectedPrice();
-        if (price != null) {
-            new PriceTableEditorDialog(this, price).setVisible(true);
-        }
-    }
-
-    private void openDeactivatePriceTableDialog() {
-        PriceRecord price = getSelectedPrice();
-        if (price != null) {
-            new DeactivatePriceTableDialog(this, price).setVisible(true);
-        }
-    }
-
-    private void openViewPriceTableDialog() {
-        PriceRecord price = getSelectedPrice();
-        if (price != null) {
-            new ViewPriceTableDialog(this, price).setVisible(true);
-        }
-    }
-
-    private void addPriceTable(PriceRecord price, boolean keepDialogOpen) {
-        allPrices.add(0, price);
-        cboLoaiPhong.setSelectedIndex(0);
-        cboMuaGia.setSelectedIndex(0);
-        cboTrangThai.setSelectedIndex(0);
-        txtTuKhoa.setText("");
-        applyFilters(false);
-        selectPriceTable(price);
-        showSuccess(keepDialogOpen ? "Thêm bảng giá thành công và sẵn sàng tạo bảng giá mới." : "Thêm bảng giá thành công.");
-    }
-
-    private void refreshPriceTableViews(PriceRecord price, String message) {
-        applyFilters(false);
-        selectPriceTable(price);
-        showSuccess(message);
-    }
-
-    private void selectPriceTable(PriceRecord price) {
-        if (price == null) {
-            return;
-        }
-        int index = filteredPrices.indexOf(price);
-        if (index >= 0) {
-            tblBangGia.setRowSelectionInterval(index, index);
-            updateDetailPanel(price);
-        } else if (!filteredPrices.isEmpty()) {
-            tblBangGia.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredPrices.get(0));
-        } else {
-            clearDetailPanel();
-        }
-    }
-
-    private void showSuccess(String message) {
-        showMessageDialog("Thành công", message, new Color(22, 163, 74));
-    }
-
-    private void showWarning(String message) {
-        showMessageDialog("Thông báo", message, new Color(245, 158, 11));
-    }
-
-    private void showError(String message) {
-        showMessageDialog("Cảnh báo", message, new Color(220, 38, 38));
-    }
-
-    private void showMessageDialog(String title, String message, Color accentColor) {
-        AppMessageDialog dialog = new AppMessageDialog(this, title, message, accentColor);
-        dialog.setVisible(true);
-    }
-
-    private boolean showConfirmDialog(String title, String message, String confirmText, Color confirmColor) {
-        ConfirmDialog dialog = new ConfirmDialog(this, title, message, confirmText, confirmColor);
-        dialog.setVisible(true);
-        return dialog.isConfirmed();
-    }
-
-    private JPanel buildFooter() {
-        return ScreenUIHelper.createShortcutBar(
-                CARD_BG,
-                BORDER_SOFT,
-                TEXT_MUTED,
-                "F1 Thêm bảng giá",
-                "F2 Cập nhật",
-                "F3 Ngừng áp dụng",
-                "F4 Xem chi tiết",
-                "F5 Làm mới",
-                "Enter Xem chi tiết"
-        );
-    }
-
-    private void registerShortcuts() {
-        ScreenUIHelper.registerShortcut(this, "F1", "banggia-f1", this::openCreatePriceTableDialog);
-        ScreenUIHelper.registerShortcut(this, "F2", "banggia-f2", this::openUpdatePriceTableDialog);
-        ScreenUIHelper.registerShortcut(this, "F3", "banggia-f3", this::openDeactivatePriceTableDialog);
-        ScreenUIHelper.registerShortcut(this, "F4", "banggia-f4", this::openViewPriceTableDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "banggia-f5", () -> reloadSampleData(true));
-        ScreenUIHelper.registerShortcut(this, "ENTER", "banggia-enter", () -> {
-            PriceRecord price = getSelectedPrice();
-            if (price != null) {
-                showMessageDialog("Chi tiết bảng giá", "Đang xem chi tiết bảng giá " + price.maBangGia + ".", new Color(59, 130, 246));
-            }
-        });
-    }
-
-    private String safeValue(String value, String fallback) {
-        return value == null || value.trim().isEmpty() ? fallback : value.trim();
-    }
-
-    private String valueOf(Object value) {
-        return value == null ? "" : value.toString();
-    }
-
-    private JPanel createDialogCardPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(14, 16, 14, 16)
-        ));
-        return panel;
-    }
-
-    private JPanel createDialogFormPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setOpaque(false);
-        return panel;
-    }
-
-    private JTextArea createDialogTextArea(int rows) {
-        JTextArea area = new JTextArea(rows, 20);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setFont(BODY_FONT);
-        area.setForeground(TEXT_PRIMARY);
-        area.setBackground(Color.WHITE);
-        area.setBorder(new EmptyBorder(8, 10, 8, 10));
-        return area;
-    }
-
-    private void addFormRow(JPanel panel, GridBagConstraints gbc, int row, String label, Component component) {
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-
-        JLabel lbl = new JLabel(label + ":");
-        lbl.setFont(BODY_FONT);
+    private JPanel createFieldGroup(String label, Component component) {
+        JPanel group = new JPanel();
+        group.setOpaque(false);
+        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
+        JLabel lbl = new JLabel(label);
+        lbl.setFont(LABEL_FONT);
         lbl.setForeground(TEXT_MUTED);
-        panel.add(lbl, gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        panel.add(component, gbc);
+        group.add(lbl);
+        group.add(Box.createVerticalStrut(4));
+        group.add(component);
+        return group;
     }
 
-    private JLabel createValueTag(String value) {
-        JLabel label = new JLabel(value);
+    private JComboBox<String> createComboBox(String[] values) {
+        JComboBox<String> comboBox = new JComboBox<String>(values);
+        comboBox.setFont(BODY_FONT);
+        comboBox.setPreferredSize(new Dimension(150, 34));
+        return comboBox;
+    }
+
+    private JTextField createInputField(String value) {
+        JTextField field = new JTextField(value);
+        field.setFont(BODY_FONT);
+        field.setPreferredSize(new Dimension(150, 34));
+        return field;
+    }
+
+    private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setForeground(foreground);
+        button.setBackground(background);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(background.darker(), 1, true),
+                new EmptyBorder(9, 14, 9, 14)
+        ));
+        button.addActionListener(listener);
+        return button;
+    }
+
+    private JButton createOutlineButton(String text, Color borderColor, java.awt.event.ActionListener listener) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setForeground(TEXT_PRIMARY);
+        button.setBackground(Color.WHITE);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(borderColor, 1, true),
+                new EmptyBorder(8, 12, 8, 12)
+        ));
+        button.addActionListener(listener);
+        return button;
+    }
+
+    private JLabel createValueLabel() {
+        JLabel label = new JLabel("-");
         label.setFont(new Font("Segoe UI", Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
         return label;
     }
 
-    private String formatCurrency(double amount) {
-        return String.format(Locale.US, "%,.0f", amount).replace(',', '.');
+    private void addDetailRow(JPanel panel, String label, JLabel value) {
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+        row.setBorder(new EmptyBorder(0, 0, 8, 0));
+        JLabel lbl = new JLabel(label + ":");
+        lbl.setFont(BODY_FONT);
+        lbl.setForeground(TEXT_MUTED);
+        lbl.setPreferredSize(new Dimension(120, 20));
+        row.add(lbl, BorderLayout.WEST);
+        row.add(value, BorderLayout.CENTER);
+        panel.add(row);
     }
 
-    private Double parseMoney(String value, String errorMessage) {
-        if (value == null || value.trim().isEmpty()) {
-            return null;
-        }
-        try {
-            double parsed = Double.parseDouble(value.trim().replace(".", ""));
-            if (parsed < 0) {
-                showError(errorMessage);
-                return null;
-            }
-            return parsed;
-        } catch (NumberFormatException ex) {
-            showError(errorMessage);
-            return null;
-        }
-    }
-
-    private Integer parseOptionalInt(String value, String errorMessage) {
-        if (value == null || value.trim().isEmpty()) {
-            return 0;
-        }
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (NumberFormatException ex) {
-            showError(errorMessage);
-            return null;
-        }
-    }
-
-    private abstract class BasePriceDialog extends JDialog {
-        private final int minimumWidth;
-        private final int minimumHeight;
-
-        protected BasePriceDialog(Frame owner, String title, int width, int height) {
-            super(ScreenUIHelper.resolveDialogOwner(owner), title, true);
-            this.minimumWidth = width;
-            this.minimumHeight = height;
-            setModalityType(Dialog.ModalityType.APPLICATION_MODAL);
+    private abstract class BaseDialog extends JDialog {
+        protected BaseDialog(Frame owner, String title, int width, int height) {
+            super(owner, title, true);
+            setDefaultCloseOperation(DISPOSE_ON_CLOSE);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
-            setLayout(new BorderLayout());
-            setDefaultCloseOperation(DISPOSE_ON_CLOSE);
+            setLayout(new BorderLayout(0, 12));
+            setPreferredSize(new Dimension(width, height));
+            pack();
+            setLocationRelativeTo(owner);
         }
 
-        @Override
-        public void setVisible(boolean visible) {
-            if (visible) {
-                ScreenUIHelper.prepareDialog(this, getOwner(), minimumWidth, minimumHeight);
-            }
-            super.setVisible(visible);
-        }
-
-        protected JPanel buildDialogHeader(String title, String subtitle) {
-            JPanel panel = createDialogCardPanel();
+        protected JPanel buildHeader(String title, String subtitle) {
+            JPanel panel = createCardPanel(new BorderLayout());
             JPanel content = new JPanel();
             content.setOpaque(false);
             content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
-
             JLabel lblTitle = new JLabel(title);
             lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
             lblTitle.setForeground(TEXT_PRIMARY);
-
             JLabel lblSub = new JLabel("<html>" + subtitle + "</html>");
             lblSub.setFont(BODY_FONT);
             lblSub.setForeground(TEXT_MUTED);
-
             content.add(lblTitle);
             content.add(Box.createVerticalStrut(6));
             content.add(lblSub);
@@ -806,7 +810,7 @@ public class BangGiaGUI extends JFrame {
             return panel;
         }
 
-        protected JPanel buildDialogButtons(JButton... buttons) {
+        protected JPanel buildButtons(JButton... buttons) {
             JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
             panel.setOpaque(false);
             for (JButton button : buttons) {
@@ -814,739 +818,303 @@ public class BangGiaGUI extends JFrame {
             }
             return panel;
         }
+
+        protected JPanel createFormPanel() {
+            JPanel panel = new JPanel(new GridBagLayout());
+            panel.setOpaque(false);
+            return panel;
+        }
+
+        protected void addFormRow(JPanel panel, GridBagConstraints gbc, int row, String label, Component component) {
+            gbc.gridx = 0;
+            gbc.gridy = row;
+            gbc.weightx = 0;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.anchor = GridBagConstraints.WEST;
+            JLabel lbl = new JLabel(label + ":");
+            lbl.setFont(BODY_FONT);
+            lbl.setForeground(TEXT_MUTED);
+            panel.add(lbl, gbc);
+            gbc.gridx = 1;
+            gbc.weightx = 1.0;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
+            panel.add(component, gbc);
+        }
     }
 
-    private final class PriceTableEditorDialog extends BasePriceDialog {
-        private final PriceRecord editingRecord;
-        private final boolean editing;
-        private final List<PriceDetailRecord> detailRows = new ArrayList<PriceDetailRecord>();
-        private JLabel lblDetailSummary;
-        private JTextArea txtSelectedDetailNote;
+    private final class BangGiaFormDialog extends BaseDialog {
+        private final BangGia editingBangGia;
+        private final JTextField txtTenBangGia;
+        private final JComboBox<String> cboLoaiPhongDialog;
+        private final JTextField txtNgayBatDau;
+        private final JTextField txtNgayKetThuc;
+        private final JComboBox<String> cboLoaiNgayDialog;
+        private final JComboBox<String> cboTrangThaiDialog;
 
-        private PriceTableEditorDialog(Frame owner, PriceRecord record) {
-            super(owner, record == null ? "Thêm bảng giá" : "Cập nhật bảng giá", 940, 700);
-            this.editingRecord = record;
-            this.editing = record != null;
+        private BangGiaFormDialog(Frame owner, BangGia bangGia) {
+            super(owner, bangGia == null ? "Thêm bảng giá" : "Cập nhật bảng giá", 620, 460);
+            this.editingBangGia = bangGia;
 
-            if (record != null) {
-                for (PriceDetailRecord detail : record.details) {
-                    detailRows.add(detail.copy());
-                }
-            }
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(
-                    editing ? "CẬP NHẬT BẢNG GIÁ" : "THÊM BẢNG GIÁ",
-                    "Phần trên là thông tin chung của bảng giá, phần dưới là các dòng chi tiết mức giá theo mô hình header-detail."
+            add(buildHeader(
+                    bangGia == null ? "THÊM BẢNG GIÁ" : "CẬP NHẬT BẢNG GIÁ",
+                    "Lưu thông tin bảng giá theo đúng cột hiện tại của database."
             ), BorderLayout.NORTH);
 
-            JPanel body = new JPanel(new BorderLayout(0, 12));
-            body.setOpaque(false);
-            JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildHeaderSection(), buildDetailSection());
-            splitPane.setBorder(null);
-            splitPane.setOpaque(false);
-            splitPane.setResizeWeight(0.36d);
-            splitPane.setDividerLocation(330);
-            splitPane.setContinuousLayout(true);
-            body.add(splitPane, BorderLayout.CENTER);
-
-            content.add(body, BorderLayout.CENTER);
-
-            JButton btnPrimary = createPrimaryButton(editing ? "Lưu cập nhật" : "Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit(false));
-            JButton btnSaveNew = createOutlineButton("Lưu và tạo mới", new Color(37, 99, 235), e -> submit(true));
-            btnSaveNew.setVisible(!editing);
-            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnSaveNew, btnPrimary), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-
-            if (!editing) {
-                loadSampleDetailRows();
-            }
-        }
-
-        private JPanel buildHeaderSection() {
-            JPanel section = createDialogCardPanel();
-            section.add(new JLabel(""), BorderLayout.CENTER);
-            JPanel wrapper = new JPanel(new BorderLayout(0, 10));
-            wrapper.setOpaque(false);
-
-            JLabel lblSection = new JLabel("HEADER - THÔNG TIN CHUNG");
-            lblSection.setFont(SECTION_FONT);
-            lblSection.setForeground(TEXT_PRIMARY);
-
-            JPanel form = createDialogFormPanel();
+            JPanel card = createCardPanel(new BorderLayout());
+            JPanel form = createFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
+            gbc.insets = new Insets(6, 0, 6, 12);
 
-            JTextField maField = createInputField(editing ? editingRecord.maBangGia : "");
-            maField.setEditable(!editing);
-            JTextField tenField = createInputField(editing ? editingRecord.tenBangGia : "");
-            JComboBox<String> loaiField = createComboBox(ROOM_TYPES);
-            if (editing) {
-                loaiField.setSelectedItem(editingRecord.loaiPhong);
+            txtTenBangGia = createInputField(bangGia == null ? "" : safeValue(bangGia.getTenBangGia(), ""));
+            cboLoaiPhongDialog = createComboBox(new String[]{});
+            for (LoaiPhong loaiPhong : allLoaiPhong) {
+                cboLoaiPhongDialog.addItem(loaiPhong.getTenLoaiPhong());
             }
-            JTextField tuNgayField = createInputField(editing ? editingRecord.tuNgay : "01/04/2026");
-            JTextField denNgayField = createInputField(editing ? editingRecord.denNgay : "31/12/2026");
-            JComboBox<String> statusField = createComboBox(PRICE_STATUS_OPTIONS);
-            if (editing) {
-                statusField.setSelectedItem(editingRecord.trangThai);
-            }
-            JTextArea ghiChuField = createDialogTextArea(3);
-            if (editing) {
-                ghiChuField.setText(editingRecord.ghiChu);
+            if (bangGia != null) {
+                cboLoaiPhongDialog.setSelectedItem(bangGia.getTenLoaiPhong());
             }
 
-            addFormRow(form, gbc, 0, "Mã bảng giá", maField);
-            addFormRow(form, gbc, 1, "Tên bảng giá", tenField);
-            addFormRow(form, gbc, 2, "Loại phòng", loaiField);
-            addFormRow(form, gbc, 3, "Từ ngày", tuNgayField);
-            addFormRow(form, gbc, 4, "Đến ngày", denNgayField);
-            addFormRow(form, gbc, 5, "Trạng thái đầu", statusField);
-            addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(ghiChuField));
-
-            wrapper.add(lblSection, BorderLayout.NORTH);
-            wrapper.add(form, BorderLayout.CENTER);
-            section.removeAll();
-            section.setPreferredSize(new Dimension(330, 0));
-            section.add(wrapper, BorderLayout.CENTER);
-
-            this.headerMaField = maField;
-            this.headerTenField = tenField;
-            this.headerLoaiField = loaiField;
-            this.headerTuNgayField = tuNgayField;
-            this.headerDenNgayField = denNgayField;
-            this.headerStatusField = statusField;
-            this.headerGhiChuField = ghiChuField;
-            return section;
-        }
-
-        private JTextField headerMaField;
-        private JTextField headerTenField;
-        private JComboBox<String> headerLoaiField;
-        private JTextField headerTuNgayField;
-        private JTextField headerDenNgayField;
-        private JComboBox<String> headerStatusField;
-        private JTextArea headerGhiChuField;
-
-        private JPanel buildDetailSection() {
-            JPanel section = createDialogCardPanel();
-            JPanel wrapper = new JPanel(new BorderLayout(0, 10));
-            wrapper.setOpaque(false);
-
-            JLabel lblSection = new JLabel("DETAIL - CÁC DÒNG CHI TIẾT MỨC GIÁ");
-            lblSection.setFont(SECTION_FONT);
-            lblSection.setForeground(TEXT_PRIMARY);
-
-            String[] columns = {"STT", "Loại ngày", "Khung giờ", "Giá qua đêm", "Giá theo giờ", "Phụ thu", "Ưu tiên", "Ghi chú"};
-            DefaultTableModel model = new DefaultTableModel(columns, 0) {
-                @Override
-                public boolean isCellEditable(int row, int column) {
-                    return false;
-                }
-            };
-            JTable table = new JTable(model);
-            table.setRowHeight(30);
-            table.setFont(BODY_FONT);
-            table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-            table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
-
-            JScrollPane scroll = new JScrollPane(table);
-            scroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-            scroll.setPreferredSize(new Dimension(0, 360));
-
-            JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-            actions.setOpaque(false);
-            actions.add(createPrimaryButton("Thêm dòng CT", new Color(59, 130, 246), Color.WHITE, e -> openPriceDetailDialog(null)));
-            actions.add(createOutlineButton("Sửa dòng CT", new Color(245, 158, 11), e -> editSelectedDetail()));
-            actions.add(createOutlineButton("Xóa dòng CT", new Color(220, 38, 38), e -> removeSelectedDetail()));
-
-            lblDetailSummary = new JLabel();
-            lblDetailSummary.setFont(BODY_FONT);
-            lblDetailSummary.setForeground(TEXT_MUTED);
-
-            txtSelectedDetailNote = createDialogTextArea(3);
-            txtSelectedDetailNote.setEditable(false);
-            txtSelectedDetailNote.setBackground(PANEL_SOFT);
-
-            JPanel footer = new JPanel(new BorderLayout(0, 8));
-            footer.setOpaque(false);
-            footer.add(lblDetailSummary, BorderLayout.NORTH);
-            footer.add(new JScrollPane(txtSelectedDetailNote), BorderLayout.CENTER);
-
-            JPanel center = new JPanel(new BorderLayout(0, 10));
-            center.setOpaque(false);
-            center.add(actions, BorderLayout.NORTH);
-            center.add(scroll, BorderLayout.CENTER);
-            center.add(footer, BorderLayout.SOUTH);
-
-            wrapper.add(lblSection, BorderLayout.NORTH);
-            wrapper.add(center, BorderLayout.CENTER);
-            section.add(wrapper, BorderLayout.CENTER);
-
-            this.detailTableModelRef = model;
-            this.detailTableRef = table;
-            this.detailTableRef.getSelectionModel().addListSelectionListener(e -> {
-                if (!e.getValueIsAdjusting()) {
-                    updateSelectedDetailPreview();
-                }
-            });
-            refillDetailTable();
-            return section;
-        }
-
-        private DefaultTableModel detailTableModelRef;
-        private JTable detailTableRef;
-
-        private void loadSampleDetailRows() {
-            detailRows.clear();
-            refillDetailTable();
-        }
-
-        private void refillDetailTable() {
-            detailTableModelRef.setRowCount(0);
-            for (int i = 0; i < detailRows.size(); i++) {
-                PriceDetailRecord detail = detailRows.get(i);
-                detailTableModelRef.addRow(new Object[]{
-                        i + 1,
-                        detail.loaiNgay,
-                        detail.khungGio,
-                        detail.getGiaQuaDemLabel(),
-                        detail.getGiaTheoGioLabel(),
-                        detail.getPhuThuLabel(),
-                        detail.uuTienApDung,
-                        detail.ghiChu
-                });
+            txtNgayBatDau = createInputField(bangGia == null ? "" : formatDate(bangGia.getTuNgay()));
+            txtNgayKetThuc = createInputField(bangGia == null ? "" : formatDate(bangGia.getDenNgay()));
+            cboLoaiNgayDialog = createComboBox(LOAI_NGAY_OPTIONS);
+            if (bangGia != null) {
+                cboLoaiNgayDialog.setSelectedItem(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()));
             }
-            if (detailTableRef != null && detailTableRef.getRowCount() > 0) {
-                detailTableRef.setRowSelectionInterval(0, 0);
-            }
-            refreshDetailSummary();
-            updateSelectedDetailPreview();
-        }
-
-        private void refreshDetailSummary() {
-            if (lblDetailSummary == null) {
-                return;
-            }
-            lblDetailSummary.setText("Tổng số dòng chi tiết: " + detailRows.size());
-        }
-
-        private void updateSelectedDetailPreview() {
-            if (txtSelectedDetailNote == null) {
-                return;
-            }
-            int row = detailTableRef == null ? -1 : detailTableRef.getSelectedRow();
-            if (row < 0 || row >= detailRows.size()) {
-                txtSelectedDetailNote.setText("Chọn một dòng chi tiết để xem ghi chú nhanh.");
-                return;
-            }
-            PriceDetailRecord detail = detailRows.get(row);
-            txtSelectedDetailNote.setText("Loại ngày: " + safeValue(detail.loaiNgay, "-")
-                    + "\nGhi chú: " + safeValue(detail.ghiChu, "-"));
-        }
-
-        private void openPriceDetailDialog(PriceDetailRecord detail) {
-            new PriceDetailDialog(this, detail).setVisible(true);
-        }
-
-        private void editSelectedDetail() {
-            int row = detailTableRef.getSelectedRow();
-            if (row < 0 || row >= detailRows.size()) {
-                showWarning("Vui lòng chọn một dòng chi tiết.");
-                return;
-            }
-            openPriceDetailDialog(detailRows.get(row));
-        }
-
-        private void removeSelectedDetail() {
-            int row = detailTableRef.getSelectedRow();
-            if (row < 0 || row >= detailRows.size()) {
-                showWarning("Vui lòng chọn một dòng chi tiết.");
-                return;
-            }
-            if (!showConfirmDialog(
-                    "Xác nhận xóa dòng chi tiết",
-                    "Dòng chi tiết bảng giá đang chọn sẽ bị xóa khỏi bảng giá. Bạn có muốn tiếp tục không?",
-                    "Đồng ý",
-                    new Color(220, 38, 38)
-            )) {
-                return;
-            }
-            detailRows.remove(row);
-            refillDetailTable();
-        }
-
-        private void submit(boolean keepOpen) {
-            String maBangGia = headerMaField.getText().trim();
-            String tenBangGia = headerTenField.getText().trim();
-            String tuNgay = headerTuNgayField.getText().trim();
-            String denNgay = headerDenNgayField.getText().trim();
-
-            if (maBangGia.isEmpty()) {
-                showError("Mã bảng giá không được rỗng.");
-                return;
-            }
-            if (!editing) {
-                for (PriceRecord record : allPrices) {
-                    if (record.maBangGia.equalsIgnoreCase(maBangGia)) {
-                        showError("Mã bảng giá đã tồn tại.");
-                        return;
-                    }
-                }
-            }
-            if (valueOf(headerLoaiField.getSelectedItem()).isEmpty()) {
-                showError("Loại phòng là bắt buộc.");
-                return;
-            }
-            if (tuNgay.isEmpty() || denNgay.isEmpty()) {
-                showError("Vui lòng nhập đầy đủ Từ ngày và Đến ngày.");
-                return;
-            }
-            if (tuNgay.compareTo(denNgay) > 0) {
-                showError("Từ ngày phải nhỏ hơn hoặc bằng Đến ngày.");
-                return;
-            }
-            if (detailRows.isEmpty()) {
-                showError("Bảng giá phải có ít nhất 1 dòng chi tiết.");
-                return;
+            cboTrangThaiDialog = createComboBox(TRANG_THAI_OPTIONS);
+            if (bangGia != null) {
+                cboTrangThaiDialog.setSelectedItem(bangGia.getTrangThai());
             }
 
-            PriceRecord target = editing ? editingRecord : PriceRecord.create(
-                    maBangGia,
-                    tenBangGia,
-                    valueOf(headerLoaiField.getSelectedItem()),
-                    tuNgay,
-                    denNgay,
-                    valueOf(headerStatusField.getSelectedItem()),
-                    headerGhiChuField.getText().trim()
-            );
-
-            target.tenBangGia = tenBangGia;
-            target.loaiPhong = valueOf(headerLoaiField.getSelectedItem());
-            target.tuNgay = tuNgay;
-            target.denNgay = denNgay;
-            target.trangThai = valueOf(headerStatusField.getSelectedItem());
-            target.ghiChu = headerGhiChuField.getText().trim();
-            target.details.clear();
-            for (PriceDetailRecord detail : detailRows) {
-                target.details.add(detail.copy());
-            }
-            target.syncSummaryFromDetails();
-
-            if (editing) {
-                refreshPriceTableViews(target, "Cập nhật bảng giá thành công.");
-                dispose();
-            } else {
-                addPriceTable(target, keepOpen);
-                if (keepOpen) {
-                    loadSampleDetailRows();
-                } else {
-                    dispose();
-                }
-            }
-        }
-
-        private final class PriceDetailDialog extends BasePriceDialog {
-            private final PriceDetailRecord editingDetail;
-            private final JComboBox<String> cboLoaiNgay;
-            private final JTextField txtKhungGio;
-            private final JTextField txtGiaQuaDem;
-            private final JTextField txtGiaTheoGio;
-            private final JTextField txtPhuThu;
-            private final JTextField txtUuTien;
-            private final JTextArea txtGhiChu;
-
-            private PriceDetailDialog(Dialog owner, PriceDetailRecord detail) {
-                super((Frame) BangGiaGUI.this, detail == null ? "Thêm chi tiết bảng giá" : "Cập nhật chi tiết bảng giá", 560, 430);
-                this.editingDetail = detail;
-
-                JPanel content = new JPanel(new BorderLayout(0, 12));
-                content.setOpaque(false);
-                content.add(buildDialogHeader(
-                        detail == null ? "THÊM CHI TIẾT BẢNG GIÁ" : "CẬP NHẬT CHI TIẾT BẢNG GIÁ",
-                        "Khai báo một dòng detail của bảng giá trong cấu trúc ChiTietBangGia."
-                ), BorderLayout.NORTH);
-
-                JPanel card = createDialogCardPanel();
-                JPanel form = createDialogFormPanel();
-                GridBagConstraints gbc = new GridBagConstraints();
-                gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-                gbc.anchor = GridBagConstraints.WEST;
-
-                cboLoaiNgay = createComboBox(DAY_TYPE_OPTIONS);
-                txtKhungGio = createInputField(detail == null ? "" : detail.khungGio);
-                txtGiaQuaDem = createInputField(detail == null ? "" : String.valueOf((long) detail.giaQuaDem));
-                txtGiaTheoGio = createInputField(detail == null ? "" : String.valueOf((long) detail.giaTheoGio));
-                txtPhuThu = createInputField(detail == null ? "" : String.valueOf((long) detail.phuThu));
-                txtUuTien = createInputField(detail == null ? "" : String.valueOf(detail.uuTienApDung));
-                txtGhiChu = createDialogTextArea(3);
-                if (detail != null) {
-                    cboLoaiNgay.setSelectedItem(detail.loaiNgay);
-                    txtGhiChu.setText(detail.ghiChu);
-                }
-
-                addFormRow(form, gbc, 0, "Loại ngày", cboLoaiNgay);
-                addFormRow(form, gbc, 1, "Khung giờ", txtKhungGio);
-                addFormRow(form, gbc, 2, "Giá qua đêm", txtGiaQuaDem);
-                addFormRow(form, gbc, 3, "Giá theo giờ", txtGiaTheoGio);
-                addFormRow(form, gbc, 4, "Phụ thu", txtPhuThu);
-                addFormRow(form, gbc, 5, "Ưu tiên áp dụng", txtUuTien);
-                addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(txtGhiChu));
-
-                card.add(form, BorderLayout.CENTER);
-                content.add(card, BorderLayout.CENTER);
-
-                JButton btnPrimary = createPrimaryButton(detail == null ? "Lưu dòng" : "Lưu cập nhật", new Color(59, 130, 246), Color.WHITE, e -> submit(false));
-                JButton btnSaveNext = createOutlineButton("Lưu và thêm tiếp", new Color(22, 163, 74), e -> submit(true));
-                btnSaveNext.setVisible(detail == null);
-                JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-                content.add(buildDialogButtons(btnCancel, btnSaveNext, btnPrimary), BorderLayout.SOUTH);
-                add(content, BorderLayout.CENTER);
-            }
-
-            private void submit(boolean keepOpen) {
-                if (valueOf(cboLoaiNgay.getSelectedItem()).isEmpty()) {
-                    showError("Loại ngày bắt buộc chọn.");
-                    return;
-                }
-                if (txtKhungGio.getText().trim().isEmpty()) {
-                    showError("Khung giờ không được rỗng.");
-                    return;
-                }
-                Double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "Giá qua đêm không hợp lệ.");
-                Double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Giá theo giờ không hợp lệ.");
-                if (giaQuaDem == null && giaTheoGio == null) {
-                    showError("Ít nhất một trong hai trường Giá qua đêm hoặc Giá theo giờ phải có giá trị hợp lệ.");
-                    return;
-                }
-                Double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phụ thu không hợp lệ.");
-                Integer uuTien = parseOptionalInt(txtUuTien.getText().trim(), "Ưu tiên áp dụng phải là số hợp lệ.");
-                if (uuTien == null) {
-                    return;
-                }
-
-                PriceDetailRecord target = editingDetail == null
-                        ? new PriceDetailRecord(valueOf(cboLoaiNgay.getSelectedItem()), txtKhungGio.getText().trim(), giaQuaDem == null ? 0 : giaQuaDem, giaTheoGio == null ? 0 : giaTheoGio, phuThu == null ? 0 : phuThu, uuTien, txtGhiChu.getText().trim())
-                        : editingDetail;
-
-                target.loaiNgay = valueOf(cboLoaiNgay.getSelectedItem());
-                target.khungGio = txtKhungGio.getText().trim();
-                target.giaQuaDem = giaQuaDem == null ? 0 : giaQuaDem;
-                target.giaTheoGio = giaTheoGio == null ? 0 : giaTheoGio;
-                target.phuThu = phuThu == null ? 0 : phuThu;
-                target.uuTienApDung = uuTien;
-                target.ghiChu = txtGhiChu.getText().trim();
-
-                if (editingDetail == null) {
-                    detailRows.add(target);
-                }
-                refillDetailTable();
-                showSuccess(editingDetail == null ? "Thêm dòng chi tiết thành công." : "Cập nhật dòng chi tiết thành công.");
-
-                if (keepOpen && editingDetail == null) {
-                    cboLoaiNgay.setSelectedIndex(0);
-                    txtKhungGio.setText("");
-                    txtGiaQuaDem.setText("");
-                    txtGiaTheoGio.setText("");
-                    txtPhuThu.setText("");
-                    txtUuTien.setText("");
-                    txtGhiChu.setText("");
-                } else {
-                    dispose();
-                }
-            }
-        }
-    }
-
-    private final class DeactivatePriceTableDialog extends BasePriceDialog {
-        private final PriceRecord price;
-        private final JTextField txtTuNgay;
-        private final JTextField txtLyDo;
-        private final JTextArea txtGhiChuDialog;
-
-        private DeactivatePriceTableDialog(Frame owner, PriceRecord price) {
-            super(owner, "Ngừng áp dụng bảng giá", 580, 390);
-            this.price = price;
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader("NGỪNG ÁP DỤNG BẢNG GIÁ", "Bảng giá này sẽ không còn được áp dụng cho nghiệp vụ mới sau thời điểm đã chọn."), BorderLayout.NORTH);
-
-            JPanel card = createDialogCardPanel();
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            txtTuNgay = createInputField(price.tuNgay);
-            txtLyDo = createInputField("");
-            txtGhiChuDialog = createDialogTextArea(3);
-
-            addFormRow(form, gbc, 0, "Mã bảng giá", createValueTag(price.maBangGia));
-            addFormRow(form, gbc, 1, "Tên bảng giá", createValueTag(price.tenBangGia));
-            addFormRow(form, gbc, 2, "Loại phòng", createValueTag(price.loaiPhong));
-            addFormRow(form, gbc, 3, "Trạng thái hiện tại", createValueTag(price.trangThai));
-            addFormRow(form, gbc, 4, "Từ ngày", txtTuNgay);
-            addFormRow(form, gbc, 5, "Lý do", txtLyDo);
-            addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 0, "Tên bảng giá", txtTenBangGia);
+            addFormRow(form, gbc, 1, "Loại phòng", cboLoaiPhongDialog);
+            addFormRow(form, gbc, 2, "Ngày bắt đầu", txtNgayBatDau);
+            addFormRow(form, gbc, 3, "Ngày kết thúc", txtNgayKetThuc);
+            addFormRow(form, gbc, 4, "Loại ngày", cboLoaiNgayDialog);
+            addFormRow(form, gbc, 5, "Trạng thái", cboTrangThaiDialog);
 
             card.add(form, BorderLayout.CENTER);
-            content.add(card, BorderLayout.CENTER);
-
-            JButton btnConfirm = createPrimaryButton("Xác nhận ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> submit());
-            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
+            add(card, BorderLayout.CENTER);
+            add(buildButtons(
+                    createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose()),
+                    createPrimaryButton("Lưu", new Color(22, 163, 74), Color.WHITE, e -> saveBangGia())
+            ), BorderLayout.SOUTH);
         }
 
-        private void submit() {
-            if (txtLyDo.getText().trim().isEmpty()) {
-                showError("Vui lòng nhập lý do.");
+        private void saveBangGia() {
+            if (txtTenBangGia.getText().trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Tên bảng giá không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            if (!showConfirmDialog(
-                    "Xác nhận ngừng áp dụng bảng giá",
-                    "Bảng giá này sẽ không còn được áp dụng cho nghiệp vụ mới. Bạn có muốn tiếp tục không?",
-                    "Đồng ý",
-                    new Color(220, 38, 38)
-            )) {
+            LoaiPhong loaiPhong = findLoaiPhongByTen(valueOf(cboLoaiPhongDialog.getSelectedItem()));
+            if (loaiPhong == null) {
+                JOptionPane.showMessageDialog(this, "Loại phòng không hợp lệ.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            Date ngayBatDau = parseRequiredDate(txtNgayBatDau.getText().trim(), "Ngày bắt đầu không đúng định dạng dd/MM/yyyy.");
+            if (isInvalidDateMarker(ngayBatDau)) {
+                return;
+            }
+            Date ngayKetThuc = parseRequiredDate(txtNgayKetThuc.getText().trim(), "Ngày kết thúc không đúng định dạng dd/MM/yyyy.");
+            if (isInvalidDateMarker(ngayKetThuc)) {
+                return;
+            }
+            if (ngayBatDau.after(ngayKetThuc)) {
+                JOptionPane.showMessageDialog(this, "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            String loaiNgay = valueOf(cboLoaiNgayDialog.getSelectedItem());
+            if (loaiNgay.trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Loại ngày không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
+            if (trangThai.trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Trạng thái không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
-            price.trangThai = "Ngừng áp dụng";
-            price.denNgay = txtTuNgay.getText().trim();
-            price.ghiChu = txtLyDo.getText().trim() + (txtGhiChuDialog.getText().trim().isEmpty() ? "" : ". " + txtGhiChuDialog.getText().trim());
-            refreshPriceTableViews(price, "Ngừng áp dụng bảng giá thành công.");
+            BangGia bangGia = editingBangGia == null ? new BangGia() : editingBangGia;
+            bangGia.setTenBangGia(txtTenBangGia.getText().trim());
+            bangGia.setMaLoaiPhong(loaiPhong.getMaLoaiPhong());
+            bangGia.setTenLoaiPhong(loaiPhong.getTenLoaiPhong());
+            bangGia.setTuNgay(ngayBatDau);
+            bangGia.setDenNgay(ngayKetThuc);
+            bangGia.setTrangThai(trangThai);
+
+            boolean success = editingBangGia == null ? bangGiaDAO.insert(bangGia, loaiNgay) : bangGiaDAO.update(bangGia, loaiNgay);
+            if (!success) {
+                JOptionPane.showMessageDialog(this, "Không thể lưu bảng giá.\nChi tiết: " + safeValue(bangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            reloadBangGiaData(false, false);
+            selectBangGia(bangGia.getMaBangGia());
+            JOptionPane.showMessageDialog(this, editingBangGia == null ? "Thêm bảng giá thành công." : "Cập nhật bảng giá thành công.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
             dispose();
         }
     }
 
-    private final class ViewPriceTableDialog extends BasePriceDialog {
-        private ViewPriceTableDialog(Frame owner, PriceRecord price) {
-            super(owner, "Xem chi tiết bảng giá", 860, 620);
+    private final class ChiTietBangGiaFormDialog extends BaseDialog {
+        private final BangGia bangGia;
+        private final ChiTietBangGia editingChiTiet;
+        private final JComboBox<String> cboLoaiNgayDialog;
+        private final JTextField txtKhungGio;
+        private final JTextField txtGiaTheoGio;
+        private final JTextField txtGiaQuaDem;
+        private final JTextField txtGiaTheoNgay;
+        private final JTextField txtGiaCuoiTuan;
+        private final JTextField txtGiaLe;
+        private final JTextField txtPhuThu;
 
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader("XEM CHI TIẾT BẢNG GIÁ", "Phần trên là thông tin header, phần dưới là danh sách detail của bảng giá."), BorderLayout.NORTH);
+        private ChiTietBangGiaFormDialog(Frame owner, BangGia bangGia, ChiTietBangGia chiTiet) {
+            super(owner, chiTiet == null ? "Thêm chi tiết bảng giá" : "Cập nhật chi tiết bảng giá", 620, 520);
+            this.bangGia = bangGia;
+            this.editingChiTiet = chiTiet;
 
-            JPanel headerCard = createDialogCardPanel();
-            JPanel headerForm = createDialogFormPanel();
+            add(buildHeader(
+                    chiTiet == null ? "THÊM CHI TIẾT BẢNG GIÁ" : "CẬP NHẬT CHI TIẾT BẢNG GIÁ",
+                    "Khai báo giá chi tiết theo ChiTietBangGia."
+            ), BorderLayout.NORTH);
+
+            JPanel card = createCardPanel(new BorderLayout());
+            JPanel form = createFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-            addFormRow(headerForm, gbc, 0, "Mã bảng giá", createValueTag(price.maBangGia));
-            addFormRow(headerForm, gbc, 1, "Tên bảng giá", createValueTag(price.tenBangGia));
-            addFormRow(headerForm, gbc, 2, "Loại phòng", createValueTag(price.loaiPhong));
-            addFormRow(headerForm, gbc, 3, "Từ ngày", createValueTag(price.tuNgay));
-            addFormRow(headerForm, gbc, 4, "Đến ngày", createValueTag(price.denNgay));
-            addFormRow(headerForm, gbc, 5, "Trạng thái", createValueTag(price.trangThai));
-            addFormRow(headerForm, gbc, 6, "Ghi chú", new JScrollPane(createReadonlyText(price.ghiChu)));
-            headerCard.add(headerForm, BorderLayout.CENTER);
+            gbc.insets = new Insets(6, 0, 6, 12);
 
-            JPanel detailCard = createDialogCardPanel();
-            String[] columns = {"STT", "Loại ngày", "Khung giờ", "Giá qua đêm", "Giá theo giờ", "Phụ thu", "Ưu tiên", "Ghi chú"};
-            DefaultTableModel model = new DefaultTableModel(columns, 0) {
+            cboLoaiNgayDialog = createComboBox(LOAI_NGAY_OPTIONS);
+            txtKhungGio = createInputField(chiTiet == null ? "" : safeValue(chiTiet.getKhungGio(), ""));
+            txtGiaTheoGio = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoGio()));
+            txtGiaQuaDem = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaQuaDem()));
+            txtGiaTheoNgay = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoNgay()));
+            txtGiaCuoiTuan = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaCuoiTuan()));
+            txtGiaLe = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaLe()));
+            txtPhuThu = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThu()));
+            if (chiTiet != null) {
+                cboLoaiNgayDialog.setSelectedItem(chiTiet.getLoaiNgay());
+            }
+
+            addFormRow(form, gbc, 0, "Loại ngày", cboLoaiNgayDialog);
+            addFormRow(form, gbc, 1, "Khung giờ", txtKhungGio);
+            addFormRow(form, gbc, 2, "Giá theo giờ", txtGiaTheoGio);
+            addFormRow(form, gbc, 3, "Giá qua đêm", txtGiaQuaDem);
+            addFormRow(form, gbc, 4, "Giá theo ngày", txtGiaTheoNgay);
+            addFormRow(form, gbc, 5, "Giá cuối tuần", txtGiaCuoiTuan);
+            addFormRow(form, gbc, 6, "Giá lễ", txtGiaLe);
+            addFormRow(form, gbc, 7, "Phụ thu", txtPhuThu);
+
+            card.add(form, BorderLayout.CENTER);
+            add(card, BorderLayout.CENTER);
+            add(buildButtons(
+                    createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose()),
+                    createPrimaryButton("Lưu", new Color(59, 130, 246), Color.WHITE, e -> saveChiTiet())
+            ), BorderLayout.SOUTH);
+        }
+
+        private void saveChiTiet() {
+            if (valueOf(cboLoaiNgayDialog.getSelectedItem()).trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Loại ngày không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (txtKhungGio.getText().trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Khung giờ không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Giá theo giờ");
+            double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "Giá qua đêm");
+            double giaTheoNgay = parseMoney(txtGiaTheoNgay.getText().trim(), "Giá theo ngày");
+            double giaCuoiTuan = parseMoney(txtGiaCuoiTuan.getText().trim(), "Giá cuối tuần");
+            double giaLe = parseMoney(txtGiaLe.getText().trim(), "Giá lễ");
+            double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phụ thu");
+            if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || giaCuoiTuan < 0 || giaLe < 0 || phuThu < 0) {
+                return;
+            }
+
+            ChiTietBangGia chiTiet = editingChiTiet == null ? new ChiTietBangGia() : editingChiTiet;
+            chiTiet.setMaBangGia(bangGia.getMaBangGia());
+            chiTiet.setLoaiNgay(valueOf(cboLoaiNgayDialog.getSelectedItem()));
+            chiTiet.setKhungGio(txtKhungGio.getText().trim());
+            chiTiet.setGiaTheoGio(giaTheoGio);
+            chiTiet.setGiaQuaDem(giaQuaDem);
+            chiTiet.setGiaTheoNgay(giaTheoNgay);
+            chiTiet.setGiaCuoiTuan(giaCuoiTuan);
+            chiTiet.setGiaLe(giaLe);
+            chiTiet.setPhuThu(phuThu);
+
+            boolean success = editingChiTiet == null ? chiTietBangGiaDAO.insert(chiTiet) : chiTietBangGiaDAO.update(chiTiet);
+            if (!success) {
+                JOptionPane.showMessageDialog(this, "Không thể lưu chi tiết bảng giá.\nChi tiết: " + safeValue(chiTietBangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            reloadBangGiaData(false, false);
+            selectBangGia(bangGia.getMaBangGia());
+            JOptionPane.showMessageDialog(this, editingChiTiet == null ? "Thêm chi tiết bảng giá thành công." : "Cập nhật chi tiết bảng giá thành công.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            dispose();
+        }
+    }
+
+    private final class BangGiaViewDialog extends BaseDialog {
+        private BangGiaViewDialog(Frame owner, BangGia bangGia) {
+            super(owner, "Xem chi tiết bảng giá", 860, 620);
+            add(buildHeader("XEM CHI TIẾT BẢNG GIÁ", "Dữ liệu bảng giá đang lấy trực tiếp từ database."), BorderLayout.NORTH);
+
+            JPanel body = new JPanel(new BorderLayout(0, 12));
+            body.setOpaque(false);
+            JPanel headerCard = createCardPanel(new BorderLayout());
+            JPanel form = createFormPanel();
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(6, 0, 6, 12);
+            addFormRow(form, gbc, 0, "Mã bảng giá", new JLabel(String.valueOf(bangGia.getMaBangGia())));
+            addFormRow(form, gbc, 1, "Tên bảng giá", new JLabel(safeValue(bangGia.getTenBangGia(), "-")));
+            addFormRow(form, gbc, 2, "Loại phòng", new JLabel(safeValue(bangGia.getTenLoaiPhong(), "-")));
+            addFormRow(form, gbc, 3, "Ngày bắt đầu", new JLabel(formatDate(bangGia.getTuNgay())));
+            addFormRow(form, gbc, 4, "Ngày kết thúc", new JLabel(formatDate(bangGia.getDenNgay())));
+            addFormRow(form, gbc, 5, "Loại ngày", new JLabel(safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "-")));
+            addFormRow(form, gbc, 6, "Trạng thái", new JLabel(safeValue(bangGia.getTrangThai(), "-")));
+            headerCard.add(form, BorderLayout.CENTER);
+
+            DefaultTableModel model = new DefaultTableModel(new String[]{
+                    "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+            }, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
                     return false;
                 }
             };
             JTable table = new JTable(model);
-            table.setRowHeight(30);
             table.setFont(BODY_FONT);
-            for (int i = 0; i < price.details.size(); i++) {
-                PriceDetailRecord detail = price.details.get(i);
-                model.addRow(new Object[]{i + 1, detail.loaiNgay, detail.khungGio, detail.getGiaQuaDemLabel(), detail.getGiaTheoGioLabel(), detail.getPhuThuLabel(), detail.uuTienApDung, detail.ghiChu});
+            table.setRowHeight(28);
+            for (ChiTietBangGia chiTiet : chiTietBangGiaDAO.getByMaBangGia(bangGia.getMaBangGia())) {
+                model.addRow(new Object[]{
+                        chiTiet.getMaChiTietBangGia(), chiTiet.getLoaiNgay(), chiTiet.getKhungGio(),
+                        formatCurrency(chiTiet.getGiaTheoGio()), formatCurrency(chiTiet.getGiaQuaDem()),
+                        formatCurrency(chiTiet.getGiaTheoNgay()), formatCurrency(chiTiet.getGiaCuoiTuan()),
+                        formatCurrency(chiTiet.getGiaLe()), formatCurrency(chiTiet.getPhuThu())
+                });
             }
+            JPanel detailCard = createCardPanel(new BorderLayout());
             detailCard.add(new JScrollPane(table), BorderLayout.CENTER);
 
-            JPanel body = new JPanel(new BorderLayout(0, 12));
-            body.setOpaque(false);
             body.add(headerCard, BorderLayout.NORTH);
             body.add(detailCard, BorderLayout.CENTER);
-            content.add(body, BorderLayout.CENTER);
-            content.add(buildDialogButtons(createPrimaryButton("Đóng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
+            add(body, BorderLayout.CENTER);
+            add(buildButtons(createPrimaryButton("Đóng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
         }
     }
 
-    private JTextArea createReadonlyText(String text) {
-        JTextArea area = createDialogTextArea(3);
-        area.setEditable(false);
-        area.setBackground(PANEL_SOFT);
-        area.setText(text);
-        return area;
-    }
-
-    private final class ConfirmDialog extends BasePriceDialog {
-        private boolean confirmed;
-
-        private ConfirmDialog(Frame owner, String title, String message, String confirmText, Color confirmColor) {
-            super(owner, title, 430, 220);
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(title, message), BorderLayout.CENTER);
-            JButton btnCancel = createOutlineButton("Bỏ qua", new Color(107, 114, 128), e -> dispose());
-            JButton btnConfirm = createPrimaryButton(confirmText, confirmColor, Color.WHITE, e -> {
-                confirmed = true;
-                dispose();
-            });
-            content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-
-        private boolean isConfirmed() {
-            return confirmed;
-        }
-    }
-
-    private final class AppMessageDialog extends BasePriceDialog {
-        private AppMessageDialog(Frame owner, String title, String message, Color accentColor) {
-            super(owner, title, 430, 220);
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(title, message), BorderLayout.CENTER);
-            content.add(buildDialogButtons(createPrimaryButton("Đóng", accentColor, Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-    }
-
-    private static final class PriceRecord {
-        private String maBangGia;
-        private String tenBangGia;
-        private String loaiPhong;
-        private String muaGia;
-        private String tuNgay;
-        private String denNgay;
-        private double giaTheoGio;
-        private double giaTheoNgay;
-        private double giaCuoiTuan;
-        private double giaLe;
-        private double phuThuExtraBed;
-        private double phuThuQuaGio;
-        private String trangThai;
-        private String ghiChu;
-        private final List<PriceDetailRecord> details = new ArrayList<PriceDetailRecord>();
-
-        private static PriceRecord create(String maBangGia, String tenBangGia, String loaiPhong, String tuNgay, String denNgay, String trangThai, String ghiChu) {
-            PriceRecord record = new PriceRecord();
-            record.maBangGia = maBangGia;
-            record.tenBangGia = tenBangGia;
-            record.loaiPhong = loaiPhong;
-            record.tuNgay = tuNgay;
-            record.denNgay = denNgay;
-            record.trangThai = trangThai;
-            record.ghiChu = ghiChu;
-            record.muaGia = "Thường";
-            return record;
-        }
-
-        private void syncSummaryFromDetails() {
-            muaGia = details.isEmpty() ? "Thường" : details.get(0).loaiNgay;
-            giaTheoGio = firstPositiveGiaTheoGio();
-            giaTheoNgay = firstPositiveGiaQuaDem();
-            giaCuoiTuan = findGiaQuaDem("Cuối tuần");
-            giaLe = findGiaQuaDem("Ngày lễ");
-            phuThuExtraBed = details.isEmpty() ? 0 : details.get(0).phuThu;
-            phuThuQuaGio = details.isEmpty() ? 0 : details.get(0).giaTheoGio * 0.5;
-        }
-
-        private double firstPositiveGiaTheoGio() {
-            for (PriceDetailRecord detail : details) {
-                if (detail.giaTheoGio > 0) {
-                    return detail.giaTheoGio;
-                }
-            }
-            return 0;
-        }
-
-        private double firstPositiveGiaQuaDem() {
-            for (PriceDetailRecord detail : details) {
-                if (detail.giaQuaDem > 0) {
-                    return detail.giaQuaDem;
-                }
-            }
-            return 0;
-        }
-
-        private double findGiaQuaDem(String loaiNgayTarget) {
-            for (PriceDetailRecord detail : details) {
-                if (loaiNgayTarget.equals(detail.loaiNgay) && detail.giaQuaDem > 0) {
-                    return detail.giaQuaDem;
-                }
-            }
-            return firstPositiveGiaQuaDem();
-        }
-
-        private String getDisplayGiaTheoGio() {
-            return giaTheoGio <= 0 ? "-" : String.format(Locale.US, "%,.0f", giaTheoGio).replace(',', '.');
-        }
-
-        private String getDisplayGiaTheoNgay() {
-            return giaTheoNgay <= 0 ? "-" : String.format(Locale.US, "%,.0f", giaTheoNgay).replace(',', '.');
-        }
-
-        private String getDisplayGiaCuoiTuan() {
-            return giaCuoiTuan <= 0 ? "-" : String.format(Locale.US, "%,.0f", giaCuoiTuan).replace(',', '.');
-        }
-
-        private String getDisplayGiaLe() {
-            return giaLe <= 0 ? "-" : String.format(Locale.US, "%,.0f", giaLe).replace(',', '.');
-        }
-
-        private String getDisplayPhuThuExtraBed() {
-            return phuThuExtraBed <= 0 ? "-" : String.format(Locale.US, "%,.0f", phuThuExtraBed).replace(',', '.');
-        }
-
-        private String getDisplayPhuThuQuaGio() {
-            return phuThuQuaGio <= 0 ? "-" : String.format(Locale.US, "%,.0f", phuThuQuaGio).replace(',', '.');
-        }
-    }
-
-    private static final class PriceDetailRecord {
-        private String loaiNgay;
-        private String khungGio;
-        private double giaQuaDem;
-        private double giaTheoGio;
-        private double phuThu;
-        private int uuTienApDung;
-        private String ghiChu;
-
-        private PriceDetailRecord(String loaiNgay, String khungGio, double giaQuaDem, double giaTheoGio, double phuThu, int uuTienApDung, String ghiChu) {
-            this.loaiNgay = loaiNgay;
-            this.khungGio = khungGio;
-            this.giaQuaDem = giaQuaDem;
-            this.giaTheoGio = giaTheoGio;
-            this.phuThu = phuThu;
-            this.uuTienApDung = uuTienApDung;
-            this.ghiChu = ghiChu;
-        }
-
-        private PriceDetailRecord copy() {
-            return new PriceDetailRecord(loaiNgay, khungGio, giaQuaDem, giaTheoGio, phuThu, uuTienApDung, ghiChu);
-        }
-
-        private String getGiaQuaDemLabel() {
-            return giaQuaDem <= 0 ? "-" : String.format(Locale.US, "%,.0f", giaQuaDem).replace(',', '.');
-        }
-
-        private String getGiaTheoGioLabel() {
-            return giaTheoGio <= 0 ? "-" : String.format(Locale.US, "%,.0f", giaTheoGio).replace(',', '.');
-        }
-
-        private String getPhuThuLabel() {
-            return phuThu <= 0 ? "-" : String.format(Locale.US, "%,.0f", phuThu).replace(',', '.');
-        }
-    }
-
-    /**
-     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
-     */
     public JPanel buildPanel() {
-        if (rootPanel == null) initUI();
+        if (rootPanel == null) {
+            initUI();
+        }
         return rootPanel;
     }
 
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            BangGiaGUI gui = new BangGiaGUI();
+            gui.setSize(1400, 820);
+            gui.setLocationRelativeTo(null);
+            gui.setVisible(true);
+        });
+    }
 }

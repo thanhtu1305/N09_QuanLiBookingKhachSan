@@ -508,6 +508,7 @@ public class KhachHangGUI extends JFrame {
         cboTrangThai.setSelectedIndex(0);
         txtTuKhoa.setText("");
         applyFilters(false);
+        refreshCurrentView();
         if (showMessage) {
             showSuccess("Đã làm mới dữ liệu khách hàng.");
         }
@@ -565,6 +566,7 @@ public class KhachHangGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private void updateDetailPanel(CustomerRecord customer) {
@@ -583,6 +585,7 @@ public class KhachHangGUI extends JFrame {
         txtGhiChu.setText(customer.ghiChu);
         txtGhiChu.setCaretPosition(0);
         lstLichSu.setListData(buildHistoryPreview(customer));
+        refreshCurrentView();
     }
 
     private String[] buildHistoryPreview(CustomerRecord customer) {
@@ -610,6 +613,7 @@ public class KhachHangGUI extends JFrame {
         txtDiaChi.setText("Không có dữ liệu phù hợp.");
         txtGhiChu.setText("Không có dữ liệu phù hợp.");
         lstLichSu.setListData(new String[]{"Không có lịch sử lưu trú gần đây"});
+        refreshCurrentView();
     }
 
     private CustomerRecord getSelectedCustomer() {
@@ -661,6 +665,7 @@ public class KhachHangGUI extends JFrame {
 
     private void selectCustomer(CustomerRecord customer) {
         if (customer == null) {
+            refreshCurrentView();
             return;
         }
         int index = filteredCustomers.indexOf(customer);
@@ -673,6 +678,7 @@ public class KhachHangGUI extends JFrame {
         } else {
             clearDetailPanel();
         }
+        refreshCurrentView();
     }
 
     private JPanel buildFooter() {
@@ -1337,6 +1343,17 @@ public class KhachHangGUI extends JFrame {
     /**
      * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
      */
+    private void refreshCurrentView() {
+        if (rootPanel != null) {
+            rootPanel.revalidate();
+            rootPanel.repaint();
+        }
+        if (tblKhachHang != null) {
+            tblKhachHang.revalidate();
+            tblKhachHang.repaint();
+        }
+    }
+
     public JPanel buildPanel() {
         if (rootPanel == null) initUI();
         return rootPanel;

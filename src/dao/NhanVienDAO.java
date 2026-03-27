@@ -186,6 +186,34 @@ public class NhanVienDAO {
         return dsNhanVien;
     }
 
+    public void khoaTaiKhoanNeuNhanVienBiNgung(int maNhanVien, String trangThaiNhanVien) {
+        clearLastError();
+
+        if (maNhanVien <= 0 || trangThaiNhanVien == null) {
+            return;
+        }
+
+        String trangThai = trangThaiNhanVien.trim();
+        if (!"Ngừng làm việc".equalsIgnoreCase(trangThai) && !"Khóa".equalsIgnoreCase(trangThai)) {
+            return;
+        }
+
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
+            return;
+        }
+
+        String sql = "UPDATE TaiKhoan SET trangThai = N'Khóa' WHERE maNhanVien = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maNhanVien);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            setLastError(e.getMessage());
+        }
+    }
+
     private void fillStatement(PreparedStatement stmt, NhanVien nhanVien) throws SQLException {
         stmt.setString(1, nhanVien.getHoTen());
         stmt.setDate(2, nhanVien.getNgaySinh());

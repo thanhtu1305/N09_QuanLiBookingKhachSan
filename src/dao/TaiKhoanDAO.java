@@ -6,11 +6,19 @@ import entity.TaiKhoan;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 
 public class TaiKhoanDAO {
+    private String lastLoginMessage = "";
+
+    public String getLastLoginMessage() {
+        return lastLoginMessage;
+    }
+
+    private void setLastLoginMessage(String message) {
+        lastLoginMessage = message == null ? "" : message;
+    }
 
     public List<TaiKhoan> getAll() {
         List<TaiKhoan> ds = new ArrayList<>();
@@ -119,7 +127,12 @@ public class TaiKhoanDAO {
     }
 
     public TaiKhoan dangNhap(String tenDangNhap, String matKhau, String vaiTro) {
-        String sql = "SELECT * FROM TaiKhoan WHERE tenDangNhap = ? AND matKhau = ? AND vaiTro = ? AND trangThai = N'Hoạt động'";
+        setLastLoginMessage("");
+
+        String sql = "SELECT tk.*, nv.trangThai AS trangThaiNhanVien "
+                + "FROM TaiKhoan tk "
+                + "LEFT JOIN NhanVien nv ON tk.maNhanVien = nv.maNhanVien "
+                + "WHERE tk.tenDangNhap = ? AND tk.matKhau = ? AND tk.vaiTro = ?";
 
         try {
             Connection con = ConnectDB.getConnection();
@@ -129,13 +142,31 @@ public class TaiKhoanDAO {
             ps.setString(3, vaiTro);
 
             ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                TaiKhoan tk = mapResultSet(rs);
-                capNhatLanDangNhapCuoi(tk.getMaTaiKhoan());
-                return tk;
+            if (!rs.next()) {
+                setLastLoginMessage("Sai tên đăng nhập, mật khẩu hoặc vai trò.");
+                return null;
             }
+
+            String trangThaiTaiKhoan = rs.getString("trangThai");
+            String trangThaiNhanVien = rs.getString("trangThaiNhanVien");
+
+            if (!"Hoạt động".equalsIgnoreCase(trangThaiTaiKhoan)) {
+                setLastLoginMessage("Tài khoản của bạn đã bị khóa.");
+                return null;
+            }
+
+            if ("Ngừng làm việc".equalsIgnoreCase(trangThaiNhanVien)
+                    || "Khóa".equalsIgnoreCase(trangThaiNhanVien)) {
+                setLastLoginMessage("Bạn đã bị đuổi việc");
+                return null;
+            }
+
+            TaiKhoan tk = mapResultSet(rs);
+            capNhatLanDangNhapCuoi(tk.getMaTaiKhoan());
+            return tk;
         } catch (Exception e) {
             e.printStackTrace();
+            setLastLoginMessage("Lỗi hệ thống khi đăng nhập.");
         }
 
         return null;

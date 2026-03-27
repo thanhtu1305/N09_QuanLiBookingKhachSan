@@ -31,7 +31,6 @@ import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
 
-
 public class DangNhapGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
     private static final Color CARD_BG = Color.WHITE;
@@ -291,9 +290,15 @@ public class DangNhapGUI extends JFrame {
         TaiKhoan tk = taiKhoanDAO.dangNhap(username, password, role);
 
         if (tk == null) {
+            String message = taiKhoanDAO.getLastLoginMessage();
+
+            if (message == null || message.trim().isEmpty()) {
+                message = "Đăng nhập thất bại.";
+            }
+
             JOptionPane.showMessageDialog(
                     this,
-                    "Sai tên đăng nhập, mật khẩu, vai trò hoặc tài khoản bị khóa.",
+                    message,
                     "Đăng nhập thất bại",
                     JOptionPane.ERROR_MESSAGE
             );
@@ -319,5 +324,4 @@ public class DangNhapGUI extends JFrame {
         if (rootPanel == null) initUI();
         return rootPanel;
     }
-
 }

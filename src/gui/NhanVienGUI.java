@@ -75,7 +75,7 @@ public class NhanVienGUI extends JFrame {
     private static final String[] BO_PHAN_OPTIONS = {"Lễ tân", "Buồng phòng", "Kế toán", "Kỹ thuật", "Điều hành"};
     private static final String[] CHUC_VU_OPTIONS = {"Nhân viên", "Trưởng ca", "Quản lý", "Kế toán tổng hợp"};
     private static final String[] CA_LAM_OPTIONS = {"Ca sáng", "Ca chiều", "Ca tối"};
-    private static final String[] TRANG_THAI_OPTIONS = {"Hoạt động", "Tạm ngừng", "Ngừng làm việc"};
+    private static final String[] TRANG_THAI_OPTIONS = {"Hoạt động", "Tạm ngừng", "Ngừng làm việc", "Khóa"};
 
     private final NhanVienDAO nhanVienDAO = new NhanVienDAO();
     private final String username;
@@ -112,11 +112,35 @@ public class NhanVienGUI extends JFrame {
     public NhanVienGUI(String username, String role) {
         this.username = safeValue(username, "guest");
         this.role = safeValue(role, "Lễ tân");
+
+        // Lễ tân: không khởi tạo UI — buildPanel() sẽ hiện dialog thông báo
+        if (isLetanRole()) return;
+
         setTitle("Quản lý nhân viên - " + AppBranding.APP_DISPLAY_NAME);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         initUI();
         reloadNhanVien(true, false);
         registerShortcuts();
+    }
+
+    /** Trả về true nếu vai trò hiện tại là Lễ tân (không có quyền truy cập). */
+    private boolean isLetanRole() {
+        return "Lễ tân".equalsIgnoreCase(this.role);
+    }
+
+    /**
+     * Hiện dialog thông báo từ chối quyền — KHÔNG swap màn hình.
+     * Gọi từ buildPanel() khi là Lễ tân.
+     */
+    private void showAccessDeniedDialog() {
+        javax.swing.JOptionPane.showMessageDialog(
+                null,
+                "<html><b>Lễ tân không được sử dụng quyền này.</b><br><br>"
+                        + "Chức năng <b>Quản lý Nhân viên</b> chỉ dành cho Quản lý.<br>"
+                        + "Vui lòng liên hệ Quản lý để được hỗ trợ.</html>",
+                "Không có quyền truy cập",
+                javax.swing.JOptionPane.WARNING_MESSAGE
+        );
     }
 
     private void initUI() {
@@ -742,7 +766,16 @@ public class NhanVienGUI extends JFrame {
         panel.add(row);
     }
 
+    /**
+     * Trả về panel nội dung để NavigationUtil swap vào AppFrame.
+     * Nếu là Lễ tân: hiện dialog cảnh báo và trả về null
+     * (NavigationUtil phải kiểm tra null để không swap màn hình).
+     */
     public JPanel buildPanel() {
+        if (isLetanRole()) {
+            showAccessDeniedDialog();
+            return null;   // Không swap — giữ nguyên màn hình hiện tại
+        }
         if (rootPanel == null) {
             initUI();
         }
@@ -929,6 +962,11 @@ public class NhanVienGUI extends JFrame {
                         JOptionPane.ERROR_MESSAGE
                 );
                 return;
+            }
+
+            if ("Ngừng làm việc".equalsIgnoreCase(nhanVien.getTrangThai())
+                    || "Khóa".equalsIgnoreCase(nhanVien.getTrangThai())) {
+                nhanVienDAO.khoaTaiKhoanNeuNhanVienBiNgung(nhanVien.getMaNhanVien(), nhanVien.getTrangThai());
             }
 
             reloadNhanVien(false, false);

@@ -7,6 +7,8 @@ import entity.BangGia;
 import entity.ChiTietBangGia;
 import entity.LoaiPhong;
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
+import gui.common.AppTimePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -85,8 +87,8 @@ public class BangGiaGUI extends JFrame {
     private JComboBox<String> cboLoaiNgay;
     private JComboBox<String> cboTrangThai;
     private JTextField txtTuKhoa;
-    private JTextField txtNgayBatDauFilter;
-    private JTextField txtNgayKetThucFilter;
+    private AppDatePickerField txtNgayBatDauFilter;
+    private AppDatePickerField txtNgayKetThucFilter;
     private JLabel lblMaBangGia;
     private JLabel lblTenBangGia;
     private JLabel lblLoaiPhongChiTiet;
@@ -182,8 +184,8 @@ public class BangGiaGUI extends JFrame {
         cboLoaiPhong = createComboBox(new String[]{"Tất cả"});
         cboLoaiNgay = createComboBox(new String[]{"Tất cả", "Ngày thường", "Cuối tuần", "Ngày lễ"});
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Đang áp dụng", "Ngừng áp dụng"});
-        txtNgayBatDauFilter = createInputField("");
-        txtNgayKetThucFilter = createInputField("");
+        txtNgayBatDauFilter = new AppDatePickerField("", false);
+        txtNgayKetThucFilter = new AppDatePickerField("", false);
         left.add(createFieldGroup("Loại phòng", cboLoaiPhong));
         left.add(createFieldGroup("Loại ngày", cboLoaiNgay));
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
@@ -846,8 +848,8 @@ public class BangGiaGUI extends JFrame {
         private final BangGia editingBangGia;
         private final JTextField txtTenBangGia;
         private final JComboBox<String> cboLoaiPhongDialog;
-        private final JTextField txtNgayBatDau;
-        private final JTextField txtNgayKetThuc;
+        private final AppDatePickerField txtNgayBatDau;
+        private final AppDatePickerField txtNgayKetThuc;
         private final JComboBox<String> cboLoaiNgayDialog;
         private final JComboBox<String> cboTrangThaiDialog;
 
@@ -874,8 +876,8 @@ public class BangGiaGUI extends JFrame {
                 cboLoaiPhongDialog.setSelectedItem(bangGia.getTenLoaiPhong());
             }
 
-            txtNgayBatDau = createInputField(bangGia == null ? "" : formatDate(bangGia.getTuNgay()));
-            txtNgayKetThuc = createInputField(bangGia == null ? "" : formatDate(bangGia.getDenNgay()));
+            txtNgayBatDau = new AppDatePickerField(bangGia == null ? "" : formatDate(bangGia.getTuNgay()), true);
+            txtNgayKetThuc = new AppDatePickerField(bangGia == null ? "" : formatDate(bangGia.getDenNgay()), true);
             cboLoaiNgayDialog = createComboBox(LOAI_NGAY_OPTIONS);
             if (bangGia != null) {
                 cboLoaiNgayDialog.setSelectedItem(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()));
@@ -958,7 +960,7 @@ public class BangGiaGUI extends JFrame {
         private final BangGia bangGia;
         private final ChiTietBangGia editingChiTiet;
         private final JComboBox<String> cboLoaiNgayDialog;
-        private final JTextField txtKhungGio;
+        private final AppTimePickerField txtKhungGio;
         private final JTextField txtGiaTheoGio;
         private final JTextField txtGiaQuaDem;
         private final JTextField txtGiaTheoNgay;
@@ -982,7 +984,7 @@ public class BangGiaGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
 
             cboLoaiNgayDialog = createComboBox(LOAI_NGAY_OPTIONS);
-            txtKhungGio = createInputField(chiTiet == null ? "" : safeValue(chiTiet.getKhungGio(), ""));
+            txtKhungGio = new AppTimePickerField(chiTiet == null ? "" : safeValue(chiTiet.getKhungGio(), ""), true);
             txtGiaTheoGio = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoGio()));
             txtGiaQuaDem = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaQuaDem()));
             txtGiaTheoNgay = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoNgay()));
@@ -1017,6 +1019,10 @@ public class BangGiaGUI extends JFrame {
             }
             if (txtKhungGio.getText().trim().isEmpty()) {
                 JOptionPane.showMessageDialog(this, "Khung giờ không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (txtKhungGio.getTimeValue() == null) {
+                JOptionPane.showMessageDialog(this, "Khung giờ không đúng định dạng HH:mm.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Giá theo giờ");

@@ -5,6 +5,7 @@ import dao.TienNghiDAO;
 import entity.LoaiPhong;
 import entity.TienNghi;
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -1186,7 +1187,7 @@ public class LoaiPhongGUI extends JFrame {
 
     private final class DeactivateRoomTypeDialog extends BaseRoomTypeDialog {
         private final RoomTypeRecord type;
-        private final JTextField txtTuNgay;
+        private final AppDatePickerField txtTuNgay;
         private final JTextField txtLyDo;
         private final JTextArea txtGhiChuDialog;
 
@@ -1204,7 +1205,7 @@ public class LoaiPhongGUI extends JFrame {
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            txtTuNgay = createInputField("19/03/2026");
+            txtTuNgay = new AppDatePickerField("", true);
             txtLyDo = createInputField("");
             txtGhiChuDialog = createDialogTextArea(4);
 
@@ -1225,6 +1226,10 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         private void submit() {
+            if (txtTuNgay.getDateValue() == null) {
+                showValidationMessage("Từ ngày không đúng định dạng dd/MM/yyyy.");
+                return;
+            }
             if (txtLyDo.getText().trim().isEmpty()) {
                 showValidationMessage("Vui lòng nhập lý do ngừng áp dụng.");
                 return;

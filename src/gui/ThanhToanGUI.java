@@ -1,6 +1,7 @@
 package gui;
 
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -37,6 +38,9 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -53,6 +57,7 @@ public class ThanhToanGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final String username;
     private final String role;
@@ -64,8 +69,8 @@ public class ThanhToanGUI extends JFrame {
     private DefaultTableModel tableModel;
     private JComboBox<String> cboTrangThai;
     private JComboBox<String> cboPhuongThuc;
-    private JTextField txtTuNgay;
-    private JTextField txtDenNgay;
+    private AppDatePickerField txtTuNgay;
+    private AppDatePickerField txtDenNgay;
     private JTextField txtTuKhoa;
 
     private JLabel lblMaHoaDon;
@@ -187,8 +192,8 @@ public class ThanhToanGUI extends JFrame {
 
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Chờ thanh toán", "Đã thanh toán", "Đã hoàn cọc"});
         cboPhuongThuc = createComboBox(new String[]{"Tất cả", "Tiền mặt", "Chuyển khoản", "Thẻ", "Kết hợp"});
-        txtTuNgay = createInputField("10/03/2026");
-        txtDenNgay = createInputField("16/03/2026");
+        txtTuNgay = new AppDatePickerField(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")), true);
+        txtDenNgay = new AppDatePickerField(java.time.LocalDate.now().plusDays(6).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")), true);
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(290, 34));
         txtTuKhoa.setToolTipText("Mã hóa đơn / số phòng / tên khách / số điện thoại");
@@ -579,8 +584,8 @@ public class ThanhToanGUI extends JFrame {
     private void reloadSampleData(boolean showMessage) {
         cboTrangThai.setSelectedIndex(0);
         cboPhuongThuc.setSelectedIndex(0);
-        txtTuNgay.setText("10/03/2026");
-        txtDenNgay.setText("16/03/2026");
+        txtTuNgay.setText(java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        txtDenNgay.setText(java.time.LocalDate.now().plusDays(6).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")));
         txtTuKhoa.setText("");
         applyFilters(false);
         if (showMessage) {
@@ -596,18 +601,34 @@ public class ThanhToanGUI extends JFrame {
         String fromDate = txtTuNgay.getText() == null ? "" : txtTuNgay.getText().trim();
         String toDate = txtDenNgay.getText() == null ? "" : txtDenNgay.getText().trim();
         String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
+        LocalDate fromDateValue = txtTuNgay.getDateValue();
+        LocalDate toDateValue = txtDenNgay.getDateValue();
+
+        if (!fromDate.isEmpty() && fromDateValue == null) {
+            showWarning("Từ ngày không đúng định dạng dd/MM/yyyy.");
+            return;
+        }
+        if (!toDate.isEmpty() && toDateValue == null) {
+            showWarning("Đến ngày không đúng định dạng dd/MM/yyyy.");
+            return;
+        }
+        if (fromDateValue != null && toDateValue != null && fromDateValue.isAfter(toDateValue)) {
+            showWarning("Đến ngày phải lớn hơn hoặc bằng từ ngày.");
+            return;
+        }
 
         for (InvoiceRecord invoice : allInvoices) {
+            LocalDate invoiceDate = parseDateValue(invoice.ngayHoaDon);
             if (!"Tất cả".equals(trangThai) && !invoice.trangThai.equals(trangThai)) {
                 continue;
             }
             if (!"Tất cả".equals(phuongThuc) && !invoice.phuongThucThanhToan.equals(phuongThuc)) {
                 continue;
             }
-            if (!fromDate.isEmpty() && invoice.ngayHoaDon.compareTo(fromDate) < 0) {
+            if (!fromDate.isEmpty() && invoiceDate != null && invoiceDate.isBefore(fromDateValue)) {
                 continue;
             }
-            if (!toDate.isEmpty() && invoice.ngayHoaDon.compareTo(toDate) > 0) {
+            if (!toDate.isEmpty() && invoiceDate != null && invoiceDate.isAfter(toDateValue)) {
                 continue;
             }
             if (!tuKhoa.isEmpty()) {
@@ -772,6 +793,17 @@ public class ThanhToanGUI extends JFrame {
 
     private String valueOf(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private LocalDate parseDateValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim(), DATE_FORMAT);
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
     }
 
     private JPanel createDialogCardPanel() {

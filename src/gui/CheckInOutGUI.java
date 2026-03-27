@@ -1,6 +1,8 @@
 package gui;
 
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
+import gui.common.AppTimePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -705,6 +707,7 @@ public class CheckInOutGUI extends JFrame {
         gbc.insets = new Insets(6, 6, 6, 6);
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
+        Component[] inputs = new Component[fields.length];
 
         for (int i = 0; i < fields.length; i++) {
             gbc.gridx = 0;
@@ -717,15 +720,19 @@ public class CheckInOutGUI extends JFrame {
 
             gbc.gridx = 1;
             gbc.weightx = 1.0;
-            JTextField txt = new JTextField();
-            txt.setFont(BODY_FONT);
-            form.add(txt, gbc);
+            inputs[i] = createDialogInput(fields[i]);
+            form.add(inputs[i], gbc);
         }
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         actions.setOpaque(false);
         actions.add(createOutlineButton("Hủy", new Color(220, 38, 38), e -> dialog.dispose()));
         actions.add(createPrimaryButton("Xác nhận", new Color(22, 163, 74), Color.WHITE, e -> {
+            for (int i = 0; i < fields.length; i++) {
+                if (!validateDialogInput(dialog, fields[i], inputs[i])) {
+                    return;
+                }
+            }
             JOptionPane.showMessageDialog(dialog, "Đã ghi nhận thao tác: " + title, "Thông báo", JOptionPane.INFORMATION_MESSAGE);
             dialog.dispose();
         }));
@@ -735,6 +742,38 @@ public class CheckInOutGUI extends JFrame {
         dialog.setContentPane(root);
         ScreenUIHelper.prepareDialog(dialog, dialogOwner, 520, 320);
         dialog.setVisible(true);
+    }
+
+    private Component createDialogInput(String label) {
+        if (label != null && label.contains("Giờ")) {
+            return new AppTimePickerField("", true);
+        }
+        if (label != null && label.contains("Ngày")) {
+            return new AppDatePickerField("", true);
+        }
+        JTextField txt = new JTextField();
+        txt.setFont(BODY_FONT);
+        return txt;
+    }
+
+    private boolean validateDialogInput(Component owner, String label, Component input) {
+        if (input instanceof AppDatePickerField) {
+            AppDatePickerField dateField = (AppDatePickerField) input;
+            String value = dateField.getText().trim();
+            if (!value.isEmpty() && dateField.getDateValue() == null) {
+                JOptionPane.showMessageDialog(owner, label + " không đúng định dạng dd/MM/yyyy.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                return false;
+            }
+        }
+        if (input instanceof AppTimePickerField) {
+            AppTimePickerField timeField = (AppTimePickerField) input;
+            String value = timeField.getText().trim();
+            if (!value.isEmpty() && timeField.getTimeValue() == null) {
+                JOptionPane.showMessageDialog(owner, label + " không đúng định dạng HH:mm.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                return false;
+            }
+        }
+        return true;
     }
 
     private void showInfo(String message) {

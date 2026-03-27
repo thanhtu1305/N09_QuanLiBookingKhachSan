@@ -3,6 +3,7 @@ package gui;
 import dao.TienNghiDAO;
 import entity.TienNghi;
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -1044,7 +1045,7 @@ public class TienNghiGUI extends JFrame {
 
     private final class DeactivateAmenityDialog extends BaseAmenityDialog {
         private final AmenityRecord amenity;
-        private JTextField txtTuNgay;
+        private AppDatePickerField txtTuNgay;
         private JTextArea txtLyDo;
         private JTextArea txtGhiChu;
 
@@ -1064,7 +1065,7 @@ public class TienNghiGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            txtTuNgay = createInputField("19/03/2026");
+            txtTuNgay = new AppDatePickerField("", true);
             txtLyDo = createDialogTextArea(3);
             txtGhiChu = createDialogTextArea(3);
 
@@ -1086,6 +1087,10 @@ public class TienNghiGUI extends JFrame {
         }
 
         private void submit() {
+            if (txtTuNgay.getDateValue() == null) {
+                showError("Từ ngày không đúng định dạng dd/MM/yyyy.");
+                return;
+            }
             if (parseAmenityId(amenity.maTienNghi) <= 0) {
                 showError("Không xác định được tiện nghi cần xóa.");
                 return;

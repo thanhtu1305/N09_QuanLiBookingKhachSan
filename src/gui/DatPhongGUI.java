@@ -1,6 +1,7 @@
 package gui;
 
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -72,8 +73,8 @@ public class DatPhongGUI extends JFrame {
     private JComboBox<String> cboTrangThai;
     private JComboBox<String> cboNguonDat;
     private JComboBox<String> cboLoaiPhong;
-    private JTextField txtTuNgay;
-    private JTextField txtDenNgay;
+    private AppDatePickerField txtTuNgay;
+    private AppDatePickerField txtDenNgay;
     private JTextField txtTuKhoa;
 
     private JLabel lblMaDatPhong;
@@ -190,8 +191,8 @@ public class DatPhongGUI extends JFrame {
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Chờ xác nhận", "Đã xác nhận", "Đã nhận cọc", "Đã hủy"});
         cboNguonDat = createComboBox(new String[]{"Tất cả", "Đặt trước", "Walk-in"});
         cboLoaiPhong = createComboBox(new String[]{"Tất cả", "Standard", "Deluxe", "Suite"});
-        txtTuNgay = createInputField("10/03/2026");
-        txtDenNgay = createInputField("16/03/2026");
+        txtTuNgay = new AppDatePickerField(LocalDate.now().format(DATE_FORMAT), true);
+        txtDenNgay = new AppDatePickerField(LocalDate.now().plusDays(6).format(DATE_FORMAT), true);
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(260, 34));
         txtTuKhoa.setToolTipText("Mã đặt phòng / tên khách / số điện thoại");
@@ -546,8 +547,8 @@ public class DatPhongGUI extends JFrame {
         cboTrangThai.setSelectedIndex(0);
         cboNguonDat.setSelectedIndex(0);
         cboLoaiPhong.setSelectedIndex(0);
-        txtTuNgay.setText("10/03/2026");
-        txtDenNgay.setText("16/03/2026");
+        txtTuNgay.setText(LocalDate.now().format(DATE_FORMAT));
+        txtDenNgay.setText(LocalDate.now().plusDays(6).format(DATE_FORMAT));
         txtTuKhoa.setText("");
         applyFilters(false);
         if (showMessage) {
@@ -562,9 +563,19 @@ public class DatPhongGUI extends JFrame {
         String nguonDat = valueOf(cboNguonDat.getSelectedItem());
         String loaiPhong = valueOf(cboLoaiPhong.getSelectedItem());
         String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
+        String fromText = txtTuNgay.getText().trim();
+        String toText = txtDenNgay.getText().trim();
 
-        LocalDate fromDate = parseDate(txtTuNgay.getText().trim());
-        LocalDate toDate = parseDate(txtDenNgay.getText().trim());
+        LocalDate fromDate = parseDate(fromText);
+        LocalDate toDate = parseDate(toText);
+        if (!fromText.isEmpty() && fromDate == null) {
+            showWarning("Từ ngày không đúng định dạng dd/MM/yyyy.");
+            return;
+        }
+        if (!toText.isEmpty() && toDate == null) {
+            showWarning("Đến ngày không đúng định dạng dd/MM/yyyy.");
+            return;
+        }
         if (fromDate != null && toDate != null && fromDate.isAfter(toDate)) {
             showWarning("Khoảng ngày không hợp lệ. Vui lòng kiểm tra lại từ ngày và đến ngày.");
             return;
@@ -732,8 +743,8 @@ public class DatPhongGUI extends JFrame {
         cboTrangThai.setSelectedIndex(0);
         cboNguonDat.setSelectedIndex(0);
         cboLoaiPhong.setSelectedIndex(0);
-        txtTuNgay.setText("10/03/2026");
-        txtDenNgay.setText("16/03/2026");
+        txtTuNgay.setText(LocalDate.now().format(DATE_FORMAT));
+        txtDenNgay.setText(LocalDate.now().plusDays(6).format(DATE_FORMAT));
         txtTuKhoa.setText("");
         applyFilters(false);
         selectBooking(booking);
@@ -948,7 +959,7 @@ public class DatPhongGUI extends JFrame {
         private final boolean editing;
         private final List<BookingDetailRecord> detailRows = new ArrayList<BookingDetailRecord>();
         private JTextField txtMaBooking;
-        private JTextField txtNgayDatDialog;
+        private AppDatePickerField txtNgayDatDialog;
         private JComboBox<String> cboNguonBookingDialog;
         private JTextField txtMaKh;
         private JTextField txtHoTen;
@@ -1019,7 +1030,7 @@ public class DatPhongGUI extends JFrame {
 
             txtMaBooking = createInputField(editing ? editingBooking.maDatPhong : "DP" + (240300 + allBookings.size() + 1));
             txtMaBooking.setEditable(!editing);
-            txtNgayDatDialog = createInputField(editing ? editingBooking.formatNgayDat() : LocalDate.now().format(DATE_FORMAT));
+            txtNgayDatDialog = new AppDatePickerField(editing ? editingBooking.formatNgayDat() : LocalDate.now().format(DATE_FORMAT), true);
             cboNguonBookingDialog = createComboBox(BOOKING_SOURCE_OPTIONS);
             txtMaKh = createInputField(editing ? editingBooking.maKhachHang : "");
             txtHoTen = createInputField(editing ? editingBooking.khachHang : "");
@@ -1361,8 +1372,8 @@ public class DatPhongGUI extends JFrame {
             private final BookingDetailRecord editingDetail;
             private final JComboBox<String> cboLoaiPhongDialog;
             private final JTextField txtPhongDialog;
-            private final JTextField txtCheckInDialog;
-            private final JTextField txtCheckOutDialog;
+        private final AppDatePickerField txtCheckInDialog;
+        private final AppDatePickerField txtCheckOutDialog;
             private final JTextField txtSoNguoiDialog;
             private final JComboBox<String> cboBangGiaDialog;
             private final JTextField txtChiTietBangGiaDialog;
@@ -1390,8 +1401,8 @@ public class DatPhongGUI extends JFrame {
 
                 cboLoaiPhongDialog = createComboBox(ROOM_TYPE_OPTIONS);
                 txtPhongDialog = createInputField(detail == null ? "" : detail.maPhong);
-                txtCheckInDialog = createInputField(detail == null ? "20/03/2026" : detail.formatCheckIn());
-                txtCheckOutDialog = createInputField(detail == null ? "21/03/2026" : detail.formatCheckOut());
+            txtCheckInDialog = new AppDatePickerField(detail == null ? LocalDate.now().format(DATE_FORMAT) : detail.formatCheckIn(), true);
+            txtCheckOutDialog = new AppDatePickerField(detail == null ? LocalDate.now().plusDays(1).format(DATE_FORMAT) : detail.formatCheckOut(), true);
                 txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
                 cboBangGiaDialog = createComboBox(PRICE_TABLE_OPTIONS);
                 txtChiTietBangGiaDialog = createInputField(detail == null ? "" : detail.maChiTietBangGia);
@@ -1506,8 +1517,8 @@ public class DatPhongGUI extends JFrame {
 
                 if (keepOpen && editingDetail == null) {
                     txtPhongDialog.setText("");
-                    txtCheckInDialog.setText("20/03/2026");
-                    txtCheckOutDialog.setText("21/03/2026");
+            txtCheckInDialog.setText(LocalDate.now().format(DATE_FORMAT));
+            txtCheckOutDialog.setText(LocalDate.now().plusDays(1).format(DATE_FORMAT));
                     txtSoNguoiDialog.setText("2");
                     txtChiTietBangGiaDialog.setText("");
                     txtGiaApDungDialog.setText("850000");

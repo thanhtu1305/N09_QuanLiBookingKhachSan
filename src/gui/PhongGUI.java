@@ -7,6 +7,7 @@ import entity.LoaiPhong;
 import entity.Phong;
 import entity.TienNghi;
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -1364,8 +1365,8 @@ public class PhongGUI extends JFrame {
     private final class DeactivateRoomDialog extends BaseRoomDialog {
         private final RoomRecord room;
         private final JComboBox<String> cboHinhThuc;
-        private final JTextField txtTuNgay;
-        private final JTextField txtDenNgay;
+        private final AppDatePickerField txtTuNgay;
+        private final AppDatePickerField txtDenNgay;
         private final JTextArea txtLyDo;
 
         private DeactivateRoomDialog(Frame owner, RoomRecord room) {
@@ -1383,8 +1384,8 @@ public class PhongGUI extends JFrame {
             gbc.anchor = GridBagConstraints.WEST;
 
             cboHinhThuc = createComboBox(new String[]{"Bảo trì dài hạn", "Tạm ngưng khai thác"});
-            txtTuNgay = createInputField("19/03/2026");
-            txtDenNgay = createInputField("26/03/2026");
+            txtTuNgay = new AppDatePickerField("", true);
+            txtDenNgay = new AppDatePickerField("", true);
             txtLyDo = createDialogTextArea(4);
 
             addFormRow(form, gbc, 0, "Số phòng", createValueTag(room.soPhong));
@@ -1407,6 +1408,18 @@ public class PhongGUI extends JFrame {
         private void submit() {
             if ("Đang ở".equals(room.trangThai)) {
                 showError("Không thể ngừng sử dụng phòng đang có khách lưu trú.");
+                return;
+            }
+            if (txtTuNgay.getDateValue() == null) {
+                showError("Từ ngày không đúng định dạng dd/MM/yyyy.");
+                return;
+            }
+            if (txtDenNgay.getDateValue() == null) {
+                showError("Đến ngày không đúng định dạng dd/MM/yyyy.");
+                return;
+            }
+            if (txtTuNgay.getDateValue().isAfter(txtDenNgay.getDateValue())) {
+                showError("Đến ngày phải lớn hơn hoặc bằng từ ngày.");
                 return;
             }
             if (txtLyDo.getText().trim().isEmpty()) {

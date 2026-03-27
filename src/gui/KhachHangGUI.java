@@ -1,6 +1,7 @@
 package gui;
 
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -869,7 +870,7 @@ public class KhachHangGUI extends JFrame {
         private JTextField txtHoTen;
         private JTextField txtSoDienThoaiDialog;
         private JTextField txtCccdDialog;
-        private JTextField txtNgaySinhDialog;
+        private AppDatePickerField txtNgaySinhDialog;
         private JComboBox<String> cboGioiTinh;
         private JTextField txtEmailDialog;
         private JTextArea txtDiaChiDialog;
@@ -900,7 +901,7 @@ public class KhachHangGUI extends JFrame {
             txtHoTen = createInputField(customer == null ? "" : customer.hoTen);
             txtSoDienThoaiDialog = createInputField(customer == null ? "" : customer.soDienThoai);
             txtCccdDialog = createInputField(customer == null ? "" : customer.cccdPassport);
-            txtNgaySinhDialog = createInputField(customer == null ? "" : customer.ngaySinh);
+            txtNgaySinhDialog = new AppDatePickerField(customer == null ? "" : customer.ngaySinh, true);
             cboGioiTinh = createComboBox(new String[]{"Nam", "Nữ", "Khác"});
             txtEmailDialog = createInputField(customer == null ? "" : customer.email);
             txtDiaChiDialog = createDialogTextArea(3);
@@ -979,6 +980,11 @@ public class KhachHangGUI extends JFrame {
                 showError("Email không hợp lệ.");
                 return;
             }
+            String ngaySinh = txtNgaySinhDialog.getText().trim();
+            if (!ngaySinh.isEmpty() && txtNgaySinhDialog.getDateValue() == null) {
+                showError("Ngày sinh không đúng định dạng dd/MM/yyyy.");
+                return;
+            }
             for (CustomerRecord existing : allCustomers) {
                 if (existing != customer && existing.soDienThoai.equalsIgnoreCase(soDienThoai)) {
                     showError("Số điện thoại đã tồn tại trong danh sách.");
@@ -1001,7 +1007,7 @@ public class KhachHangGUI extends JFrame {
                         hoTen,
                         soDienThoai,
                         cccdPassport,
-                        txtNgaySinhDialog.getText().trim(),
+                        ngaySinh,
                         valueOf(cboGioiTinh.getSelectedItem()),
                         email,
                         txtDiaChiDialog.getText().trim(),
@@ -1032,7 +1038,7 @@ public class KhachHangGUI extends JFrame {
             customer.hoTen = hoTen;
             customer.soDienThoai = soDienThoai;
             customer.cccdPassport = cccdPassport;
-            customer.ngaySinh = txtNgaySinhDialog.getText().trim();
+            customer.ngaySinh = ngaySinh;
             customer.gioiTinh = valueOf(cboGioiTinh.getSelectedItem());
             customer.email = email;
             customer.diaChi = txtDiaChiDialog.getText().trim();
@@ -1063,7 +1069,7 @@ public class KhachHangGUI extends JFrame {
 
     private final class DeactivateCustomerDialog extends BaseCustomerDialog {
         private final CustomerRecord customer;
-        private JTextField txtTuNgay;
+        private AppDatePickerField txtTuNgay;
         private JTextArea txtLyDo;
         private JTextArea txtGhiChuDialog;
 
@@ -1083,7 +1089,7 @@ public class KhachHangGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            txtTuNgay = createInputField("19/03/2026");
+            txtTuNgay = new AppDatePickerField("", true);
             txtLyDo = createDialogTextArea(3);
             txtGhiChuDialog = createDialogTextArea(3);
 
@@ -1107,6 +1113,10 @@ public class KhachHangGUI extends JFrame {
         private void submit() {
             if (txtLyDo.getText().trim().isEmpty()) {
                 showError("Vui lòng nhập lý do ngừng giao dịch.");
+                return;
+            }
+            if (txtTuNgay.getDateValue() == null) {
+                showError("Từ ngày không đúng định dạng dd/MM/yyyy.");
                 return;
             }
             String warning = "Khách hàng này sẽ không được dùng cho giao dịch mới. Bạn có muốn tiếp tục không?";

@@ -1,6 +1,7 @@
 package gui;
 
 import gui.common.AppBranding;
+import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil.ScreenKey;
@@ -754,8 +755,8 @@ public class BaoCaoGUI extends JFrame {
 
     private final class ReportFilterDialog extends BaseReportDialog {
         private JComboBox<String> cboLoaiBaoCaoDialog;
-        private JTextField txtTuNgay;
-        private JTextField txtDenNgay;
+        private AppDatePickerField txtTuNgay;
+        private AppDatePickerField txtDenNgay;
         private JComboBox<String> cboNhomTheo;
         private JComboBox<String> cboLoaiPhongDialog;
         private JComboBox<String> cboTrangThaiPhong;
@@ -780,8 +781,8 @@ public class BaoCaoGUI extends JFrame {
             gbc.anchor = GridBagConstraints.WEST;
 
             cboLoaiBaoCaoDialog = createComboBox(new String[]{"", "Công suất phòng", "Doanh thu", "Dịch vụ sử dụng nhiều", "Tình trạng phòng realtime"});
-            txtTuNgay = createInputField(currentFilter.tuNgay);
-            txtDenNgay = createInputField(currentFilter.denNgay);
+            txtTuNgay = new AppDatePickerField(currentFilter.tuNgay, true);
+            txtDenNgay = new AppDatePickerField(currentFilter.denNgay, true);
             cboNhomTheo = createComboBox(new String[]{"Ngày", "Tháng", "Loại phòng"});
             cboLoaiPhongDialog = createComboBox(new String[]{"Tất cả", "Standard", "Deluxe", "Suite"});
             cboTrangThaiPhong = createComboBox(new String[]{"Tất cả", "Trống", "Đã đặt", "Đang ở", "Dọn dẹp", "Bảo trì"});
@@ -818,7 +819,12 @@ public class BaoCaoGUI extends JFrame {
                 showWarning("Vui lòng chọn loại báo cáo và khoảng thời gian hợp lệ.");
                 return;
             }
-            if (txtTuNgay.getText().trim().compareTo(txtDenNgay.getText().trim()) > 0) {
+            if (txtTuNgay.getDateValue() == null || txtDenNgay.getDateValue() == null) {
+                showWarning("Ngày báo cáo phải đúng định dạng dd/MM/yyyy.");
+                return;
+            }
+            if (txtTuNgay.getDateValue() != null && txtDenNgay.getDateValue() != null
+                    && txtTuNgay.getDateValue().isAfter(txtDenNgay.getDateValue())) {
                 showWarning("Vui lòng chọn loại báo cáo và khoảng thời gian hợp lệ.");
                 return;
             }

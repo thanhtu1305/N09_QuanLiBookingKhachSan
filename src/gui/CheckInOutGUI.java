@@ -682,7 +682,7 @@ public class CheckInOutGUI extends JFrame {
                 Timestamp checkOutTs = rs.getTimestamp("checkOut");
                 record.gioVao = checkInTs == null ? "-" : DATE_FORMAT.format(checkInTs.toLocalDateTime().toLocalDate()) + " " + TIME_FORMAT.format(checkInTs.toLocalDateTime().toLocalTime());
                 record.gioRaDuKien = checkOutTs == null ? "-" : DATE_FORMAT.format(checkOutTs.toLocalDateTime().toLocalDate()) + " " + TIME_FORMAT.format(checkOutTs.toLocalDateTime().toLocalTime());
-                record.trangThai = "Đang ở";
+                record.trangThai = "Đã check-out";
                 record.tang = safeValue(rs.getString("tang"), "-");
                 record.caLam = resolveCurrentShift();
                 record.expectedCheckInDate = checkInTs == null ? LocalDate.now() : checkInTs.toLocalDateTime().toLocalDate();

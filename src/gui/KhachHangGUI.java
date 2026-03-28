@@ -183,7 +183,6 @@ public class KhachHangGUI extends JFrame {
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Thêm KH", new Color(22, 163, 74), Color.WHITE, e -> openCreateCustomerDialog()));
         card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateCustomerDialog()));
         card.add(createPrimaryButton("Ngừng giao dịch", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateCustomerDialog()));
         card.add(createPrimaryButton("Xem lịch sử", new Color(99, 102, 241), Color.WHITE, e -> openCustomerHistoryDialog()));

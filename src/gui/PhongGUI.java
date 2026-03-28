@@ -19,6 +19,7 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
+import javax.swing.JList;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -62,8 +63,9 @@ public class PhongGUI extends JFrame {
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final String[] FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
-    private static final String[] ROOM_STATUS_OPTIONS = {"Trống", "Đã đặt", "Đang ở", "Dọn dẹp", "Bảo trì"};
+    private static final String[] ROOM_STATUS_OPTIONS = {"Trống", "Dọn dẹp", "Bảo trì"};
     private static final String[] ZONES = {"Khu A", "Khu B", "Khu C", "Khu VIP"};
+    private static final java.util.List<PhongGUI> OPEN_INSTANCES = new java.util.ArrayList<PhongGUI>();
     private final PhongDAO phongDAO = new PhongDAO();
     private final LoaiPhongDAO loaiPhongDAO = new LoaiPhongDAO();
     private final TienNghiDAO tienNghiDAO = new TienNghiDAO();
@@ -109,6 +111,17 @@ public class PhongGUI extends JFrame {
         loadFilterSources();
         reloadRoomData(true, false);
         registerShortcuts();
+        synchronized (OPEN_INSTANCES) {
+            OPEN_INSTANCES.add(this);
+        }
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                synchronized (OPEN_INSTANCES) {
+                    OPEN_INSTANCES.remove(PhongGUI.this);
+                }
+            }
+        });
     }
 
     private void initUI() {
@@ -178,12 +191,14 @@ public class PhongGUI extends JFrame {
         JButton btnThemPhong = createPrimaryButton("Thêm phòng", new Color(22, 163, 74), Color.WHITE, e -> openCreateRoomDialog());
         JButton btnCapNhatTrangThai = createPrimaryButton("Cập nhật trạng thái", new Color(37, 99, 235), Color.WHITE, e -> openUpdateStatusDialog());
         JButton btnNgungSuDung = createPrimaryButton("Ngừng sử dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomDialog());
+        JButton btnGanLoaiPhong = createPrimaryButton("Gán loại phòng", new Color(99, 102, 241), Color.WHITE, e -> openAssignRoomTypeDialog());
         JButton btnLamMoi = createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadRoomData(true, true));
         JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
 
         card.add(btnThemPhong);
         card.add(btnCapNhatTrangThai);
         card.add(btnNgungSuDung);
+        card.add(btnGanLoaiPhong);
         card.add(btnLamMoi);
         card.add(btnTimKiem);
         return card;
@@ -837,6 +852,14 @@ public class PhongGUI extends JFrame {
         return filteredRooms.get(row);
     }
 
+    private RoomRecord getSelectedRoomSilently() {
+        int row = tblPhong == null ? -1 : tblPhong.getSelectedRow();
+        if (row < 0 || row >= filteredRooms.size()) {
+            return null;
+        }
+        return filteredRooms.get(row);
+    }
+
     private Color resolveStatusColor(String code) {
         if ("T".equals(code)) {
             return new Color(220, 252, 231);
@@ -903,6 +926,10 @@ public class PhongGUI extends JFrame {
         }
     }
 
+    private void openAssignRoomTypeDialog() {
+        new AssignRoomTypeDialog(this).setVisible(true);
+    }
+
     private void refreshRoomViews(int maPhong, String message) {
         reloadRoomData(false, false);
         selectRoomById(maPhong);
@@ -962,6 +989,7 @@ public class PhongGUI extends JFrame {
                 "F1 Thêm phòng",
                 "F2 Cập nhật trạng thái",
                 "F3 Ngừng sử dụng",
+                "F4 Gán loại phòng",
                 "F5 Làm mới",
                 "Enter Xem chi tiết"
         );
@@ -971,6 +999,7 @@ public class PhongGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F1", "phong-f1", this::openCreateRoomDialog);
         ScreenUIHelper.registerShortcut(this, "F2", "phong-f2", this::openUpdateStatusDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "phong-f3", this::openDeactivateRoomDialog);
+        ScreenUIHelper.registerShortcut(this, "F4", "phong-f4", this::openAssignRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F5", "phong-f5", () -> reloadRoomData(true, true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "phong-enter", () -> {
             RoomRecord room = getSelectedRoom();
@@ -1462,6 +1491,98 @@ public class PhongGUI extends JFrame {
         }
     }
 
+
+    private final class AssignRoomTypeDialog extends BaseRoomDialog {
+        private final JComboBox<String> cboLoaiPhongDialog;
+        private final JList<AssignableRoomOption> lstRooms;
+
+        private AssignRoomTypeDialog(Frame owner) {
+            super(owner, "Gán loại phòng", 720, 560);
+
+            JPanel content = new JPanel(new BorderLayout(0, 12));
+            content.setOpaque(false);
+            content.add(buildDialogHeader("Gán loại phòng cho nhiều phòng", "Chọn loại phòng và đánh dấu các phòng mong muốn bên danh sách phòng."), BorderLayout.NORTH);
+
+            cboLoaiPhongDialog = createLoaiPhongDialogComboBox();
+            RoomRecord selectedRoom = getSelectedRoomSilently();
+            if (selectedRoom != null) {
+                cboLoaiPhongDialog.setSelectedItem(selectedRoom.loaiPhong);
+            }
+
+            List<AssignableRoomOption> options = buildAssignableRoomOptions();
+            lstRooms = new JList<AssignableRoomOption>(options.toArray(new AssignableRoomOption[0]));
+            lstRooms.setVisibleRowCount(12);
+            lstRooms.setFont(BODY_FONT);
+            lstRooms.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+            if (selectedRoom != null) {
+                for (int i = 0; i < options.size(); i++) {
+                    if (options.get(i).maPhong == selectedRoom.maPhong) {
+                        lstRooms.setSelectedIndex(i);
+                        break;
+                    }
+                }
+            }
+
+            JPanel form = createDialogFormPanel();
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
+            gbc.anchor = GridBagConstraints.WEST;
+            addFormRow(form, gbc, 0, "Loại phòng áp dụng", cboLoaiPhongDialog);
+            addFormRow(form, gbc, 1, "Chọn phòng", new JScrollPane(lstRooms));
+
+            JPanel card = createDialogCardPanel();
+            card.add(form, BorderLayout.CENTER);
+            content.add(card, BorderLayout.CENTER);
+
+            JButton btnConfirm = createPrimaryButton("Xác nhận gán", new Color(99, 102, 241), Color.WHITE, e -> submit());
+            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
+            content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
+            add(content, BorderLayout.CENTER);
+        }
+
+        private List<AssignableRoomOption> buildAssignableRoomOptions() {
+            List<AssignableRoomOption> options = new ArrayList<AssignableRoomOption>();
+            for (Phong phong : phongDAO.findAssiDgnableRooms()) {
+                options.add(new AssignableRoomOption(
+                        phong.getMaPhong(),
+                        phong.getSoPhong(),
+                        phong.getTang(),
+                        safeValue(phong.getTenLoaiPhong(), "Chưa gán"),
+                        safeValue(phong.getTrangThai(), "-")
+                ));
+            }
+            return options;
+        }
+
+        private void submit() {
+            String tenLoaiPhong = valueOf(cboLoaiPhongDialog.getSelectedItem());
+            LoaiPhong loaiPhong = findLoaiPhongByTen(tenLoaiPhong);
+            if (loaiPhong == null) {
+                showError("Loại phòng không hợp lệ.");
+                return;
+            }
+            List<AssignableRoomOption> selected = lstRooms.getSelectedValuesList();
+            if (selected == null || selected.isEmpty()) {
+                showError("Vui lòng chọn ít nhất một phòng để gán loại phòng.");
+                return;
+            }
+            List<Integer> ids = new ArrayList<Integer>();
+            for (AssignableRoomOption option : selected) {
+                ids.add(Integer.valueOf(option.maPhong));
+            }
+            if (!phongDAO.updateLoaiPhongForRooms(ids, loaiPhong.getMaLoaiPhong())) {
+                showError("Không thể gán loại phòng cho danh sách phòng đã chọn.");
+                return;
+            }
+            reloadRoomData(false, false);
+            if (!ids.isEmpty()) {
+                selectRoomById(ids.get(0).intValue());
+            }
+            showSuccess("Đã gán loại phòng " + tenLoaiPhong + " cho " + ids.size() + " phòng.");
+            dispose();
+        }
+    }
+
     private final class ConfirmDialog extends BaseRoomDialog {
         private boolean confirmed;
 
@@ -1494,6 +1615,27 @@ public class PhongGUI extends JFrame {
             JButton btnClose = createPrimaryButton("Đóng", accentColor, Color.WHITE, e -> dispose());
             content.add(buildDialogButtons(btnClose), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+        }
+    }
+
+    private static final class AssignableRoomOption {
+        private final int maPhong;
+        private final String soPhong;
+        private final String tang;
+        private final String loaiPhong;
+        private final String trangThai;
+
+        private AssignableRoomOption(int maPhong, String soPhong, String tang, String loaiPhong, String trangThai) {
+            this.maPhong = maPhong;
+            this.soPhong = soPhong;
+            this.tang = tang;
+            this.loaiPhong = loaiPhong;
+            this.trangThai = trangThai;
+        }
+
+        @Override
+        public String toString() {
+            return soPhong + " - " + tang + " - " + loaiPhong + " - " + trangThai;
         }
     }
 
@@ -1627,6 +1769,22 @@ public class PhongGUI extends JFrame {
                 builder.append(values.get(i));
             }
             return builder.toString();
+        }
+    }
+
+    private void reloadExternalRoomData() {
+        reloadRoomData(false, false);
+    }
+
+    public static void refreshAllOpenInstances() {
+        java.util.List<PhongGUI> snapshot;
+        synchronized (OPEN_INSTANCES) {
+            snapshot = new java.util.ArrayList<PhongGUI>(OPEN_INSTANCES);
+        }
+        for (PhongGUI gui : snapshot) {
+            if (gui != null) {
+                javax.swing.SwingUtilities.invokeLater(gui::reloadExternalRoomData);
+            }
         }
     }
 

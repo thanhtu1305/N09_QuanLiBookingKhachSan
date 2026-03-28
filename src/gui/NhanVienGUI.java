@@ -205,7 +205,6 @@ public class NhanVienGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Thêm nhân viên", ACCENT_GREEN, Color.WHITE, e -> openNhanVienDialog(null)));
         card.add(createPrimaryButton("Cập nhật", ACCENT_BLUE, Color.WHITE, e -> openEditSelectedNhanVien()));
-        card.add(createPrimaryButton("Xóa", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedNhanVien()));
         card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedNhanVien()));
         card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadNhanVien(true, true)));
         return card;

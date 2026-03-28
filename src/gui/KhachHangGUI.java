@@ -1,5 +1,6 @@
 package gui;
 
+import db.ConnectDB;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
@@ -13,8 +14,8 @@ import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
-import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -37,6 +38,13 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.sql.Connection;
+import java.sql.Date;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -53,9 +61,12 @@ public class KhachHangGUI extends JFrame {
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
 
+    private static final List<KhachHangGUI> OPEN_INSTANCES = new ArrayList<KhachHangGUI>();
+
     private final String username;
     private final String role;
     private JPanel rootPanel;
+
     private final List<CustomerRecord> allCustomers = new ArrayList<CustomerRecord>();
     private final List<CustomerRecord> filteredCustomers = new ArrayList<CustomerRecord>();
 
@@ -92,10 +103,21 @@ public class KhachHangGUI extends JFrame {
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
-        seedSampleData();
         initUI();
         reloadSampleData(false);
         registerShortcuts();
+
+        synchronized (OPEN_INSTANCES) {
+            OPEN_INSTANCES.add(this);
+        }
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosed(java.awt.event.WindowEvent e) {
+                synchronized (OPEN_INSTANCES) {
+                    OPEN_INSTANCES.remove(KhachHangGUI.this);
+                }
+            }
+        });
     }
 
     private void initUI() {
@@ -140,7 +162,7 @@ public class KhachHangGUI extends JFrame {
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Quản lý hồ sơ khách để phục vụ đặt phòng, check-in, tra cứu lịch sử lưu trú và nhận diện khách quen hoặc khách VIP.");
+        JLabel lblSub = new JLabel("Quản lý hồ sơ khách và đồng bộ lịch sử từ đặt phòng / lưu trú trong SQL.");
         lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSub.setForeground(TEXT_MUTED);
 
@@ -176,8 +198,8 @@ public class KhachHangGUI extends JFrame {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        cboLoaiKhach = createComboBox(new String[]{"Tất cả", "Cá nhân", "Doanh nghiệp"});
-        cboHangKhach = createComboBox(new String[]{"Tất cả", "Đồng", "Bạc", "Vàng", "Kim cương"});
+        cboLoaiKhach = createComboBox(new String[]{"Tất cả", "Cá nhân", "Doanh nghiệp", "Nước ngoài"});
+        cboHangKhach = createComboBox(new String[]{"Tất cả", "Thường", "VIP", "Đồng", "Bạc", "Vàng", "Kim cương"});
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Ngừng giao dịch"});
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(320, 34));
@@ -229,7 +251,7 @@ public class KhachHangGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Double click để xem chi tiết khách hàng.");
+        JLabel lblSub = new JLabel("Double click để cập nhật khách hàng.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -237,7 +259,6 @@ public class KhachHangGUI extends JFrame {
         titleRow.add(lblSub, BorderLayout.EAST);
 
         String[] columns = {"Mã khách hàng", "Họ tên", "Số điện thoại", "CCCD/Passport", "Hạng KH", "Trạng thái"};
-
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -340,12 +361,12 @@ public class KhachHangGUI extends JFrame {
     private JPanel buildHistoryCard() {
         JPanel card = createCardPanel(new BorderLayout());
 
-        JLabel lblTitle = new JLabel("Lịch sử lưu trú gần đây");
+        JLabel lblTitle = new JLabel("Lịch sử lưu trú / booking gần đây");
         lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
         lblTitle.setForeground(TEXT_PRIMARY);
         lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        lstLichSu = new JList<String>(new String[]{"Không có lịch sử lưu trú gần đây"});
+        lstLichSu = new JList<String>(new String[]{"Không có lịch sử gần đây"});
         lstLichSu.setFont(BODY_FONT);
 
         JScrollPane scrollPane = new JScrollPane(lstLichSu);
@@ -472,13 +493,6 @@ public class KhachHangGUI extends JFrame {
         return label;
     }
 
-    private JLabel createValueLabel(String value) {
-        JLabel label = new JLabel(value);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        label.setForeground(TEXT_PRIMARY);
-        return label;
-    }
-
     private JPanel createCardPanel(BorderLayout layout) {
         JPanel panel = new JPanel(layout);
         panel.setBackground(CARD_BG);
@@ -499,11 +513,8 @@ public class KhachHangGUI extends JFrame {
         return panel;
     }
 
-    private void seedSampleData() {
-        allCustomers.clear();
-    }
-
     private void reloadSampleData(boolean showMessage) {
+        loadCustomersFromDatabase();
         cboLoaiKhach.setSelectedIndex(0);
         cboHangKhach.setSelectedIndex(0);
         cboTrangThai.setSelectedIndex(0);
@@ -515,6 +526,97 @@ public class KhachHangGUI extends JFrame {
         }
     }
 
+    private void loadCustomersFromDatabase() {
+        allCustomers.clear();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+
+        String sql = "SELECT maKhachHang, hoTen, gioiTinh, ngaySinh, soDienThoai, email, cccdPassport, diaChi, quocTich, loaiKhach, hangKhach, trangThai, nguoiTao, ghiChu FROM KhachHang ORDER BY maKhachHang DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy");
+            while (rs.next()) {
+                int maKhachHang = rs.getInt("maKhachHang");
+                CustomerRecord customer = CustomerRecord.create(
+                        formatCustomerId(maKhachHang),
+                        safeValue(rs.getString("loaiKhach"), "-"),
+                        safeValue(rs.getString("hoTen"), "-"),
+                        safeValue(rs.getString("soDienThoai"), "-"),
+                        safeValue(rs.getString("cccdPassport"), ""),
+                        rs.getDate("ngaySinh") == null ? "" : sdf.format(rs.getDate("ngaySinh")),
+                        safeValue(rs.getString("gioiTinh"), "-"),
+                        safeValue(rs.getString("email"), ""),
+                        safeValue(rs.getString("diaChi"), ""),
+                        safeValue(rs.getString("quocTich"), "Việt Nam"),
+                        safeValue(rs.getString("hangKhach"), "Thường"),
+                        safeValue(rs.getString("trangThai"), "Hoạt động"),
+                        safeValue(rs.getString("nguoiTao"), ""),
+                        safeValue(rs.getString("ghiChu"), "")
+                );
+                customer.coBookingDangMo = hasOpenBooking(maKhachHang);
+                customer.lichSuLuuTru.addAll(loadCustomerHistory(maKhachHang));
+                allCustomers.add(customer);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Không thể tải dữ liệu khách hàng.");
+        }
+    }
+
+    private boolean hasOpenBooking(int maKhachHang) {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return false;
+        }
+        String sql = "SELECT COUNT(1) FROM DatPhong WHERE maKhachHang = ? AND trangThai NOT IN (N'Đã hủy', N'Đã check-out', N'Hoàn tất')";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maKhachHang);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private List<StayHistoryRecord> loadCustomerHistory(int maKhachHang) {
+        List<StayHistoryRecord> histories = new ArrayList<StayHistoryRecord>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return histories;
+        }
+
+        String sql = "SELECT TOP 6 dp.ngayNhanPhong, dp.ngayTraPhong, ISNULL(p.soPhong, N'Chưa gán') AS soPhong, " +
+                "ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong), 0) AS soDem, " +
+                "ISNULL(ctdp.thanhTien, 0) AS tongTien, dp.trangThai " +
+                "FROM DatPhong dp " +
+                "LEFT JOIN ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong " +
+                "WHERE dp.maKhachHang = ? " +
+                "ORDER BY dp.ngayNhanPhong DESC, dp.maDatPhong DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maKhachHang);
+            try (ResultSet rs = ps.executeQuery()) {
+                SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy");
+                while (rs.next()) {
+                    histories.add(StayHistoryRecord.create(
+                            rs.getDate("ngayNhanPhong") == null ? "-" : sdf.format(rs.getDate("ngayNhanPhong")),
+                            rs.getDate("ngayTraPhong") == null ? "-" : sdf.format(rs.getDate("ngayTraPhong")),
+                            safeValue(rs.getString("soPhong"), "Chưa gán"),
+                            Math.max(1, rs.getInt("soDem")),
+                            rs.getDouble("tongTien"),
+                            safeValue(rs.getString("trangThai"), "-")
+                    ));
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return histories;
+    }
+
     private void applyFilters(boolean showMessage) {
         filteredCustomers.clear();
 
@@ -524,13 +626,13 @@ public class KhachHangGUI extends JFrame {
         String tuKhoa = txtTuKhoa.getText() == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
 
         for (CustomerRecord customer : allCustomers) {
-            if (!"Tất cả".equals(loaiKhach) && !customer.loaiKhach.equals(loaiKhach)) {
+            if (!"Tất cả".equals(loaiKhach) && !customer.loaiKhach.equalsIgnoreCase(loaiKhach)) {
                 continue;
             }
-            if (!"Tất cả".equals(hangKhach) && !customer.hangThanhVien.equals(hangKhach)) {
+            if (!"Tất cả".equals(hangKhach) && !customer.hangThanhVien.equalsIgnoreCase(hangKhach)) {
                 continue;
             }
-            if (!"Tất cả".equals(trangThai) && !customer.trangThai.equals(trangThai)) {
+            if (!"Tất cả".equals(trangThai) && !customer.trangThai.equalsIgnoreCase(trangThai)) {
                 continue;
             }
             if (!tuKhoa.isEmpty()) {
@@ -575,15 +677,15 @@ public class KhachHangGUI extends JFrame {
         lblHoTen.setText(customer.hoTen);
         lblLoaiKhach.setText(customer.loaiKhach);
         lblGioiTinh.setText(customer.gioiTinh);
-        lblNgaySinh.setText(customer.ngaySinh);
+        lblNgaySinh.setText(customer.ngaySinh.isEmpty() ? "-" : customer.ngaySinh);
         lblSoDienThoai.setText(customer.soDienThoai);
-        lblCccd.setText(customer.cccdPassport);
+        lblCccd.setText(customer.cccdPassport.isEmpty() ? "-" : customer.cccdPassport);
         lblEmail.setText(customer.email.isEmpty() ? "-" : customer.email);
         lblHangKhach.setText(customer.hangThanhVien);
         lblTrangThai.setText(customer.trangThai);
-        txtDiaChi.setText(customer.diaChi);
+        txtDiaChi.setText(customer.diaChi.isEmpty() ? "-" : customer.diaChi);
         txtDiaChi.setCaretPosition(0);
-        txtGhiChu.setText(customer.ghiChu);
+        txtGhiChu.setText(customer.ghiChu.isEmpty() ? "-" : customer.ghiChu);
         txtGhiChu.setCaretPosition(0);
         lstLichSu.setListData(buildHistoryPreview(customer));
         refreshCurrentView();
@@ -591,11 +693,11 @@ public class KhachHangGUI extends JFrame {
 
     private String[] buildHistoryPreview(CustomerRecord customer) {
         if (customer.lichSuLuuTru.isEmpty()) {
-            return new String[]{"Không có lịch sử lưu trú gần đây"};
+            return new String[]{"Không có lịch sử gần đây"};
         }
         List<String> items = new ArrayList<String>();
         for (StayHistoryRecord history : customer.lichSuLuuTru) {
-            items.add(history.phong + " - " + history.ngayDen + " - " + history.ngayDi);
+            items.add(history.phong + " | " + history.ngayDen + " - " + history.ngayDi + " | " + history.trangThai);
         }
         return items.toArray(new String[0]);
     }
@@ -613,7 +715,7 @@ public class KhachHangGUI extends JFrame {
         lblTrangThai.setText("-");
         txtDiaChi.setText("Không có dữ liệu phù hợp.");
         txtGhiChu.setText("Không có dữ liệu phù hợp.");
-        lstLichSu.setListData(new String[]{"Không có lịch sử lưu trú gần đây"});
+        lstLichSu.setListData(new String[]{"Không có lịch sử gần đây"});
         refreshCurrentView();
     }
 
@@ -627,13 +729,13 @@ public class KhachHangGUI extends JFrame {
     }
 
     private void openCreateCustomerDialog() {
-        new CustomerEditorDialog(this, null).setVisible(true);
+        new CustomerFormDialog(this, null).setVisible(true);
     }
 
     private void openUpdateCustomerDialog() {
         CustomerRecord customer = getSelectedCustomer();
         if (customer != null) {
-            new CustomerEditorDialog(this, customer).setVisible(true);
+            new CustomerFormDialog(this, customer).setVisible(true);
         }
     }
 
@@ -656,12 +758,6 @@ public class KhachHangGUI extends JFrame {
         if (customer != null) {
             new CustomerDetailDialog(this, customer).setVisible(true);
         }
-    }
-
-    private void refreshCustomerViews(CustomerRecord customer, String message) {
-        applyFilters(false);
-        selectCustomer(customer);
-        showSuccess(message);
     }
 
     private void selectCustomer(CustomerRecord customer) {
@@ -773,16 +869,171 @@ public class KhachHangGUI extends JFrame {
         return trimmed.length() >= 8 && trimmed.length() <= 20;
     }
 
-    private double formatRevenue(List<StayHistoryRecord> histories) {
-        double sum = 0;
-        for (StayHistoryRecord history : histories) {
-            sum += history.tongTien;
-        }
-        return sum;
-    }
-
     private String formatMoney(double value) {
         return String.format(Locale.US, "%,.0f", value).replace(',', '.');
+    }
+
+    private int parseCustomerId(String value) {
+        if (value == null) {
+            return 0;
+        }
+        String digits = value.replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private String formatCustomerId(int id) {
+        return String.format(Locale.ROOT, "KH%03d", id);
+    }
+
+    private boolean isDuplicateCustomer(String soDienThoai, String cccdPassport, Integer excludeId) {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            showError("Không thể kết nối cơ sở dữ liệu.");
+            return true;
+        }
+        String sql = "SELECT maKhachHang FROM KhachHang WHERE (soDienThoai = ? OR (? <> '' AND cccdPassport = ?))";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, soDienThoai);
+            ps.setString(2, cccdPassport == null ? "" : cccdPassport.trim());
+            ps.setString(3, cccdPassport == null ? "" : cccdPassport.trim());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int foundId = rs.getInt(1);
+                    if (excludeId == null || foundId != excludeId.intValue()) {
+                        showError("Số điện thoại hoặc CCCD/Passport đã tồn tại.");
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Không thể kiểm tra dữ liệu khách hàng.");
+            return true;
+        }
+        return false;
+    }
+
+    private Integer insertCustomer(String loaiKhach, String hoTen, String soDienThoai, String cccdPassport,
+                                   LocalDate ngaySinh, String gioiTinh, String email, String diaChi,
+                                   String quocTich, String hangKhach, String nguoiTao, String ghiChu) {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            showError("Không thể kết nối cơ sở dữ liệu.");
+            return null;
+        }
+        String sql = "INSERT INTO KhachHang(hoTen, gioiTinh, ngaySinh, soDienThoai, email, cccdPassport, diaChi, quocTich, loaiKhach, hangKhach, trangThai, nguoiTao, ghiChu) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, N'Hoạt động', ?, ?)";
+        try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, hoTen);
+            ps.setString(2, gioiTinh);
+            if (ngaySinh == null) {
+                ps.setNull(3, java.sql.Types.DATE);
+            } else {
+                ps.setDate(3, Date.valueOf(ngaySinh));
+            }
+            ps.setString(4, soDienThoai);
+            ps.setString(5, email);
+            ps.setString(6, cccdPassport);
+            ps.setString(7, diaChi);
+            ps.setString(8, quocTich);
+            ps.setString(9, loaiKhach);
+            ps.setString(10, hangKhach);
+            ps.setString(11, nguoiTao);
+            ps.setString(12, ghiChu);
+            if (ps.executeUpdate() > 0) {
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        return Integer.valueOf(rs.getInt(1));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Không thể thêm khách hàng.");
+        }
+        return null;
+    }
+
+    private boolean updateCustomer(int maKhachHang, String loaiKhach, String hoTen, String soDienThoai, String cccdPassport,
+                                   LocalDate ngaySinh, String gioiTinh, String email, String diaChi,
+                                   String quocTich, String hangKhach, String trangThai, String ghiChu) {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            showError("Không thể kết nối cơ sở dữ liệu.");
+            return false;
+        }
+        String sql = "UPDATE KhachHang SET hoTen = ?, gioiTinh = ?, ngaySinh = ?, soDienThoai = ?, email = ?, cccdPassport = ?, diaChi = ?, quocTich = ?, loaiKhach = ?, hangKhach = ?, trangThai = ?, ghiChu = ? WHERE maKhachHang = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, hoTen);
+            ps.setString(2, gioiTinh);
+            if (ngaySinh == null) {
+                ps.setNull(3, java.sql.Types.DATE);
+            } else {
+                ps.setDate(3, Date.valueOf(ngaySinh));
+            }
+            ps.setString(4, soDienThoai);
+            ps.setString(5, email);
+            ps.setString(6, cccdPassport);
+            ps.setString(7, diaChi);
+            ps.setString(8, quocTich);
+            ps.setString(9, loaiKhach);
+            ps.setString(10, hangKhach);
+            ps.setString(11, trangThai);
+            ps.setString(12, ghiChu);
+            ps.setInt(13, maKhachHang);
+            return ps.executeUpdate() > 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Không thể cập nhật khách hàng.");
+            return false;
+        }
+    }
+
+    private boolean deactivateCustomer(int maKhachHang, String ghiChu) {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            showError("Không thể kết nối cơ sở dữ liệu.");
+            return false;
+        }
+        String sql = "UPDATE KhachHang SET trangThai = N'Ngừng giao dịch', ghiChu = ? WHERE maKhachHang = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, ghiChu);
+            ps.setInt(2, maKhachHang);
+            return ps.executeUpdate() > 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Không thể ngừng giao dịch khách hàng.");
+            return false;
+        }
+    }
+
+    private CustomerRecord findCustomerByDbId(int maKhachHang) {
+        String key = formatCustomerId(maKhachHang);
+        for (CustomerRecord record : allCustomers) {
+            if (key.equalsIgnoreCase(record.maKhachHang)) {
+                return record;
+            }
+        }
+        return null;
+    }
+
+    public static void refreshAllOpenInstances() {
+        List<KhachHangGUI> snapshot;
+        synchronized (OPEN_INSTANCES) {
+            snapshot = new ArrayList<KhachHangGUI>(OPEN_INSTANCES);
+        }
+        for (KhachHangGUI gui : snapshot) {
+            if (gui != null) {
+                javax.swing.SwingUtilities.invokeLater(() -> gui.reloadSampleData(false));
+            }
+        }
     }
 
     private void showSuccess(String message) {
@@ -862,7 +1113,7 @@ public class KhachHangGUI extends JFrame {
         }
     }
 
-    private final class CustomerEditorDialog extends BaseCustomerDialog {
+    private final class CustomerFormDialog extends BaseCustomerDialog {
         private final CustomerRecord customer;
 
         private JTextField txtMaKh;
@@ -880,7 +1131,7 @@ public class KhachHangGUI extends JFrame {
         private JComboBox<String> cboTrangThaiDialog;
         private JTextArea txtGhiChuDialog;
 
-        private CustomerEditorDialog(Frame owner, CustomerRecord customer) {
+        private CustomerFormDialog(Frame owner, CustomerRecord customer) {
             super(owner, customer == null ? "Thêm khách hàng" : "Cập nhật khách hàng", 760, 700);
             this.customer = customer;
 
@@ -888,7 +1139,7 @@ public class KhachHangGUI extends JFrame {
             content.setOpaque(false);
             content.add(buildDialogHeader(
                     customer == null ? "THÊM KHÁCH HÀNG" : "CẬP NHẬT KHÁCH HÀNG",
-                    "Quản lý hồ sơ khách để phục vụ đặt phòng, check-in và tra cứu lịch sử lưu trú."
+                    "Dữ liệu khách hàng được lưu trực tiếp vào bảng KhachHang."
             ), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
@@ -896,8 +1147,9 @@ public class KhachHangGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            txtMaKh = createInputField(customer == null ? "KH" + String.format(Locale.ROOT, "%03d", allCustomers.size() + 1) : customer.maKhachHang);
-            cboLoaiKh = createComboBox(new String[]{"Cá nhân", "Doanh nghiệp"});
+            txtMaKh = createInputField(customer == null ? "(Tự sinh)" : customer.maKhachHang);
+            txtMaKh.setEditable(false);
+            cboLoaiKh = createComboBox(new String[]{"Cá nhân", "Doanh nghiệp", "Nước ngoài"});
             txtHoTen = createInputField(customer == null ? "" : customer.hoTen);
             txtSoDienThoaiDialog = createInputField(customer == null ? "" : customer.soDienThoai);
             txtCccdDialog = createInputField(customer == null ? "" : customer.cccdPassport);
@@ -906,7 +1158,7 @@ public class KhachHangGUI extends JFrame {
             txtEmailDialog = createInputField(customer == null ? "" : customer.email);
             txtDiaChiDialog = createDialogTextArea(3);
             txtQuocTich = createInputField(customer == null ? "Việt Nam" : customer.quocTich);
-            cboHangThanhVienDialog = createComboBox(new String[]{"Đồng", "Bạc", "Vàng", "Kim cương"});
+            cboHangThanhVienDialog = createComboBox(new String[]{"Thường", "VIP", "Đồng", "Bạc", "Vàng", "Kim cương"});
             txtNguoiTao = createInputField(customer == null ? username : customer.nguoiTao);
             cboTrangThaiDialog = createComboBox(new String[]{"Hoạt động", "Ngừng giao dịch"});
             txtGhiChuDialog = createDialogTextArea(3);
@@ -918,7 +1170,6 @@ public class KhachHangGUI extends JFrame {
                 cboTrangThaiDialog.setSelectedItem(customer.trangThai);
                 txtDiaChiDialog.setText(customer.diaChi);
                 txtGhiChuDialog.setText(customer.ghiChu);
-                txtMaKh.setEditable(false);
             }
 
             addFormRow(form, gbc, 0, "Mã KH", txtMaKh);
@@ -958,7 +1209,6 @@ public class KhachHangGUI extends JFrame {
         }
 
         private void submit(String action) {
-            String maKh = txtMaKh.getText().trim();
             String hoTen = txtHoTen.getText().trim();
             String soDienThoai = txtSoDienThoaiDialog.getText().trim();
             String cccdPassport = txtCccdDialog.getText().trim();
@@ -980,53 +1230,51 @@ public class KhachHangGUI extends JFrame {
                 showError("Email không hợp lệ.");
                 return;
             }
-            String ngaySinh = txtNgaySinhDialog.getText().trim();
-            if (!ngaySinh.isEmpty() && txtNgaySinhDialog.getDateValue() == null) {
+            if (!txtNgaySinhDialog.getText().trim().isEmpty() && txtNgaySinhDialog.getDateValue() == null) {
                 showError("Ngày sinh không đúng định dạng dd/MM/yyyy.");
                 return;
             }
-            for (CustomerRecord existing : allCustomers) {
-                if (existing != customer && existing.soDienThoai.equalsIgnoreCase(soDienThoai)) {
-                    showError("Số điện thoại đã tồn tại trong danh sách.");
-                    return;
-                }
-                if (!cccdPassport.isEmpty() && existing != customer && existing.cccdPassport.equalsIgnoreCase(cccdPassport)) {
-                    showError("CCCD/Passport đã tồn tại trong danh sách.");
-                    return;
-                }
-                if (existing != customer && existing.maKhachHang.equalsIgnoreCase(maKh)) {
-                    showError("Mã KH đã tồn tại trong danh sách.");
-                    return;
-                }
+            Integer currentId = customer == null ? null : Integer.valueOf(parseCustomerId(customer.maKhachHang));
+            if (isDuplicateCustomer(soDienThoai, cccdPassport, currentId)) {
+                return;
             }
 
             if (customer == null) {
-                CustomerRecord newCustomer = CustomerRecord.create(
-                        maKh,
+                Integer newId = insertCustomer(
                         valueOf(cboLoaiKh.getSelectedItem()),
                         hoTen,
                         soDienThoai,
                         cccdPassport,
-                        ngaySinh,
+                        txtNgaySinhDialog.getDateValue(),
                         valueOf(cboGioiTinh.getSelectedItem()),
                         email,
                         txtDiaChiDialog.getText().trim(),
                         txtQuocTich.getText().trim(),
                         valueOf(cboHangThanhVienDialog.getSelectedItem()),
-                        "Hoạt động",
                         txtNguoiTao.getText().trim(),
                         txtGhiChuDialog.getText().trim()
                 );
-                allCustomers.add(0, newCustomer);
-                applyFilters(false);
-                selectCustomer(newCustomer);
+                if (newId == null) {
+                    return;
+                }
+                reloadSampleData(false);
+                selectCustomer(findCustomerByDbId(newId.intValue()));
+                refreshAllOpenInstances();
                 if ("new".equals(action)) {
                     showSuccess("Thêm khách hàng thành công.");
-                    resetCreateForm();
+                    txtHoTen.setText("");
+                    txtSoDienThoaiDialog.setText("");
+                    txtCccdDialog.setText("");
+                    txtNgaySinhDialog.setText("");
+                    txtEmailDialog.setText("");
+                    txtDiaChiDialog.setText("");
+                    txtQuocTich.setText("Việt Nam");
+                    txtGhiChuDialog.setText("");
+                    txtHoTen.requestFocusInWindow();
                     return;
                 }
                 if ("booking".equals(action)) {
-                    showSuccess("Thêm khách hàng thành công và sẵn sàng chuyển sang luồng đặt phòng.");
+                    showSuccess("Thêm khách hàng thành công và có thể dùng ngay ở màn đặt phòng.");
                 } else {
                     showSuccess("Thêm khách hàng thành công.");
                 }
@@ -1034,36 +1282,29 @@ public class KhachHangGUI extends JFrame {
                 return;
             }
 
-            customer.loaiKhach = valueOf(cboLoaiKh.getSelectedItem());
-            customer.hoTen = hoTen;
-            customer.soDienThoai = soDienThoai;
-            customer.cccdPassport = cccdPassport;
-            customer.ngaySinh = ngaySinh;
-            customer.gioiTinh = valueOf(cboGioiTinh.getSelectedItem());
-            customer.email = email;
-            customer.diaChi = txtDiaChiDialog.getText().trim();
-            customer.quocTich = txtQuocTich.getText().trim();
-            customer.hangThanhVien = valueOf(cboHangThanhVienDialog.getSelectedItem());
-            customer.trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
-            customer.ghiChu = txtGhiChuDialog.getText().trim();
-            refreshCustomerViews(customer, "Cập nhật khách hàng thành công.");
+            int maKhachHang = parseCustomerId(customer.maKhachHang);
+            if (!updateCustomer(
+                    maKhachHang,
+                    valueOf(cboLoaiKh.getSelectedItem()),
+                    hoTen,
+                    soDienThoai,
+                    cccdPassport,
+                    txtNgaySinhDialog.getDateValue(),
+                    valueOf(cboGioiTinh.getSelectedItem()),
+                    email,
+                    txtDiaChiDialog.getText().trim(),
+                    txtQuocTich.getText().trim(),
+                    valueOf(cboHangThanhVienDialog.getSelectedItem()),
+                    valueOf(cboTrangThaiDialog.getSelectedItem()),
+                    txtGhiChuDialog.getText().trim()
+            )) {
+                return;
+            }
+            reloadSampleData(false);
+            selectCustomer(findCustomerByDbId(maKhachHang));
+            refreshAllOpenInstances();
+            showSuccess("Cập nhật khách hàng thành công.");
             dispose();
-        }
-
-        private void resetCreateForm() {
-            txtMaKh.setText("KH" + String.format(Locale.ROOT, "%03d", allCustomers.size() + 1));
-            cboLoaiKh.setSelectedIndex(0);
-            txtHoTen.setText("");
-            txtSoDienThoaiDialog.setText("");
-            txtCccdDialog.setText("");
-            txtNgaySinhDialog.setText("");
-            cboGioiTinh.setSelectedIndex(0);
-            txtEmailDialog.setText("");
-            txtDiaChiDialog.setText("");
-            txtQuocTich.setText("Việt Nam");
-            cboHangThanhVienDialog.setSelectedIndex(0);
-            txtGhiChuDialog.setText("");
-            txtHoTen.requestFocusInWindow();
         }
     }
 
@@ -1081,7 +1322,7 @@ public class KhachHangGUI extends JFrame {
             content.setOpaque(false);
             content.add(buildDialogHeader(
                     "NGỪNG GIAO DỊCH KHÁCH HÀNG",
-                    "Khách hàng này sẽ không được dùng cho booking mới. Lịch sử lưu trú và giao dịch cũ vẫn được giữ nguyên."
+                    "Khách hàng này sẽ không được dùng cho booking mới. Lịch sử cũ vẫn được giữ."
             ), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
@@ -1093,9 +1334,9 @@ public class KhachHangGUI extends JFrame {
             txtLyDo = createDialogTextArea(3);
             txtGhiChuDialog = createDialogTextArea(3);
 
-            addFormRow(form, gbc, 0, "Mã KH", createValueLabel(customer.maKhachHang));
-            addFormRow(form, gbc, 1, "Tên KH", createValueLabel(customer.hoTen));
-            addFormRow(form, gbc, 2, "Trạng thái hiện tại", createValueLabel(customer.trangThai));
+//            addFormRow(form, gbc, 0, "Mã KH", createValueLabel(customer.maKhachHang));
+//            addFormRow(form, gbc, 1, "Tên KH", createValueLabel(customer.hoTen));
+//            addFormRow(form, gbc, 2, "Trạng thái hiện tại", createValueLabel(customer.trangThai));
             addFormRow(form, gbc, 3, "Từ ngày", txtTuNgay);
             addFormRow(form, gbc, 4, "Lý do", new JScrollPane(txtLyDo));
             addFormRow(form, gbc, 5, "Ghi chú", new JScrollPane(txtGhiChuDialog));
@@ -1126,133 +1367,92 @@ public class KhachHangGUI extends JFrame {
             if (!showConfirmDialog("Xác nhận ngừng giao dịch", warning, "Đồng ý", new Color(245, 158, 11))) {
                 return;
             }
-            customer.trangThai = "Ngừng giao dịch";
-            customer.ghiChu = txtGhiChuDialog.getText().trim().isEmpty() ? txtLyDo.getText().trim() : txtGhiChuDialog.getText().trim();
-            refreshCustomerViews(customer, "Ngừng giao dịch thành công.");
+            int maKhachHang = parseCustomerId(customer.maKhachHang);
+            String ghiChu = txtGhiChuDialog.getText().trim().isEmpty() ? txtLyDo.getText().trim() : txtGhiChuDialog.getText().trim();
+            if (!deactivateCustomer(maKhachHang, ghiChu)) {
+                return;
+            }
+            reloadSampleData(false);
+            selectCustomer(findCustomerByDbId(maKhachHang));
+            refreshAllOpenInstances();
+            showSuccess("Ngừng giao dịch thành công.");
             dispose();
         }
     }
 
     private final class CustomerHistoryDialog extends BaseCustomerDialog {
-        private final CustomerRecord customer;
-        private JTable tblHistory;
-
         private CustomerHistoryDialog(Frame owner, CustomerRecord customer) {
-            super(owner, "Lịch sử lưu trú", 820, 560);
-            this.customer = customer;
+            super(owner, "Lịch sử khách hàng", 680, 520);
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
             content.add(buildDialogHeader(
-                    "LỊCH SỬ LƯU TRÚ",
-                    "Tra cứu lịch sử lưu trú để nhận diện khách quen, khách VIP và tần suất sử dụng dịch vụ."
+                    "LỊCH SỬ KHÁCH HÀNG",
+                    "Các lần đặt phòng / lưu trú gần đây của khách hàng đã chọn."
             ), BorderLayout.NORTH);
 
-            JPanel topCard = createDialogCardPanel();
-            JPanel topForm = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-            addFormRow(topForm, gbc, 0, "Mã KH", createValueLabel(customer.maKhachHang));
-            addFormRow(topForm, gbc, 1, "Tên KH", createValueLabel(customer.hoTen));
-            addFormRow(topForm, gbc, 2, "Hạng thành viên", createValueLabel(customer.hangThanhVien));
-            topCard.add(topForm, BorderLayout.CENTER);
+            JTextArea area = createDialogTextArea(15);
+            area.setEditable(false);
+            area.setBackground(PANEL_SOFT);
 
-            String[] columns = {"STT", "Ngày đến", "Ngày đi", "Phòng", "Số đêm", "Tổng tiền", "Trạng thái"};
-            DefaultTableModel historyModel = new DefaultTableModel(columns, 0) {
-                @Override
-                public boolean isCellEditable(int row, int column) {
-                    return false;
+            StringBuilder builder = new StringBuilder();
+            builder.append("Khách hàng: ").append(customer.hoTen).append("\n");
+            builder.append("Mã khách hàng: ").append(customer.maKhachHang).append("\n\n");
+            if (customer.lichSuLuuTru.isEmpty()) {
+                builder.append("Không có lịch sử gần đây.");
+            } else {
+                for (StayHistoryRecord history : customer.lichSuLuuTru) {
+                    builder.append("- ").append(history.phong)
+                            .append(" | ").append(history.ngayDen).append(" -> ").append(history.ngayDi)
+                            .append(" | ").append(history.trangThai)
+                            .append(" | ").append(formatMoney(history.tongTien)).append("\n");
                 }
-            };
-            tblHistory = new JTable(historyModel);
-            tblHistory.setFont(BODY_FONT);
-            tblHistory.setRowHeight(30);
-            tblHistory.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-
-            int index = 1;
-            for (StayHistoryRecord history : customer.lichSuLuuTru) {
-                historyModel.addRow(new Object[]{
-                        index++,
-                        history.ngayDen,
-                        history.ngayDi,
-                        history.phong,
-                        history.soDem,
-                        formatMoney(history.tongTien),
-                        history.trangThai
-                });
             }
-
-            JPanel tableCard = createDialogCardPanel();
-            tableCard.add(new JScrollPane(tblHistory), BorderLayout.CENTER);
-
-            JPanel summary = createDialogCardPanel();
-            JPanel summaryForm = createDialogFormPanel();
-            GridBagConstraints summaryGbc = new GridBagConstraints();
-            summaryGbc.insets = new Insets(6, 0, 6, 12);
-            summaryGbc.anchor = GridBagConstraints.WEST;
-            addFormRow(summaryForm, summaryGbc, 0, "Tổng số lần lưu trú", createValueLabel(String.valueOf(customer.lichSuLuuTru.size())));
-            addFormRow(summaryForm, summaryGbc, 1, "Tổng doanh thu", createValueLabel(formatMoney(formatRevenue(customer.lichSuLuuTru))));
-            summary.add(summaryForm, BorderLayout.CENTER);
-
-            JPanel center = new JPanel(new BorderLayout(0, 10));
-            center.setOpaque(false);
-            center.add(topCard, BorderLayout.NORTH);
-            center.add(tableCard, BorderLayout.CENTER);
-            center.add(summary, BorderLayout.SOUTH);
-            content.add(center, BorderLayout.CENTER);
-            content.add(buildDialogButtons(
-                    createOutlineButton("Đóng", new Color(107, 114, 128), e -> dispose()),
-                    createPrimaryButton("Xem chi tiết lần ở", new Color(99, 102, 241), Color.WHITE, e -> showSuccess("Đang mở chi tiết lần ở của khách hàng " + customer.maKhachHang + "."))
-            ), BorderLayout.SOUTH);
-            add(content, BorderLayout.CENTER);
-        }
-    }
-
-    private final class CustomerDetailDialog extends BaseCustomerDialog {
-        private CustomerDetailDialog(Frame owner, CustomerRecord customer) {
-            super(owner, "Chi tiết khách hàng", 700, 620);
-
-            JPanel content = new JPanel(new BorderLayout(0, 12));
-            content.setOpaque(false);
-            content.add(buildDialogHeader(
-                    "CHI TIẾT KHÁCH HÀNG",
-                    "Thông tin hồ sơ khách hàng ở chế độ chỉ đọc."
-            ), BorderLayout.NORTH);
-
-            JPanel form = createDialogFormPanel();
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new Insets(6, 0, 6, 12);
-            gbc.anchor = GridBagConstraints.WEST;
-
-            addFormRow(form, gbc, 0, "Mã KH", createValueLabel(customer.maKhachHang));
-            addFormRow(form, gbc, 1, "Loại KH", createValueLabel(customer.loaiKhach));
-            addFormRow(form, gbc, 2, "Họ tên", createValueLabel(customer.hoTen));
-            addFormRow(form, gbc, 3, "SĐT", createValueLabel(customer.soDienThoai));
-            addFormRow(form, gbc, 4, "CCCD/Passport", createValueLabel(customer.cccdPassport.isEmpty() ? "-" : customer.cccdPassport));
-            addFormRow(form, gbc, 5, "Ngày sinh", createValueLabel(customer.ngaySinh.isEmpty() ? "-" : customer.ngaySinh));
-            addFormRow(form, gbc, 6, "Giới tính", createValueLabel(customer.gioiTinh));
-            addFormRow(form, gbc, 7, "Email", createValueLabel(customer.email.isEmpty() ? "-" : customer.email));
-            addFormRow(form, gbc, 8, "Địa chỉ", new JScrollPane(readonlyDialogArea(customer.diaChi)));
-            addFormRow(form, gbc, 9, "Quốc tịch", createValueLabel(customer.quocTich));
-            addFormRow(form, gbc, 10, "Hạng thành viên", createValueLabel(customer.hangThanhVien));
-            addFormRow(form, gbc, 11, "Trạng thái", createValueLabel(customer.trangThai));
-            addFormRow(form, gbc, 12, "Ghi chú", new JScrollPane(readonlyDialogArea(customer.ghiChu)));
+            area.setText(builder.toString());
+            area.setCaretPosition(0);
 
             JPanel card = createDialogCardPanel();
-            card.add(form, BorderLayout.CENTER);
+            card.add(new JScrollPane(area), BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
             content.add(buildDialogButtons(createPrimaryButton("Đóng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
         }
     }
 
-    private JTextArea readonlyDialogArea(String value) {
-        JTextArea area = createDialogTextArea(3);
-        area.setEditable(false);
-        area.setBackground(PANEL_SOFT);
-        area.setText(value);
-        return area;
+    private final class CustomerDetailDialog extends BaseCustomerDialog {
+        private CustomerDetailDialog(Frame owner, CustomerRecord customer) {
+            super(owner, "Chi tiết khách hàng", 720, 520);
+
+            JPanel content = new JPanel(new BorderLayout(0, 12));
+            content.setOpaque(false);
+            content.add(buildDialogHeader("CHI TIẾT KHÁCH HÀNG", "Thông tin đầy đủ của khách hàng được chọn."), BorderLayout.NORTH);
+
+            JTextArea area = createDialogTextArea(16);
+            area.setEditable(false);
+            area.setBackground(PANEL_SOFT);
+            area.setText(
+                    "Mã KH: " + customer.maKhachHang + "\n" +
+                            "Họ tên: " + customer.hoTen + "\n" +
+                            "Loại KH: " + customer.loaiKhach + "\n" +
+                            "Giới tính: " + customer.gioiTinh + "\n" +
+                            "Ngày sinh: " + (customer.ngaySinh.isEmpty() ? "-" : customer.ngaySinh) + "\n" +
+                            "SĐT: " + customer.soDienThoai + "\n" +
+                            "CCCD/Passport: " + customer.cccdPassport + "\n" +
+                            "Email: " + (customer.email.isEmpty() ? "-" : customer.email) + "\n" +
+                            "Quốc tịch: " + customer.quocTich + "\n" +
+                            "Hạng khách: " + customer.hangThanhVien + "\n" +
+                            "Trạng thái: " + customer.trangThai + "\n" +
+                            "Địa chỉ: " + customer.diaChi + "\n" +
+                            "Ghi chú: " + customer.ghiChu
+            );
+            area.setCaretPosition(0);
+
+            JPanel card = createDialogCardPanel();
+            card.add(new JScrollPane(area), BorderLayout.CENTER);
+            content.add(card, BorderLayout.CENTER);
+            content.add(buildDialogButtons(createPrimaryButton("Đóng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
+            add(content, BorderLayout.CENTER);
+        }
     }
 
     private final class ConfirmDialog extends BaseCustomerDialog {
@@ -1263,13 +1463,12 @@ public class KhachHangGUI extends JFrame {
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
             content.add(buildDialogHeader(title, message), BorderLayout.CENTER);
-            content.add(buildDialogButtons(
-                    createOutlineButton("Bỏ qua", new Color(107, 114, 128), e -> dispose()),
-                    createPrimaryButton(confirmText, confirmColor, Color.WHITE, e -> {
-                        confirmed = true;
-                        dispose();
-                    })
-            ), BorderLayout.SOUTH);
+            JButton btnSkip = createOutlineButton("Bỏ qua", new Color(107, 114, 128), e -> dispose());
+            JButton btnConfirm = createPrimaryButton(confirmText, confirmColor, Color.WHITE, e -> {
+                confirmed = true;
+                dispose();
+            });
+            content.add(buildDialogButtons(btnSkip, btnConfirm), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
         }
 
@@ -1350,9 +1549,6 @@ public class KhachHangGUI extends JFrame {
         }
     }
 
-    /**
-     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
-     */
     private void refreshCurrentView() {
         if (rootPanel != null) {
             rootPanel.revalidate();
@@ -1368,5 +1564,4 @@ public class KhachHangGUI extends JFrame {
         if (rootPanel == null) initUI();
         return rootPanel;
     }
-
 }

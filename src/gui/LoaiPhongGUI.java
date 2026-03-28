@@ -181,9 +181,7 @@ public class LoaiPhongGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
 
         JButton btnThemLoaiPhong = createPrimaryButton("Thêm loại phòng", new Color(22, 163, 74), Color.WHITE, e -> openCreateRoomTypeDialog());
-        JButton btnCapNhat = createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateRoomTypeDialog());
-        JButton btnNgungApDung = createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomTypeDialog());
-        JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
+        JButton btnCapNhat = createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateRoomTypeDialog());JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
         JButton btnLamMoi = createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> loadRoomTypes(true, true));
         JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
 
@@ -191,7 +189,6 @@ public class LoaiPhongGUI extends JFrame {
 
         card.add(btnThemLoaiPhong);
         card.add(btnCapNhat);
-        card.add(btnNgungApDung);
         card.add(btnTienNghiMacDinh);
         card.add(btnLamMoi);
         card.add(btnTimKiem);
@@ -987,7 +984,7 @@ public class LoaiPhongGUI extends JFrame {
             txtMaLoai.setEditable(false);
             txtMaLoai.setText(AUTO_CODE_TEXT);
             txtTenLoai = createInputField("");
-                txtKhachToiDaDialog = createInputField("");
+            txtKhachToiDaDialog = createInputField("");
             txtDienTichDialog = createInputField("");
             txtGiaThamChieuDialog = createInputField("");
             cboTrangThaiDialog = createComboBox(ROOM_TYPE_STATUS_OPTIONS);

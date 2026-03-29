@@ -32,7 +32,7 @@ public class DatPhongDAO {
     public List<DatPhong> getAll() {
         clearLastError();
         List<DatPhong> result = new ArrayList<DatPhong>();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         if (con == null) {
             setLastError("Không thể kết nối cơ sở dữ liệu.");
             return result;
@@ -56,7 +56,7 @@ public class DatPhongDAO {
 
     public DatPhong findById(String maDatPhong) {
         clearLastError();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maDatPhong);
         if (con == null || id == null) {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
@@ -84,7 +84,7 @@ public class DatPhongDAO {
     public List<DatPhong> findByTrangThai(String trangThai) {
         clearLastError();
         List<DatPhong> result = new ArrayList<DatPhong>();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         if (con == null) {
             setLastError("Không thể kết nối cơ sở dữ liệu.");
             return result;
@@ -112,7 +112,7 @@ public class DatPhongDAO {
 
     public boolean insert(DatPhong datPhong) {
         clearLastError();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         if (con == null || datPhong == null) {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu đặt phòng không hợp lệ.");
             return false;
@@ -155,7 +155,7 @@ public class DatPhongDAO {
 
     public boolean update(DatPhong datPhong) {
         clearLastError();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         Integer id = datPhong == null ? null : parseIntOrNull(datPhong.getMaDatPhong());
         if (con == null || datPhong == null || id == null) {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
@@ -201,7 +201,7 @@ public class DatPhongDAO {
 
     public boolean delete(String maDatPhong) {
         clearLastError();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maDatPhong);
         if (con == null || id == null) {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
@@ -244,7 +244,7 @@ public class DatPhongDAO {
 
     public List<ChiTietDatPhong> getChiTietByMaDatPhong(String maDatPhong) {
         clearLastError();
-        Connection con = getReadyConnection();
+        Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maDatPhong);
         if (con == null || id == null) {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
@@ -264,15 +264,34 @@ public class DatPhongDAO {
             return false;
         }
 
-        String sql = "UPDATE DatPhong SET trangThai = ? WHERE maDatPhong = ?";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setString(1, safeTrim(trangThai));
-            stmt.setInt(2, id.intValue());
-            return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
+        try {
+            con.setAutoCommit(false);
+            String sql = "UPDATE DatPhong SET trangThai = ? WHERE maDatPhong = ?";
+            try (PreparedStatement stmt = con.prepareStatement(sql)) {
+                stmt.setString(1, safeTrim(trangThai));
+                stmt.setInt(2, id.intValue());
+                if (stmt.executeUpdate() <= 0) {
+                    con.rollback();
+                    return false;
+                }
+            }
+            DatPhong booking = findById(String.valueOf(id.intValue()));
+            if (booking != null) {
+                if ("Đã hủy".equalsIgnoreCase(trangThai)) {
+                    releaseRoomsIfBooked(con, getAssignedRoomIds(con, id.intValue()));
+                } else {
+                    updateAssignedRoomStatuses(con, booking, resolveRoomStatusForBooking(trangThai));
+                }
+            }
+            con.commit();
+            return true;
+        } catch (Exception e) {
+            rollbackQuietly(con);
             setLastError(e.getMessage());
             e.printStackTrace();
             return false;
+        } finally {
+            resetAutoCommit(con);
         }
     }
 
@@ -361,7 +380,7 @@ public class DatPhongDAO {
         stmt.setInt(7, resolveSoLuongPhong(datPhong));
         stmt.setInt(8, resolveSoNguoi(datPhong));
         stmt.setDouble(9, resolveTienCoc(datPhong));
-        stmt.setString(10, defaultIfEmpty(datPhong.getTrangThaiDatPhong(), "Chờ xác nhận"));
+        stmt.setString(10, defaultIfEmpty(datPhong.getTrangThaiDatPhong(), "Đã đặt"));
     }
 
     private void insertChiTietList(Connection con, DatPhong datPhong) throws SQLException {
@@ -545,6 +564,9 @@ public class DatPhongDAO {
         if ("Đã hủy".equalsIgnoreCase(status) || "Hủy booking".equalsIgnoreCase(status)) {
             return "Trống";
         }
+        if ("Đã đặt".equalsIgnoreCase(status) || "Đã xác nhận".equalsIgnoreCase(status) || "Chờ check-in".equalsIgnoreCase(status)) {
+            return "Đã đặt";
+        }
         return "Đã đặt";
     }
 
@@ -614,16 +636,8 @@ public class DatPhongDAO {
         }
     }
 
+
     private Connection getReadyConnection() {
-        Connection con = ConnectDB.getConnection();
-        if (con != null) {
-            return con;
-        }
-        try {
-            java.lang.reflect.Method method = ConnectDB.class.getMethod("connect");
-            method.invoke(null);
-        } catch (Exception ignored) {
-        }
         return ConnectDB.getConnection();
     }
 

@@ -604,43 +604,45 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return;
         }
-        String sql = "SELECT dp.maDatPhong, kh.hoTen, lp.tenLoaiPhong, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, " +
-                "SUM(ctdp.soNguoi) AS tongSoNguoi, COUNT(ctdp.maChiTietDatPhong) AS soDongChoCheckIn " +
+        String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, kh.hoTen, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, ctdp.soNguoi, " +
+                "ctdp.maPhong, ISNULL(p.soPhong, N'Chưa gán') AS soPhong, ISNULL(p.tang, N'-') AS tang, " +
+                "ISNULL(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhong " +
                 "FROM DatPhong dp " +
                 "JOIN ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong " +
                 "LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang " +
-                "JOIN BangGia bg ON dp.maBangGia = bg.maBangGia " +
-                "JOIN LoaiPhong lp ON bg.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE lt.maLuuTru IS NULL AND dp.trangThai IN (N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') " +
-                "GROUP BY dp.maDatPhong, kh.hoTen, lp.tenLoaiPhong, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai " +
-                "ORDER BY dp.maDatPhong DESC";
+                "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong " +
+                "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
+                "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia " +
+                "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong " +
+                "WHERE lt.maLuuTru IS NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') " +
+                "ORDER BY dp.maDatPhong DESC, ctdp.maChiTietDatPhong ASC";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 StayRecord record = new StayRecord();
-                record.maHoSo = "DP-" + rs.getInt("maDatPhong");
+                record.maHoSo = "CHO-" + rs.getInt("maChiTietDatPhong");
                 record.maLuuTru = 0;
-                record.maChiTietDatPhong = 0;
+                record.maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
                 record.maDatPhong = rs.getInt("maDatPhong");
+                record.maPhongId = rs.getObject("maPhong") == null ? 0 : rs.getInt("maPhong");
                 record.khachHang = safeValue(rs.getString("hoTen"), "-");
-                record.pendingDetailCount = rs.getInt("soDongChoCheckIn");
-                record.soPhong = record.pendingDetailCount <= 1
-                        ? "Chưa chọn"
-                        : (record.pendingDetailCount + " phòng chưa gán");
+                record.soPhong = safeValue(rs.getString("soPhong"), "Chưa gán");
                 record.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), "-");
-                record.trangThaiPhong = "Trống";
+                record.trangThaiPhong = record.maPhongId > 0 ? "Đã đặt" : "Trống";
                 record.tienCoc = formatMoney(rs.getDouble("tienCoc"));
                 record.dichVuPhatSinh = "0";
-                record.ghiChu = "Chờ check-in, cần chọn " + Math.max(record.pendingDetailCount, 1) + " phòng trống.";
+                record.ghiChu = record.maPhongId > 0
+                        ? "Phòng đã được đặt từ màn Đặt phòng. Check-in sẽ dùng đúng phòng này."
+                        : "Chưa gán phòng ở màn Đặt phòng, cần chọn phòng trống để check-in.";
                 record.gioVao = rs.getDate("ngayNhanPhong") == null ? "-" : DATE_FORMAT.format(((Date) rs.getDate("ngayNhanPhong")).toLocalDate());
                 record.gioRaDuKien = rs.getDate("ngayTraPhong") == null ? "-" : DATE_FORMAT.format(((Date) rs.getDate("ngayTraPhong")).toLocalDate());
                 record.trangThai = "Chờ check-in";
-                record.tang = "-";
+                record.tang = safeValue(rs.getString("tang"), "-");
                 record.caLam = resolveCurrentShift();
                 record.expectedCheckInDate = rs.getDate("ngayNhanPhong") == null ? LocalDate.now() : ((Date) rs.getDate("ngayNhanPhong")).toLocalDate();
                 record.expectedCheckOutDate = rs.getDate("ngayTraPhong") == null ? LocalDate.now().plusDays(1) : ((Date) rs.getDate("ngayTraPhong")).toLocalDate();
-                record.soNguoi = rs.getInt("tongSoNguoi");
+                record.soNguoi = rs.getInt("soNguoi");
                 allRecords.add(record);
             }
         } catch (Exception e) {
@@ -654,7 +656,7 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return;
         }
-        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, " +
+        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai AS trangThaiDatPhong, " +
                 "ISNULL(SUM(sddv.thanhTien), 0) AS tienDichVu, lt.checkIn, lt.checkOut " +
                 "FROM LuuTru lt " +
                 "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
@@ -662,7 +664,7 @@ public class CheckInOutGUI extends JFrame {
                 "JOIN Phong p ON lt.maPhong = p.maPhong " +
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "LEFT JOIN SuDungDichVu sddv ON lt.maLuuTru = sddv.maLuuTru " +
-                "GROUP BY lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, lt.checkIn, lt.checkOut";
+                "GROUP BY lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai, lt.checkIn, lt.checkOut";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -671,6 +673,7 @@ public class CheckInOutGUI extends JFrame {
                 record.maLuuTru = rs.getInt("maLuuTru");
                 record.maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
                 record.maDatPhong = rs.getInt("maDatPhong");
+                record.maPhongId = rs.getInt("maPhong");
                 record.khachHang = safeValue(rs.getString("hoTen"), "-");
                 record.soPhong = safeValue(rs.getString("soPhong"), "-");
                 record.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), "-");
@@ -682,7 +685,12 @@ public class CheckInOutGUI extends JFrame {
                 Timestamp checkOutTs = rs.getTimestamp("checkOut");
                 record.gioVao = checkInTs == null ? "-" : DATE_FORMAT.format(checkInTs.toLocalDateTime().toLocalDate()) + " " + TIME_FORMAT.format(checkInTs.toLocalDateTime().toLocalTime());
                 record.gioRaDuKien = checkOutTs == null ? "-" : DATE_FORMAT.format(checkOutTs.toLocalDateTime().toLocalDate()) + " " + TIME_FORMAT.format(checkOutTs.toLocalDateTime().toLocalTime());
-                record.trangThai = "Đã check-out";
+                String trangThaiDatPhong = safeValue(rs.getString("trangThaiDatPhong"), "");
+                if ("Đã check-out".equalsIgnoreCase(trangThaiDatPhong)) {
+                    record.trangThai = "Đã check-out";
+                } else {
+                    record.trangThai = "Đang ở";
+                }
                 record.tang = safeValue(rs.getString("tang"), "-");
                 record.caLam = resolveCurrentShift();
                 record.expectedCheckInDate = checkInTs == null ? LocalDate.now() : checkInTs.toLocalDateTime().toLocalDate();
@@ -974,9 +982,9 @@ public class CheckInOutGUI extends JFrame {
                 "WHERE p.trangThai = N'Trống' AND (? = '' OR lp.tenLoaiPhong = ?) " +
                 "ORDER BY TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            String normalizedRoomType = roomType == null ? "" : roomType.trim();
-            ps.setString(1, normalizedRoomType);
-            ps.setString(2, normalizedRoomType);
+            String normalized = roomType == null ? "" : roomType.trim();
+            ps.setString(1, normalized);
+            ps.setString(2, normalized);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     rooms.add(new RoomOption(rs.getInt("maPhong"), rs.getString("soPhong"), rs.getString("tang")));
@@ -988,44 +996,14 @@ public class CheckInOutGUI extends JFrame {
         return rooms;
     }
 
-    private List<PendingDetailInfo> loadPendingDetailsForBooking(int maDatPhong, String roomType) {
-        List<PendingDetailInfo> details = new ArrayList<PendingDetailInfo>();
-        Connection con = ConnectDB.getConnection();
-        if (con == null) {
-            return details;
-        }
-        String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.soNguoi, ctdp.giaPhong " +
-                "FROM ChiTietDatPhong ctdp " +
-                "JOIN DatPhong dp ON ctdp.maDatPhong = dp.maDatPhong " +
-                "LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
-                "JOIN BangGia bg ON dp.maBangGia = bg.maBangGia " +
-                "JOIN LoaiPhong lp ON bg.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE ctdp.maDatPhong = ? AND lt.maLuuTru IS NULL AND (? = '' OR lp.tenLoaiPhong = ?) " +
-                "ORDER BY ctdp.maChiTietDatPhong";
-        try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, maDatPhong);
-            ps.setString(2, roomType == null ? "" : roomType.trim());
-            ps.setString(3, roomType == null ? "" : roomType.trim());
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    details.add(new PendingDetailInfo(
-                            rs.getInt("maChiTietDatPhong"),
-                            rs.getInt("soNguoi"),
-                            rs.getDouble("giaPhong")
-                    ));
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return details;
-    }
 
-    private double resolveDepositPerDetail(StayRecord record, int totalDetails) {
-        if (totalDetails <= 0) {
-            return parseDoubleMoney(record.tienCoc);
+    private void refreshKhachHangViewsSafely() {
+        try {
+            Class<?> clazz = Class.forName("gui.KhachHangGUI");
+            java.lang.reflect.Method method = clazz.getMethod("refreshAllOpenInstances");
+            method.invoke(null);
+        } catch (Throwable ignored) {
         }
-        return parseDoubleMoney(record.tienCoc) / totalDetails;
     }
 
     public static void refreshAllOpenInstances() {
@@ -1128,19 +1106,23 @@ public class CheckInOutGUI extends JFrame {
 
     private final class CheckInDialog extends BaseStayDialog {
         private final StayRecord record;
-        private final List<PendingDetailInfo> pendingDetails;
-        private final List<JComboBox<RoomOption>> cboRooms = new ArrayList<JComboBox<RoomOption>>();
+        private final JComboBox<RoomOption> cboRoom;
         private final AppDatePickerField txtNgayVao;
         private final AppTimePickerField txtGioVao;
         private final AppDatePickerField txtNgayRa;
         private final AppTimePickerField txtGioRa;
         private final JTextArea txtGhiChuDialog;
+        private final boolean useBookedRoom;
 
         private CheckInDialog(Frame owner, StayRecord record) {
-            super(owner, "Check-in", 760, 620);
+            super(owner, "Check-in", 680, 520);
             this.record = record;
-            this.pendingDetails = loadPendingDetailsForBooking(record.maDatPhong, record.loaiPhong);
+            this.useBookedRoom = record.maPhongId > 0;
+
             List<RoomOption> roomOptions = loadAvailableRooms(record.loaiPhong);
+            cboRoom = new JComboBox<RoomOption>(roomOptions.toArray(new RoomOption[0]));
+            cboRoom.setFont(BODY_FONT);
+
             txtNgayVao = new AppDatePickerField(record.expectedCheckInDate.format(DATE_FORMAT), true);
             txtGioVao = new AppTimePickerField(LocalTime.now().format(TIME_FORMAT), true);
             txtNgayRa = new AppDatePickerField(record.expectedCheckOutDate.format(DATE_FORMAT), true);
@@ -1154,51 +1136,28 @@ public class CheckInOutGUI extends JFrame {
             content.setOpaque(false);
             content.add(buildDialogHeader(
                     "CHECK-IN TỪ BOOKING",
-                    "Nhân viên chọn đủ số phòng trống theo loại phòng và theo thứ tự tầng. Sau khi xác nhận, sơ đồ phòng sẽ đổi sang trạng thái Đang ở."
+                    useBookedRoom
+                            ? "Khách sẽ check-in đúng phòng đã đặt ở màn Đặt phòng. Sau khi xác nhận, phòng sẽ chuyển sang trạng thái Đang ở."
+                            : "Booking chưa gán phòng ở màn Đặt phòng, nhân viên chọn phòng trống để check-in."
             ), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
-
             addFormRow(form, gbc, 0, "Mã đặt phòng", createValueLabel("DP" + record.maDatPhong));
             addFormRow(form, gbc, 1, "Khách hàng", createValueLabel(record.khachHang));
             addFormRow(form, gbc, 2, "Loại phòng", createValueLabel(record.loaiPhong));
-            addFormRow(form, gbc, 3, "Số phòng cần chọn", createValueLabel(String.valueOf(Math.max(pendingDetails.size(), 1))));
-
-            JPanel roomPanel = new JPanel(new GridBagLayout());
-            roomPanel.setOpaque(false);
-            GridBagConstraints roomGbc = new GridBagConstraints();
-            roomGbc.insets = new java.awt.Insets(4, 0, 4, 8);
-            roomGbc.anchor = GridBagConstraints.WEST;
-            roomGbc.fill = GridBagConstraints.HORIZONTAL;
-            roomGbc.weightx = 1.0;
-
-            for (int i = 0; i < Math.max(pendingDetails.size(), 1); i++) {
-                roomGbc.gridx = 0;
-                roomGbc.gridy = i;
-                roomGbc.weightx = 0;
-                roomPanel.add(new JLabel("Phòng " + (i + 1) + ":"), roomGbc);
-
-                JComboBox<RoomOption> cboRoom = new JComboBox<RoomOption>(roomOptions.toArray(new RoomOption[0]));
-                cboRoom.setFont(BODY_FONT);
-                if (i < roomOptions.size()) {
-                    cboRoom.setSelectedIndex(i);
-                }
-                cboRooms.add(cboRoom);
-
-                roomGbc.gridx = 1;
-                roomGbc.weightx = 1.0;
-                roomPanel.add(cboRoom, roomGbc);
+            if (useBookedRoom) {
+                addFormRow(form, gbc, 3, "Phòng đã đặt", createValueLabel(record.soPhong));
+            } else {
+                addFormRow(form, gbc, 3, "Phòng trống", cboRoom);
             }
-
-            addFormRow(form, gbc, 4, "Phòng trống", roomPanel);
-            addFormRow(form, gbc, 5, "Ngày vào", txtNgayVao);
-            addFormRow(form, gbc, 6, "Giờ vào", txtGioVao);
-            addFormRow(form, gbc, 7, "Ngày ra", txtNgayRa);
-            addFormRow(form, gbc, 8, "Giờ ra", txtGioRa);
-            addFormRow(form, gbc, 9, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 4, "Ngày vào", txtNgayVao);
+            addFormRow(form, gbc, 5, "Giờ vào", txtGioVao);
+            addFormRow(form, gbc, 6, "Ngày ra", txtNgayRa);
+            addFormRow(form, gbc, 7, "Giờ ra", txtGioRa);
+            addFormRow(form, gbc, 8, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             JPanel card = createDialogCardPanel();
             card.add(form, BorderLayout.CENTER);
@@ -1211,9 +1170,15 @@ public class CheckInOutGUI extends JFrame {
         }
 
         private void submit() {
-            if (pendingDetails.isEmpty()) {
-                showInfo("Booking này không còn dòng chi tiết nào chờ check-in.");
-                return;
+            Integer maPhong;
+            if (useBookedRoom) {
+                maPhong = Integer.valueOf(record.maPhongId);
+            } else {
+                if (cboRoom.getItemCount() == 0 || cboRoom.getSelectedItem() == null) {
+                    showInfo("Không còn phòng trống phù hợp cho loại phòng này.");
+                    return;
+                }
+                maPhong = Integer.valueOf(((RoomOption) cboRoom.getSelectedItem()).maPhong);
             }
             LocalDate ngayVao = txtNgayVao.getDateValue();
             LocalDate ngayRa = txtNgayRa.getDateValue();
@@ -1230,21 +1195,6 @@ public class CheckInOutGUI extends JFrame {
                 return;
             }
 
-            java.util.Set<Integer> selectedRoomIds = new java.util.LinkedHashSet<Integer>();
-            List<RoomOption> selectedRooms = new ArrayList<RoomOption>();
-            for (JComboBox<RoomOption> cboRoom : cboRooms) {
-                if (cboRoom.getItemCount() == 0 || cboRoom.getSelectedItem() == null) {
-                    showInfo("Không đủ phòng trống phù hợp cho loại phòng này.");
-                    return;
-                }
-                RoomOption room = (RoomOption) cboRoom.getSelectedItem();
-                if (!selectedRoomIds.add(room.maPhong)) {
-                    showInfo("Các phòng check-in phải khác nhau. Vui lòng chọn lại.");
-                    return;
-                }
-                selectedRooms.add(room);
-            }
-
             Connection con = ConnectDB.getConnection();
             if (con == null) {
                 showInfo("Không thể kết nối cơ sở dữ liệu.");
@@ -1253,35 +1203,31 @@ public class CheckInOutGUI extends JFrame {
 
             try {
                 con.setAutoCommit(false);
-                double tienCocMoiPhong = resolveDepositPerDetail(record, pendingDetails.size());
 
-                for (int i = 0; i < pendingDetails.size(); i++) {
-                    PendingDetailInfo detail = pendingDetails.get(i);
-                    RoomOption room = selectedRooms.get(i);
-
+                if (!useBookedRoom) {
                     try (PreparedStatement ps = con.prepareStatement("UPDATE ChiTietDatPhong SET maPhong = ? WHERE maChiTietDatPhong = ?")) {
-                        ps.setInt(1, room.maPhong);
-                        ps.setInt(2, detail.maChiTietDatPhong);
+                        ps.setInt(1, maPhong.intValue());
+                        ps.setInt(2, record.maChiTietDatPhong);
                         ps.executeUpdate();
                     }
+                }
 
-                    String insertStay = "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                    try (PreparedStatement ps = con.prepareStatement(insertStay)) {
-                        ps.setInt(1, detail.maChiTietDatPhong);
-                        ps.setInt(2, record.maDatPhong);
-                        ps.setInt(3, room.maPhong);
-                        ps.setTimestamp(4, Timestamp.valueOf(checkIn));
-                        ps.setTimestamp(5, Timestamp.valueOf(checkOut));
-                        ps.setInt(6, detail.soNguoi <= 0 ? record.soNguoi : detail.soNguoi);
-                        ps.setDouble(7, detail.giaPhong);
-                        ps.setDouble(8, tienCocMoiPhong);
-                        ps.executeUpdate();
-                    }
+                String insertStay = "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                try (PreparedStatement ps = con.prepareStatement(insertStay)) {
+                    ps.setInt(1, record.maChiTietDatPhong);
+                    ps.setInt(2, record.maDatPhong);
+                    ps.setInt(3, maPhong.intValue());
+                    ps.setTimestamp(4, Timestamp.valueOf(checkIn));
+                    ps.setTimestamp(5, Timestamp.valueOf(checkOut));
+                    ps.setInt(6, record.soNguoi);
+                    ps.setDouble(7, 0);
+                    ps.setDouble(8, parseDoubleMoney(record.tienCoc));
+                    ps.executeUpdate();
+                }
 
-                    try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Đang ở' WHERE maPhong = ?")) {
-                        ps.setInt(1, room.maPhong);
-                        ps.executeUpdate();
-                    }
+                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Đang ở' WHERE maPhong = ?")) {
+                    ps.setInt(1, maPhong.intValue());
+                    ps.executeUpdate();
                 }
 
                 try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'Đang lưu trú' WHERE maDatPhong = ?")) {
@@ -1292,9 +1238,9 @@ public class CheckInOutGUI extends JFrame {
                 con.commit();
                 PhongGUI.refreshAllOpenInstances();
                 DatPhongGUI.refreshAllOpenInstances();
-                KhachHangGUI.refreshAllOpenInstances();
+                refreshKhachHangViewsSafely();
                 CheckInOutGUI.refreshAllOpenInstances();
-                showInfo("Check-in thành công cho " + pendingDetails.size() + " phòng.");
+                showInfo(useBookedRoom ? "Check-in thành công đúng phòng khách đã đặt." : "Check-in thành công.");
                 dispose();
             } catch (Exception e) {
                 try { con.rollback(); } catch (Exception ignore) {}
@@ -1305,7 +1251,6 @@ public class CheckInOutGUI extends JFrame {
             }
         }
     }
-
 
     private final class AddServiceDialog extends BaseStayDialog {
         private final StayRecord record;
@@ -1599,7 +1544,7 @@ public class CheckInOutGUI extends JFrame {
                 con.commit();
                 PhongGUI.refreshAllOpenInstances();
                 DatPhongGUI.refreshAllOpenInstances();
-                KhachHangGUI.refreshAllOpenInstances();
+                refreshKhachHangViewsSafely();
                 CheckInOutGUI.refreshAllOpenInstances();
                 showInfo("Check-out thành công.");
                 dispose();
@@ -1647,6 +1592,7 @@ public class CheckInOutGUI extends JFrame {
         private int maLuuTru;
         private int maChiTietDatPhong;
         private int maDatPhong;
+        private int maPhongId;
         private String khachHang;
         private String soPhong;
         private String loaiPhong;
@@ -1662,19 +1608,6 @@ public class CheckInOutGUI extends JFrame {
         private LocalDate expectedCheckInDate;
         private LocalDate expectedCheckOutDate;
         private int soNguoi;
-        private int pendingDetailCount;
-    }
-
-    private static final class PendingDetailInfo {
-        private final int maChiTietDatPhong;
-        private final int soNguoi;
-        private final double giaPhong;
-
-        private PendingDetailInfo(int maChiTietDatPhong, int soNguoi, double giaPhong) {
-            this.maChiTietDatPhong = maChiTietDatPhong;
-            this.soNguoi = soNguoi;
-            this.giaPhong = giaPhong;
-        }
     }
 
     private static final class RoomBadge {

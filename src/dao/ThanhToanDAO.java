@@ -1,5 +1,6 @@
 package dao;
 
+import dao.KhachHangDAO;
 import db.ConnectDB;
 import entity.ThanhToan;
 import entity.ThanhToan.ChiTietDong;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class ThanhToanDAO {
     private String lastErrorMessage = "";
     private static boolean schemaEnsured = false;
+    private static boolean synchronizingInvoices = false;
 
     public String getLastErrorMessage() {
         return lastErrorMessage;
@@ -223,6 +225,7 @@ public class ThanhToanDAO {
             rebuildInvoiceLines(con, invoiceId.intValue(), invoice.getMaLuuTru());
             refreshInvoiceStatus(con, invoiceId.intValue());
             con.commit();
+            syncCustomerAfterInvoicePaid(con, invoiceId.intValue());
             return true;
         } catch (Exception e) {
             rollbackQuietly(con);
@@ -350,9 +353,24 @@ public class ThanhToanDAO {
     }
 
     private void synchronizeInvoices(Connection con) throws Exception {
-        String sql = "SELECT lt.maLuuTru, lt.maDatPhong, dp.maKhachHang, lt.tienCoc, lt.giaPhong, lt.checkIn, lt.checkOut " +
+        if (synchronizingInvoices) {
+            return;
+        }
+        synchronizingInvoices = true;
+        String sql = "SELECT lt.maLuuTru, lt.maDatPhong, dp.maKhachHang, lt.tienCoc, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+                "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, " +
+                "ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
+                "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong " +
                 "FROM LuuTru lt " +
-                "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong";
+                "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
+                "OUTER APPLY ( " +
+                "   SELECT TOP 1 " +
+                "       ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
+                "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
+                "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
+                "   FROM ChiTietDatPhong ctdp " +
+                "   WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong " +
+                ") ct";
 
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -364,8 +382,11 @@ public class ThanhToanDAO {
                 double giaPhong = rs.getDouble("giaPhong");
                 Timestamp checkIn = rs.getTimestamp("checkIn");
                 Timestamp checkOut = rs.getTimestamp("checkOut");
+                long soDemDatPhong = rs.getLong("soDemDatPhong");
+                double giaPhongDatPhong = rs.getDouble("giaPhongDatPhong");
+                double thanhTienDatPhong = rs.getDouble("thanhTienDatPhong");
 
-                double tienPhong = calculateRoomCharge(giaPhong, checkIn, checkOut);
+                double tienPhong = resolveRoomCharge(giaPhong, checkIn, checkOut, soDemDatPhong, giaPhongDatPhong, thanhTienDatPhong);
                 double tienDichVu = loadServiceCharge(con, maLuuTru);
 
                 Integer maHoaDon = findInvoiceIdByStay(con, maLuuTru);
@@ -391,6 +412,8 @@ public class ThanhToanDAO {
                 rebuildInvoiceLines(con, maHoaDon.intValue(), String.valueOf(maLuuTru));
                 refreshInvoiceStatus(con, maHoaDon.intValue());
             }
+        } finally {
+            synchronizingInvoices = false;
         }
     }
 
@@ -426,7 +449,7 @@ public class ThanhToanDAO {
             return;
         }
 
-        insertInvoiceLine(con, maHoaDon, "TIEN_PHONG", 1, invoice.getTienPhong());
+        insertInvoiceLine(con, maHoaDon, "Tiền phòng", 1, invoice.getTienPhong());
 
         String serviceSql = "SELECT dv.tenDichVu, SUM(sddv.soLuong) AS soLuong, MAX(sddv.donGia) AS donGia " +
                 "FROM SuDungDichVu sddv " +
@@ -490,14 +513,16 @@ public class ThanhToanDAO {
 
     private void loadPaymentSummary(Connection con, ThanhToan invoice) throws Exception {
         invoice.getGiaoDichThanhToans().clear();
-        String sql = "SELECT maThanhToan, maNhanVien, ngayThanhToan, soTien, ISNULL(phuongThuc,N'Tiền mặt') AS phuongThuc, " +
-                "ISNULL(soThamChieu,N'') AS soThamChieu, ISNULL(ghiChu,N'') AS ghiChu, ISNULL(loaiGiaoDich,N'THANH_TOAN') AS loaiGiaoDich " +
-                "FROM ThanhToan WHERE maHoaDon = ? ORDER BY maThanhToan ASC";
+        String sql = "SELECT tt.maThanhToan, tt.maNhanVien, tt.ngayThanhToan, tt.soTien, ISNULL(tt.phuongThuc,N'Tiền mặt') AS phuongThuc, " +
+                "ISNULL(tt.soThamChieu,N'') AS soThamChieu, ISNULL(tt.ghiChu,N'') AS ghiChu, ISNULL(tt.loaiGiaoDich,N'THANH_TOAN') AS loaiGiaoDich, " +
+                "ISNULL(nv.hoTen, N'') AS nguoiThu " +
+                "FROM ThanhToan tt LEFT JOIN NhanVien nv ON tt.maNhanVien = nv.maNhanVien WHERE tt.maHoaDon = ? ORDER BY tt.maThanhToan ASC";
         double paid = 0d;
         double refunded = 0d;
         String singleMethod = "";
         boolean mixedMethod = false;
         Timestamp latestPaidAt = null;
+        String latestCollector = "";
 
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, parseIntOrZero(invoice.getMaHoaDon()));
@@ -519,6 +544,7 @@ public class ThanhToanDAO {
                         paid += gd.getSoTien();
                         if (latestPaidAt == null || (gd.getNgayThanhToan() != null && gd.getNgayThanhToan().after(latestPaidAt))) {
                             latestPaidAt = gd.getNgayThanhToan();
+                            latestCollector = safeTrim(rs.getString("nguoiThu"));
                         }
                         if (isBlank(singleMethod)) {
                             singleMethod = gd.getPhuongThuc();
@@ -533,6 +559,7 @@ public class ThanhToanDAO {
         invoice.setSoTienDaThanhToan(paid);
         invoice.setTienCocDaHoan(refunded);
         invoice.setNgayThanhToan(latestPaidAt);
+        invoice.setNguoiThu(latestCollector);
         invoice.setPhuongThuc(mixedMethod ? "Kết hợp" : singleMethod);
         if (mixedMethod) {
             invoice.setThongTinThanhToanKetHop(buildMixedPaymentInfo(invoice));
@@ -549,9 +576,13 @@ public class ThanhToanDAO {
 
         loadPaymentSummary(con, invoice);
 
-        String status = invoice.getConPhaiThu() <= 0.1d ? "Đã thanh toán" : "Chờ thanh toán";
+        String status;
         if (invoice.getTienCocDaHoan() > 0d) {
             status = "Đã hoàn cọc";
+        } else if (invoice.getSoTienDaThanhToan() > 0.1d && invoice.getConPhaiThu() <= 0.1d) {
+            status = "Đã thanh toán";
+        } else {
+            status = "Chờ thanh toán";
         }
 
         try (PreparedStatement ps = con.prepareStatement(
@@ -560,6 +591,9 @@ public class ThanhToanDAO {
             ps.setString(2, status);
             ps.setInt(3, maHoaDon);
             ps.executeUpdate();
+        }
+        if ("Đã thanh toán".equalsIgnoreCase(status)) {
+            syncCustomerAfterInvoicePaid(con, maHoaDon);
         }
     }
 
@@ -618,6 +652,26 @@ public class ThanhToanDAO {
         return giaPhong * nights;
     }
 
+    private double resolveRoomCharge(double giaPhongLuuTru,
+                                     Timestamp checkIn,
+                                     Timestamp checkOut,
+                                     long soDemDatPhong,
+                                     double giaPhongDatPhong,
+                                     double thanhTienDatPhong) {
+        double tienTheoLuuTru = calculateRoomCharge(giaPhongLuuTru, checkIn, checkOut);
+        if (tienTheoLuuTru > 0d) {
+            return tienTheoLuuTru;
+        }
+        if (thanhTienDatPhong > 0d) {
+            return thanhTienDatPhong;
+        }
+        if (giaPhongDatPhong > 0d) {
+            long soDem = Math.max(1L, soDemDatPhong);
+            return giaPhongDatPhong * soDem;
+        }
+        return 0d;
+    }
+
     private double loadServiceCharge(Connection con, int maLuuTru) throws Exception {
         try (PreparedStatement ps = con.prepareStatement(
                 "SELECT ISNULL(SUM(thanhTien),0) FROM SuDungDichVu WHERE maLuuTru = ?")) {
@@ -641,6 +695,41 @@ public class ThanhToanDAO {
             }
         }
         return null;
+    }
+
+    public boolean markInvoiceAsPaid(String maHoaDon, int maNhanVien, String ghiChu) {
+        clearLastError();
+        Connection con = getReadyConnection();
+        Integer invoiceId = parseIntOrNull(maHoaDon);
+        if (con == null || invoiceId == null) {
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã hóa đơn không hợp lệ.");
+            return false;
+        }
+
+        try {
+            ensureExtendedSchema(con);
+            synchronizeInvoices(con);
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE HoaDon SET trangThai = N'Đã thanh toán', ngayThanhToan = GETDATE(), ghiChu = CASE " +
+                            "WHEN ISNULL(ghiChu,N'') = N'' THEN ? ELSE ghiChu + N' | ' + ? END WHERE maHoaDon = ?")) {
+                String note = safeTrim(ghiChu);
+                if (note.isEmpty()) {
+                    note = "Xác nhận hoàn tất hóa đơn.";
+                }
+                ps.setString(1, note);
+                ps.setString(2, note);
+                ps.setInt(3, invoiceId.intValue());
+                boolean ok = ps.executeUpdate() > 0;
+                if (ok) {
+                    syncCustomerAfterInvoicePaid(con, invoiceId.intValue());
+                }
+                return ok;
+            }
+        } catch (Exception e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
     }
 
     private String buildMixedPaymentInfo(ThanhToan invoice) {
@@ -750,6 +839,30 @@ public class ThanhToanDAO {
         try {
             if (con != null) {
                 con.setAutoCommit(true);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void syncCustomerAfterInvoicePaid(Connection con, int maHoaDon) {
+        try {
+            String sql = "SELECT maKhachHang, trangThai FROM HoaDon WHERE maHoaDon = ?";
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                ps.setInt(1, maHoaDon);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        int maKhachHang = rs.getInt("maKhachHang");
+                        String trangThai = safeTrim(rs.getString("trangThai"));
+                        if (maKhachHang > 0 && "Đã thanh toán".equalsIgnoreCase(trangThai)) {
+                            KhachHangDAO khachHangDAO = new KhachHangDAO();
+                            khachHangDAO.updateTrangThaiTuDong(
+                                    String.valueOf(maKhachHang),
+                                    "Ngừng giao dịch",
+                                    "Tự động cập nhật sau khi thanh toán xong hóa đơn HD" + maHoaDon
+                            );
+                        }
+                    }
+                }
             }
         } catch (Exception ignored) {
         }

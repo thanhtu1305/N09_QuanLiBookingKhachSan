@@ -78,23 +78,6 @@ public class TaiKhoanGUI extends JFrame {
     private JComboBox<String> cboTrangThai;
     private JTextField txtTuKhoa;
 
-    private JLabel lblTenDangNhap;
-    private JLabel lblNhanVien;
-    private JLabel lblVaiTro;
-    private JLabel lblTrangThai;
-    private JLabel lblLanDangNhap;
-    private JLabel lblEmailKhoiPhuc;
-    private JTextArea txtGhiChu;
-
-    private JCheckBox chkDashboard;
-    private JCheckBox chkDatPhong;
-    private JCheckBox chkCheckInOut;
-    private JCheckBox chkThanhToan;
-    private JCheckBox chkKhachHang;
-    private JCheckBox chkNhanVien;
-    private JCheckBox chkBaoCao;
-    private JCheckBox chkDanhMuc;
-
     public TaiKhoanGUI() {
         this("guest", "Lễ tân");
     }
@@ -387,7 +370,6 @@ public class TaiKhoanGUI extends JFrame {
         card.add(createPrimaryButton("Đặt lại mật khẩu", new Color(37, 99, 235), Color.WHITE, e -> openResetPasswordDialog()));
         card.add(createPrimaryButton("Phân quyền", new Color(59, 130, 246), Color.WHITE, e -> openPermissionDialog()));
         card.add(createPrimaryButton("Khóa / Mở tài khoản", new Color(245, 158, 11), TEXT_PRIMARY, e -> openToggleAccountDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadData(true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -428,17 +410,8 @@ public class TaiKhoanGUI extends JFrame {
         return card;
     }
 
-    private JSplitPane buildCenterContent() {
-        JPanel left = buildTableCard();
-        JPanel right = buildDetailCard();
-
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
-        splitPane.setOpaque(false);
-        splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.58);
-        splitPane.setDividerSize(8);
-        splitPane.setContinuousLayout(true);
-        return splitPane;
+    private JPanel buildCenterContent() {
+        return buildTableCard();
     }
 
     private JPanel buildTableCard() {
@@ -449,7 +422,7 @@ public class TaiKhoanGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Chọn một tài khoản để xem chi tiết và quyền chức năng.");
+        JLabel lblSub = new JLabel("Chọn một tài khoản để phân quyền, đặt lại mật khẩu hoặc khóa / mở tài khoản.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -497,86 +470,6 @@ public class TaiKhoanGUI extends JFrame {
 
         JPanel wrapper = createCardPanel(new BorderLayout());
         wrapper.add(content, BorderLayout.CENTER);
-        return wrapper;
-    }
-
-    private JPanel buildDetailCard() {
-        JPanel wrapper = new JPanel(new BorderLayout(0, 12));
-        wrapper.setOpaque(false);
-
-        JPanel detail = createCardPanel(new BorderLayout());
-
-        JLabel lblTitle = new JLabel("Chi tiết tài khoản");
-        lblTitle.setFont(SECTION_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-        lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
-
-        JPanel body = new JPanel();
-        body.setOpaque(false);
-        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
-
-        lblTenDangNhap = createValueLabel();
-        lblNhanVien = createValueLabel();
-        lblVaiTro = createValueLabel();
-        lblTrangThai = createValueLabel();
-        lblLanDangNhap = createValueLabel();
-        lblEmailKhoiPhuc = createValueLabel();
-
-        addDetailRow(body, "Tên đăng nhập", lblTenDangNhap);
-        addDetailRow(body, "Nhân viên liên kết", lblNhanVien);
-        addDetailRow(body, "Vai trò", lblVaiTro);
-        addDetailRow(body, "Trạng thái", lblTrangThai);
-        addDetailRow(body, "Lần đăng nhập cuối", lblLanDangNhap);
-        addDetailRow(body, "Email khôi phục", lblEmailKhoiPhuc);
-
-        txtGhiChu = createReadonlyArea();
-
-        JPanel notePanel = new JPanel(new BorderLayout(0, 6));
-        notePanel.setOpaque(false);
-        JLabel lblNoteTitle = new JLabel("Ghi chú");
-        lblNoteTitle.setFont(LABEL_FONT);
-        lblNoteTitle.setForeground(TEXT_MUTED);
-        JScrollPane noteScroll = new JScrollPane(txtGhiChu);
-        noteScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-        notePanel.add(lblNoteTitle, BorderLayout.NORTH);
-        notePanel.add(noteScroll, BorderLayout.CENTER);
-
-        detail.add(lblTitle, BorderLayout.NORTH);
-        detail.add(body, BorderLayout.CENTER);
-        detail.add(notePanel, BorderLayout.SOUTH);
-
-        JPanel permissionCard = createCardPanel(new BorderLayout());
-        JLabel lblPermissionTitle = new JLabel("Quyền chức năng");
-        lblPermissionTitle.setFont(SECTION_FONT);
-        lblPermissionTitle.setForeground(TEXT_PRIMARY);
-        lblPermissionTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
-
-        JPanel checks = new JPanel(new GridLayout(4, 2, 10, 8));
-        checks.setOpaque(false);
-
-        chkDashboard = createPermissionCheck("Dashboard");
-        chkDatPhong = createPermissionCheck("Đặt phòng");
-        chkCheckInOut = createPermissionCheck("Check-in/out");
-        chkThanhToan = createPermissionCheck("Thanh toán");
-        chkKhachHang = createPermissionCheck("Khách hàng");
-        chkNhanVien = createPermissionCheck("Nhân viên");
-        chkBaoCao = createPermissionCheck("Báo cáo");
-        chkDanhMuc = createPermissionCheck("Danh mục hệ thống");
-
-        checks.add(chkDashboard);
-        checks.add(chkDatPhong);
-        checks.add(chkCheckInOut);
-        checks.add(chkThanhToan);
-        checks.add(chkKhachHang);
-        checks.add(chkNhanVien);
-        checks.add(chkBaoCao);
-        checks.add(chkDanhMuc);
-
-        permissionCard.add(lblPermissionTitle, BorderLayout.NORTH);
-        permissionCard.add(checks, BorderLayout.CENTER);
-
-        wrapper.add(detail, BorderLayout.CENTER);
-        wrapper.add(permissionCard, BorderLayout.SOUTH);
         return wrapper;
     }
 
@@ -638,45 +531,11 @@ public class TaiKhoanGUI extends JFrame {
     }
 
     private void updateDetailPanel(AccountRecord account) {
-        lblTenDangNhap.setText(account.tenDangNhap);
-        lblNhanVien.setText(account.nhanVien);
-        lblVaiTro.setText(account.vaiTro);
-        lblTrangThai.setText(account.trangThai);
-        lblLanDangNhap.setText(account.lanDangNhapCuoi);
-        lblEmailKhoiPhuc.setText(account.emailKhoiPhuc);
-        txtGhiChu.setText(account.ghiChu.isEmpty() ? "Không có ghi chú." : account.ghiChu);
-        txtGhiChu.setCaretPosition(0);
-
-        chkDashboard.setSelected(account.permDashboard);
-        chkDatPhong.setSelected(account.permDatPhong);
-        chkCheckInOut.setSelected(account.permCheckInOut);
-        chkThanhToan.setSelected(account.permThanhToan);
-        chkKhachHang.setSelected(account.permKhachHang);
-        chkNhanVien.setSelected(account.permNhanVien || account.permTaiKhoan);
-        chkBaoCao.setSelected(account.permBaoCao);
-        chkDanhMuc.setSelected(
-                account.permPhong || account.permLoaiPhong ||
-                        account.permBangGia || account.permDichVu || account.permTienNghi
-        );
+        // Đã bỏ toàn bộ panel bên phải, chỉ giữ danh sách tài khoản.
     }
 
     private void clearDetailPanel() {
-        lblTenDangNhap.setText("-");
-        lblNhanVien.setText("-");
-        lblVaiTro.setText("-");
-        lblTrangThai.setText("-");
-        lblLanDangNhap.setText("-");
-        lblEmailKhoiPhuc.setText("-");
-        txtGhiChu.setText("Không có dữ liệu phù hợp.");
-
-        chkDashboard.setSelected(false);
-        chkDatPhong.setSelected(false);
-        chkCheckInOut.setSelected(false);
-        chkThanhToan.setSelected(false);
-        chkKhachHang.setSelected(false);
-        chkNhanVien.setSelected(false);
-        chkBaoCao.setSelected(false);
-        chkDanhMuc.setSelected(false);
+        // Đã bỏ toàn bộ panel bên phải.
     }
 
     // =========================================================================
@@ -743,14 +602,6 @@ public class TaiKhoanGUI extends JFrame {
     // =========================================================================
     // UI HELPERS
     // =========================================================================
-    private JCheckBox createPermissionCheck(String text) {
-        JCheckBox checkBox = new JCheckBox(text);
-        checkBox.setFont(BODY_FONT);
-        checkBox.setOpaque(false);
-        checkBox.setForeground(TEXT_PRIMARY);
-        checkBox.setEnabled(false);
-        return checkBox;
-    }
 
     private JPanel createFieldGroup(String label, Component component) {
         JPanel group = new JPanel();
@@ -779,18 +630,6 @@ public class TaiKhoanGUI extends JFrame {
         field.setPreferredSize(new Dimension(240, 34));
         field.setMaximumSize(new Dimension(320, 34));
         return field;
-    }
-
-    private JTextArea createReadonlyArea() {
-        JTextArea area = new JTextArea(4, 20);
-        area.setEditable(false);
-        area.setLineWrap(true);
-        area.setWrapStyleWord(true);
-        area.setFont(BODY_FONT);
-        area.setForeground(TEXT_PRIMARY);
-        area.setBackground(PANEL_SOFT);
-        area.setBorder(new EmptyBorder(8, 10, 8, 10));
-        return area;
     }
 
     private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
@@ -825,27 +664,6 @@ public class TaiKhoanGUI extends JFrame {
         ));
         button.addActionListener(listener);
         return button;
-    }
-
-    private void addDetailRow(JPanel panel, String label, JLabel value) {
-        JPanel row = new JPanel(new BorderLayout(12, 0));
-        row.setOpaque(false);
-        row.setBorder(new EmptyBorder(0, 0, 8, 0));
-        JLabel lbl = new JLabel(label + ":");
-        lbl.setFont(BODY_FONT);
-        lbl.setForeground(TEXT_MUTED);
-        lbl.setPreferredSize(new Dimension(150, 20));
-        row.add(lbl, BorderLayout.WEST);
-        row.add(value, BorderLayout.CENTER);
-        panel.add(row);
-    }
-
-    private JLabel createValueLabel() {
-        JLabel label = new JLabel("-");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        label.setForeground(TEXT_PRIMARY);
-        label.setVerticalAlignment(SwingConstants.TOP);
-        return label;
     }
 
     private JPanel createCardPanel(BorderLayout layout) {
@@ -895,7 +713,7 @@ public class TaiKhoanGUI extends JFrame {
                 CARD_BG, BORDER_SOFT, TEXT_MUTED,
                 "F1 Tạo tài khoản", "F2 Đặt lại mật khẩu",
                 "F3 Phân quyền", "F4 Khóa / Mở tài khoản",
-                "F5 Làm mới", "Enter Xem chi tiết"
+                "Enter Xem chi tiết"
         );
     }
 
@@ -904,15 +722,6 @@ public class TaiKhoanGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "taikhoan-f2", this::openResetPasswordDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "taikhoan-f3", this::openPermissionDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "taikhoan-f4", this::openToggleAccountDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "taikhoan-f5", () -> reloadData(true));
-        ScreenUIHelper.registerShortcut(this, "ENTER", "taikhoan-enter", () -> {
-            AccountRecord account = getSelectedAccount();
-            if (account != null) {
-                showMessageDialog("Chi tiết tài khoản",
-                        "Đang xem chi tiết tài khoản " + account.tenDangNhap + ".",
-                        new Color(59, 130, 246));
-            }
-        });
     }
 
     private String safeValue(String value, String fallback) {
@@ -1312,8 +1121,9 @@ public class TaiKhoanGUI extends JFrame {
 
             addFormRow(infoForm, gbc, 0, "Tài khoản", createValueTag(account.tenDangNhap));
             addFormRow(infoForm, gbc, 1, "Nhân viên", createValueTag(account.nhanVien));
-            addFormRow(infoForm, gbc, 2, "Vai trò hiện tại", createValueTag(account.vaiTro));
-            addFormRow(infoForm, gbc, 3, "Vai trò áp dụng", cboVaiTroDialog);
+            addFormRow(infoForm, gbc, 2, "Email", createValueTag(account.emailKhoiPhuc == null || account.emailKhoiPhuc.trim().isEmpty() ? "-" : account.emailKhoiPhuc));
+            addFormRow(infoForm, gbc, 3, "Vai trò hiện tại", createValueTag(account.vaiTro));
+            addFormRow(infoForm, gbc, 4, "Vai trò áp dụng", cboVaiTroDialog);
 
             JPanel permissionGrid = new JPanel(new GridLayout(7, 2, 10, 8));
             permissionGrid.setOpaque(false);

@@ -162,7 +162,6 @@ public class TienNghiGUI extends JFrame {
         card.add(createPrimaryButton("Thêm tiện nghi", new Color(22, 163, 74), Color.WHITE, e -> openCreateAmenityDialog()));
         card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateAmenityDialog()));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateAmenityDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> resetForm(true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -702,7 +701,6 @@ public class TienNghiGUI extends JFrame {
                 "F1 Thêm tiện nghi",
                 "F2 Cập nhật",
                 "F3 Ngừng áp dụng",
-                "F5 Làm mới",
                 "Enter Xem chi tiết"
         );
     }
@@ -711,7 +709,6 @@ public class TienNghiGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F1", "tiennghi-f1", this::openCreateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "F2", "tiennghi-f2", this::openUpdateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "tiennghi-f3", this::openDeactivateAmenityDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "tiennghi-f5", () -> resetForm(true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "tiennghi-enter", this::openAmenityDetailDialog);
     }
 

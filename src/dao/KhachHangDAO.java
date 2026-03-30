@@ -209,11 +209,11 @@ public class KhachHangDAO {
         }
 
         String sql = "UPDATE KhachHang SET hoTen = ?, gioiTinh = ?, ngaySinh = ?, soDienThoai = ?, email = ?, "
-                + "cccdPassport = ?, diaChi = ?, quocTich = ?, loaiKhach = ?, hangKhach = ?, trangThai = ?, nguoiTao = ?, ghiChu = ? "
+                + "cccdPassport = ?, diaChi = ?, quocTich = ?, loaiKhach = ?, hangKhach = ?, nguoiTao = ?, ghiChu = ? "
                 + "WHERE maKhachHang = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            fillStatement(stmt, khachHang);
-            stmt.setInt(14, id.intValue());
+            fillStatementWithoutStatus(stmt, khachHang);
+            stmt.setInt(13, id.intValue());
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
             setLastError(e.getMessage());
@@ -234,6 +234,31 @@ public class KhachHangDAO {
         String sql = "DELETE FROM KhachHang WHERE maKhachHang = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, id.intValue());
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean updateTrangThaiTuDong(String maKhachHang, String trangThai, String ghiChu) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        Integer id = parseIntOrNull(maKhachHang);
+        if (con == null || id == null) {
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã khách hàng không hợp lệ.");
+            return false;
+        }
+
+        String sql = "UPDATE KhachHang SET trangThai = ?, ghiChu = CASE " +
+                "WHEN ISNULL(ghiChu,'') = '' THEN ? ELSE ghiChu + N' | ' + ? END WHERE maKhachHang = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            String note = safeTrim(ghiChu);
+            stmt.setString(1, safeTrim(trangThai));
+            stmt.setString(2, note);
+            stmt.setString(3, note);
+            stmt.setInt(4, id.intValue());
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
             setLastError(e.getMessage());
@@ -331,6 +356,21 @@ public class KhachHangDAO {
         stmt.setString(11, nullIfEmpty(khachHang.getTrangThai()));
         stmt.setString(12, nullIfEmpty(khachHang.getNguoiTao()));
         stmt.setString(13, nullIfEmpty(khachHang.getGhiChu()));
+    }
+
+    private void fillStatementWithoutStatus(PreparedStatement stmt, KhachHang khachHang) throws SQLException {
+        stmt.setString(1, safeTrim(khachHang.getHoTen()));
+        stmt.setString(2, nullIfEmpty(khachHang.getGioiTinh()));
+        setNullableDate(stmt, 3, khachHang.getNgaySinh());
+        stmt.setString(4, nullIfEmpty(khachHang.getSoDienThoai()));
+        stmt.setString(5, nullIfEmpty(khachHang.getEmail()));
+        stmt.setString(6, nullIfEmpty(khachHang.getCccdPassport()));
+        stmt.setString(7, nullIfEmpty(khachHang.getDiaChi()));
+        stmt.setString(8, nullIfEmpty(khachHang.getQuocTich()));
+        stmt.setString(9, nullIfEmpty(khachHang.getLoaiKhach()));
+        stmt.setString(10, nullIfEmpty(khachHang.getHangKhach()));
+        stmt.setString(11, nullIfEmpty(khachHang.getNguoiTao()));
+        stmt.setString(12, nullIfEmpty(khachHang.getGhiChu()));
     }
 
     private KhachHang mapKhachHang(ResultSet rs) throws SQLException {

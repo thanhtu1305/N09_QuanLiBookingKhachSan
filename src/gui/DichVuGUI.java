@@ -114,7 +114,7 @@ public class DichVuGUI extends JFrame {
         top.add(buildFilters());
         main.add(top, BorderLayout.NORTH);
         main.add(buildCenter(), BorderLayout.CENTER);
-        main.add(ScreenUIHelper.createShortcutBar(CARD_BG, BORDER_SOFT, TEXT_MUTED, "F1 Thêm", "F2 Cập nhật", "F3 Xóa", "F4 Sử dụng", "F5 Làm mới"), BorderLayout.SOUTH);
+        main.add(ScreenUIHelper.createShortcutBar(CARD_BG, BORDER_SOFT, TEXT_MUTED, "F1 Thêm", "F2 Cập nhật", "F3 Xóa", "F4 Sử dụng"), BorderLayout.SOUTH);
         return main;
     }
 
@@ -148,7 +148,6 @@ public class DichVuGUI extends JFrame {
         card.add(primary("Cập nhật", new Color(37, 99, 235), e -> openServiceDialog(getSelectedService(true))));
         card.add(primary("Xóa dịch vụ", new Color(220, 38, 38), e -> deleteSelectedService()));
         card.add(primary("Sử dụng dịch vụ", new Color(99, 102, 241), e -> openUsageDialog(getSelectedService(false))));
-        card.add(primary("Làm mới", new Color(107, 114, 128), e -> loadServices(true, true)));
         card.add(primary("Tìm kiếm", new Color(15, 118, 110), e -> applyFilters(true)));
         return card;
     }
@@ -397,7 +396,6 @@ public class DichVuGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "dichvu-f2", () -> openServiceDialog(getSelectedService(true)));
         ScreenUIHelper.registerShortcut(this, "F3", "dichvu-f3", this::deleteSelectedService);
         ScreenUIHelper.registerShortcut(this, "F4", "dichvu-f4", () -> openUsageDialog(getSelectedService(false)));
-        ScreenUIHelper.registerShortcut(this, "F5", "dichvu-f5", () -> loadServices(true, true));
     }
 
     private class ServiceEditor extends JDialog {

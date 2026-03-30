@@ -144,8 +144,6 @@ public class DashboardGUI extends JFrame {
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role)));
         card.add(createPrimaryButton("Thanh toán", new Color(220, 38, 38), Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role)));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e ->
-                NavigationUtil.refresh(this, ScreenKey.DASHBOARD, username, role)));
         card.add(createPrimaryButton("Tìm nhanh", new Color(15, 118, 110), Color.WHITE, e ->
                 showMessage("Mở tìm kiếm nhanh.")));
         return card;

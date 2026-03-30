@@ -21,7 +21,7 @@ public class TaiKhoanDAO {
     }
 
     public List<TaiKhoan> getAll() {
-        List<TaiKhoan> ds = new ArrayList<>();
+        List<TaiKhoan> ds = new ArrayList<TaiKhoan>();
         String sql = "SELECT * FROM TaiKhoan";
 
         try {
@@ -126,50 +126,46 @@ public class TaiKhoanDAO {
         return false;
     }
 
-    public TaiKhoan dangNhap(String tenDangNhap, String matKhau, String vaiTro) {
+    public TaiKhoan dangNhap(String tenDangNhap, String matKhau) {
         setLastLoginMessage("");
-
-        String sql = "SELECT tk.*, nv.trangThai AS trangThaiNhanVien "
-                + "FROM TaiKhoan tk "
-                + "LEFT JOIN NhanVien nv ON tk.maNhanVien = nv.maNhanVien "
-                + "WHERE tk.tenDangNhap = ? AND tk.matKhau = ? AND tk.vaiTro = ?";
+        String sql = "SELECT * FROM TaiKhoan WHERE tenDangNhap = ? AND matKhau = ?";
 
         try {
             Connection con = ConnectDB.getConnection();
+            if (con == null) {
+                setLastLoginMessage("Không thể kết nối cơ sở dữ liệu.");
+                return null;
+            }
+
             PreparedStatement ps = con.prepareStatement(sql);
             ps.setString(1, tenDangNhap);
             ps.setString(2, matKhau);
-            ps.setString(3, vaiTro);
 
             ResultSet rs = ps.executeQuery();
             if (!rs.next()) {
-                setLastLoginMessage("Sai tên đăng nhập, mật khẩu hoặc vai trò.");
-                return null;
-            }
-
-            String trangThaiTaiKhoan = rs.getString("trangThai");
-            String trangThaiNhanVien = rs.getString("trangThaiNhanVien");
-
-            if (!"Hoạt động".equalsIgnoreCase(trangThaiTaiKhoan)) {
-                setLastLoginMessage("Tài khoản của bạn đã bị khóa.");
-                return null;
-            }
-
-            if ("Ngừng làm việc".equalsIgnoreCase(trangThaiNhanVien)
-                    || "Khóa".equalsIgnoreCase(trangThaiNhanVien)) {
-                setLastLoginMessage("Bạn đã bị đuổi việc");
+                setLastLoginMessage("Sai tên đăng nhập hoặc mật khẩu.");
                 return null;
             }
 
             TaiKhoan tk = mapResultSet(rs);
+
+            if (tk.getTrangThai() == null || !tk.getTrangThai().equalsIgnoreCase("Hoạt động")) {
+                setLastLoginMessage("Tài khoản của bạn đang bị khóa hoặc ngừng hoạt động.");
+                return null;
+            }
+
             capNhatLanDangNhapCuoi(tk.getMaTaiKhoan());
             return tk;
         } catch (Exception e) {
             e.printStackTrace();
-            setLastLoginMessage("Lỗi hệ thống khi đăng nhập.");
+            setLastLoginMessage("Lỗi đăng nhập: " + e.getMessage());
         }
 
         return null;
+    }
+
+    public TaiKhoan dangNhap(String tenDangNhap, String matKhau, String vaiTro) {
+        return dangNhap(tenDangNhap, matKhau);
     }
 
     public void capNhatLanDangNhapCuoi(int maTaiKhoan) {

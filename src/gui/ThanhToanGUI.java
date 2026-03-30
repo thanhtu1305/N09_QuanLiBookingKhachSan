@@ -200,7 +200,6 @@ public class ThanhToanGUI extends JFrame {
         card.add(createPrimaryButton("In hóa đơn", new Color(37, 99, 235), Color.WHITE, e -> openInvoicePreviewDialog()));
         card.add(createPrimaryButton("Áp giảm giá", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDiscountDialog()));
         card.add(createPrimaryButton("Hoàn cọc", new Color(220, 38, 38), Color.WHITE, e -> openDepositRefundDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadData(true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -257,7 +256,7 @@ public class ThanhToanGUI extends JFrame {
     private JPanel buildFooter() {
         return ScreenUIHelper.createShortcutBar(
                 CARD_BG, BORDER_SOFT, TEXT_MUTED,
-                "F1 Thanh toán", "F2 In hóa đơn", "F3 Áp giảm giá", "F4 Hoàn cọc", "F5 Làm mới", "Enter Xem chi tiết"
+                "F1 Thanh toán", "F2 In hóa đơn", "F3 Áp giảm giá", "F4 Hoàn cọc", "Enter Xem chi tiết"
         );
     }
 
@@ -642,6 +641,10 @@ public class ThanhToanGUI extends JFrame {
     private void openPaymentDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
+            if ("Đã thanh toán".equalsIgnoreCase(invoice.getTrangThai()) || invoice.getConPhaiThu() <= 0.1d) {
+                showWarning("Hóa đơn này đã thanh toán. Bạn chỉ có thể in hóa đơn.");
+                return;
+            }
             new PaymentDialog(this, invoice).setVisible(true);
         }
     }
@@ -703,7 +706,6 @@ public class ThanhToanGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "thanhtoan-f2", this::openInvoicePreviewDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "thanhtoan-f3", this::openDiscountDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "thanhtoan-f4", this::openDepositRefundDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "thanhtoan-f5", () -> reloadData(true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "thanhtoan-enter", this::openInvoiceDetailDialog);
     }
 
@@ -874,7 +876,8 @@ public class ThanhToanGUI extends JFrame {
             txtTienThua.setEditable(false);
             cboPhuongThucDialog = createComboBox(new String[]{"Tiền mặt", "Thẻ", "Chuyển khoản", "Kết hợp"});
             txtSoThamChieu = createInputField("");
-            txtNguoiThu = createInputField(username);
+            txtNguoiThu = createInputField(findEmployeeName());
+            txtNguoiThu.setEditable(false);
             txtGhiChuDialog = createDialogTextArea(3);
 
             txtKhachDua.getDocument().addDocumentListener(new DocumentListener() {
@@ -888,9 +891,8 @@ public class ThanhToanGUI extends JFrame {
             addFormRow(form, gbc, 0, "Khách đưa", txtKhachDua);
             addFormRow(form, gbc, 1, "Tiền thừa", txtTienThua);
             addFormRow(form, gbc, 2, "Phương thức", cboPhuongThucDialog);
-            addFormRow(form, gbc, 3, "Số tham chiếu", txtSoThamChieu);
-            addFormRow(form, gbc, 4, "Người thu", txtNguoiThu);
-            addFormRow(form, gbc, 5, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 3, "Người thu", txtNguoiThu);
+            addFormRow(form, gbc, 4, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             card.add(form, BorderLayout.CENTER);
             return card;
@@ -910,21 +912,22 @@ public class ThanhToanGUI extends JFrame {
         private void updatePaymentFields() {
             String method = valueOf(cboPhuongThucDialog.getSelectedItem());
             boolean cash = "Tiền mặt".equals(method);
-            boolean needRef = "Thẻ".equals(method) || "Chuyển khoản".equals(method);
             txtKhachDua.setEditable(cash);
             if (!cash) {
                 txtKhachDua.setText(ThanhToan.formatMoney(invoice.getConPhaiThu()));
             }
-            txtSoThamChieu.setEditable(needRef);
-            if (!needRef) {
-                txtSoThamChieu.setText("");
-            }
+            txtSoThamChieu.setText("");
+            txtSoThamChieu.setEditable(false);
             updateTienThua();
         }
 
         private void submit(boolean printAfter) {
-            if ("Đã thanh toán".equalsIgnoreCase(invoice.getTrangThai()) || invoice.getConPhaiThu() <= 0.1d) {
+            if ("Đã thanh toán".equalsIgnoreCase(invoice.getTrangThai())) {
                 showError("Hóa đơn này đã thanh toán xong.");
+                return;
+            }
+            if ("Đã hoàn cọc".equalsIgnoreCase(invoice.getTrangThai())) {
+                showError("Hóa đơn này đã hoàn cọc.");
                 return;
             }
             if (txtNguoiThu.getText().trim().isEmpty()) {
@@ -933,6 +936,28 @@ public class ThanhToanGUI extends JFrame {
             }
 
             String method = valueOf(cboPhuongThucDialog.getSelectedItem());
+            if (invoice.getConPhaiThu() <= 0.1d) {
+                if (!showConfirmDialog("Xác nhận hoàn tất hóa đơn",
+                        "Hóa đơn hiện không còn số tiền phải thu. Hệ thống sẽ chuyển trạng thái sang Đã thanh toán.",
+                        "Đồng ý", new Color(22, 163, 74))) {
+                    return;
+                }
+                int maNhanVien = findEmployeeId();
+                boolean ok = thanhToanDAO.markInvoiceAsPaid(invoice.getMaHoaDon(), maNhanVien, txtGhiChuDialog.getText().trim());
+                if (!ok) {
+                    showError("Không thể cập nhật trạng thái hóa đơn: " + safeValue(thanhToanDAO.getLastErrorMessage(), "Không xác định."));
+                    return;
+                }
+                refreshInvoiceViews(invoice, printAfter ? "Hóa đơn đã hoàn tất và sẵn sàng in." : "Hóa đơn đã hoàn tất.");
+                if (printAfter) {
+                    ThanhToan refreshed = thanhToanDAO.findById(invoice.getMaHoaDon());
+                    if (refreshed != null) {
+                        new InvoicePreviewDialog(ThanhToanGUI.this, refreshed).setVisible(true);
+                    }
+                }
+                dispose();
+                return;
+            }
             if ("Kết hợp".equals(method)) {
                 new SplitPaymentDialog(ThanhToanGUI.this, invoice, txtNguoiThu.getText().trim(), txtGhiChuDialog.getText().trim(), printAfter).setVisible(true);
                 dispose();
@@ -948,11 +973,6 @@ public class ThanhToanGUI extends JFrame {
                 showError("Nếu phương thức là Tiền mặt thì Khách đưa phải >= Còn phải thu.");
                 return;
             }
-            if (("Thẻ".equals(method) || "Chuyển khoản".equals(method)) && txtSoThamChieu.getText().trim().isEmpty()) {
-                showError("Vui lòng nhập số tham chiếu.");
-                return;
-            }
-
             if (!showConfirmDialog("Xác nhận thanh toán",
                     "Hệ thống sẽ ghi giao dịch vào bảng ThanhToan và cập nhật trạng thái hóa đơn.",
                     "Đồng ý", new Color(22, 163, 74))) {
@@ -962,7 +982,7 @@ public class ThanhToanGUI extends JFrame {
             PaymentPart part = new PaymentPart();
             part.setPhuongThuc(method);
             part.setSoTien(invoice.getConPhaiThu());
-            part.setSoThamChieu(txtSoThamChieu.getText().trim());
+            part.setSoThamChieu("");
 
             int maNhanVien = findEmployeeId();
             boolean ok = thanhToanDAO.recordPayment(invoice.getMaHoaDon(), maNhanVien, java.util.Collections.singletonList(part), txtGhiChuDialog.getText().trim());
@@ -1018,6 +1038,7 @@ public class ThanhToanGUI extends JFrame {
             txtRefThe = createInputField("");
             txtRefChuyenKhoan = createInputField("");
             txtNguoiThu = createInputField(nguoiThu);
+            txtNguoiThu.setEditable(false);
             txtGhiChuMix = createDialogTextArea(3);
             txtGhiChuMix.setText(ghiChu);
 
@@ -1315,11 +1336,12 @@ public class ThanhToanGUI extends JFrame {
             addFormRow(form, gbc, 0, "Mã hóa đơn", createValueLabel("HD" + invoice.getMaHoaDon()));
             addFormRow(form, gbc, 1, "Hồ sơ lưu trú", createValueLabel(safeValue(invoice.getMaHoSo(), "-")));
             addFormRow(form, gbc, 2, "Khách / Phòng", createValueLabel(safeValue(invoice.getKhachHang(), "-") + " / " + safeValue(invoice.getSoPhong(), "-")));
-            addFormRow(form, gbc, 3, "Ngày lập", createValueLabel(formatDateTime(invoice.getNgayLap())));
+            addFormRow(form, gbc, 3, "Ngày giờ lập", createValueLabel(formatDateTime(invoice.getNgayLap())));
             addFormRow(form, gbc, 4, "Ngày thanh toán", createValueLabel(formatDateTime(invoice.getNgayThanhToan())));
-            addFormRow(form, gbc, 5, "Phương thức", createValueLabel(isBlank(invoice.getPhuongThuc()) ? "-" : invoice.getPhuongThuc()));
+            addFormRow(form, gbc, 5, "Nhân viên thu", createValueLabel(isBlank(invoice.getNguoiThu()) ? "-" : invoice.getNguoiThu()));
+            addFormRow(form, gbc, 6, "Phương thức", createValueLabel(isBlank(invoice.getPhuongThuc()) ? "-" : invoice.getPhuongThuc()));
             if (!isBlank(invoice.getThongTinThanhToanKetHop())) {
-                addFormRow(form, gbc, 6, "Chi tiết kết hợp", new JScrollPane(createReadonlyArea(invoice.getThongTinThanhToanKetHop())));
+                addFormRow(form, gbc, 7, "Chi tiết kết hợp", new JScrollPane(createReadonlyArea(invoice.getThongTinThanhToanKetHop())));
             }
 
             JPanel card = createDialogCardPanel();
@@ -1428,6 +1450,26 @@ public class ThanhToanGUI extends JFrame {
         area.setBackground(PANEL_SOFT);
         area.setText(text);
         return area;
+    }
+
+    private String findEmployeeName() {
+        try {
+            java.sql.Connection con = db.ConnectDB.getConnection();
+            if (con == null) {
+                return username;
+            }
+            try (java.sql.PreparedStatement ps = con.prepareStatement(
+                    "SELECT TOP 1 nv.hoTen FROM TaiKhoan tk JOIN NhanVien nv ON tk.maNhanVien = nv.maNhanVien WHERE tk.tenDangNhap = ?")) {
+                ps.setString(1, username);
+                try (java.sql.ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return safeValue(rs.getString(1), username);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return username;
     }
 
     private int findEmployeeId() {

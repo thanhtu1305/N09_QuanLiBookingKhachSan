@@ -6,6 +6,7 @@ import gui.common.AppDatePickerField;
 import gui.common.AppTimePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
+import utils.NavigationUtil;
 import utils.NavigationUtil.ScreenKey;
 
 import javax.swing.BorderFactory;
@@ -445,7 +446,7 @@ public class CheckInOutGUI extends JFrame {
     private JPanel buildLegendPanel() {
         JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         legend.setOpaque(false);
-        legend.add(createLegendItem("Trống", resolveStatusColor("T")));
+        legend.add(createLegendItem("Hoạt động", resolveStatusColor("T")));
         legend.add(createLegendItem("Đã đặt", resolveStatusColor("D")));
         legend.add(createLegendItem("Đang ở", resolveStatusColor("O")));
         legend.add(createLegendItem("Dọn dẹp", resolveStatusColor("C")));
@@ -629,12 +630,12 @@ public class CheckInOutGUI extends JFrame {
                 record.khachHang = safeValue(rs.getString("hoTen"), "-");
                 record.soPhong = safeValue(rs.getString("soPhong"), "Chưa gán");
                 record.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), "-");
-                record.trangThaiPhong = record.maPhongId > 0 ? "Đã đặt" : "Trống";
+                record.trangThaiPhong = record.maPhongId > 0 ? "Đã đặt" : "Hoạt động";
                 record.tienCoc = formatMoney(rs.getDouble("tienCoc"));
                 record.dichVuPhatSinh = "0";
                 record.ghiChu = record.maPhongId > 0
                         ? "Phòng đã được đặt từ màn Đặt phòng. Check-in sẽ dùng đúng phòng này."
-                        : "Chưa gán phòng ở màn Đặt phòng, cần chọn phòng trống để check-in.";
+                        : "Chưa gán phòng ở màn Đặt phòng, cần chọn phòng đang Hoạt động để check-in.";
                 record.gioVao = rs.getDate("ngayNhanPhong") == null ? "-" : DATE_FORMAT.format(((Date) rs.getDate("ngayNhanPhong")).toLocalDate());
                 record.gioRaDuKien = rs.getDate("ngayTraPhong") == null ? "-" : DATE_FORMAT.format(((Date) rs.getDate("ngayTraPhong")).toLocalDate());
                 record.trangThai = "Chờ check-in";
@@ -915,7 +916,7 @@ public class CheckInOutGUI extends JFrame {
 
     private String resolveStatusCode(String code) {
         if ("T".equals(code)) {
-            return "Trống";
+            return "Hoạt động";
         }
         if ("D".equals(code)) {
             return "Đã đặt";
@@ -930,7 +931,7 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private String toStatusCode(String trangThai) {
-        if ("Trống".equalsIgnoreCase(trangThai)) {
+        if ("Hoạt động".equalsIgnoreCase(trangThai) || "Trống".equalsIgnoreCase(trangThai)) {
             return "T";
         }
         if ("Đã đặt".equalsIgnoreCase(trangThai)) {
@@ -979,7 +980,7 @@ public class CheckInOutGUI extends JFrame {
             return rooms;
         }
         String sql = "SELECT p.maPhong, p.soPhong, p.tang FROM Phong p JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE p.trangThai = N'Trống' AND (? = '' OR lp.tenLoaiPhong = ?) " +
+                "WHERE p.trangThai = N'Hoạt động' AND (? = '' OR lp.tenLoaiPhong = ?) " +
                 "ORDER BY TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             String normalized = roomType == null ? "" : roomType.trim();
@@ -1235,6 +1236,13 @@ public class CheckInOutGUI extends JFrame {
                     ps.executeUpdate();
                 }
 
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE KhachHang SET trangThai = N'Hoạt động' " +
+                                "WHERE maKhachHang = (SELECT TOP 1 maKhachHang FROM DatPhong WHERE maDatPhong = ?)")) {
+                    ps.setInt(1, record.maDatPhong);
+                    ps.executeUpdate();
+                }
+
                 con.commit();
                 PhongGUI.refreshAllOpenInstances();
                 DatPhongGUI.refreshAllOpenInstances();
@@ -1392,7 +1400,7 @@ public class CheckInOutGUI extends JFrame {
                     ps.setInt(2, record.maChiTietDatPhong);
                     ps.executeUpdate();
                 }
-                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Dọn dẹp' WHERE soPhong = ?")) {
+                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Hoạt động' WHERE soPhong = ?")) {
                     ps.setString(1, record.soPhong);
                     ps.executeUpdate();
                 }
@@ -1490,7 +1498,7 @@ public class CheckInOutGUI extends JFrame {
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
-            content.add(buildDialogHeader("CHECK-OUT", "Xác nhận trả phòng, trạng thái phòng sẽ chuyển sang Dọn dẹp."), BorderLayout.NORTH);
+            content.add(buildDialogHeader("CHECK-OUT", "Xác nhận trả phòng, trạng thái phòng sẽ chuyển sang Hoạt động và tự động mở màn Thanh toán."), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
@@ -1533,11 +1541,17 @@ public class CheckInOutGUI extends JFrame {
                     ps.setInt(2, record.maLuuTru);
                     ps.executeUpdate();
                 }
-                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Dọn dẹp' WHERE soPhong = ?")) {
+                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Hoạt động' WHERE soPhong = ?")) {
                     ps.setString(1, record.soPhong);
                     ps.executeUpdate();
                 }
                 try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'Đã check-out' WHERE maDatPhong = ?")) {
+                    ps.setInt(1, record.maDatPhong);
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE KhachHang SET trangThai = N'Ngừng giao dịch' " +
+                                "WHERE maKhachHang = (SELECT TOP 1 maKhachHang FROM DatPhong WHERE maDatPhong = ?)")) {
                     ps.setInt(1, record.maDatPhong);
                     ps.executeUpdate();
                 }
@@ -1546,7 +1560,13 @@ public class CheckInOutGUI extends JFrame {
                 DatPhongGUI.refreshAllOpenInstances();
                 refreshKhachHangViewsSafely();
                 CheckInOutGUI.refreshAllOpenInstances();
-                showInfo("Check-out thành công.");
+                NavigationUtil.navigate(
+                        CheckInOutGUI.this,
+                        ScreenKey.CHECK_IN_OUT,
+                        ScreenKey.THANH_TOAN,
+                        username,
+                        role
+                );
                 dispose();
             } catch (Exception e) {
                 try { con.rollback(); } catch (Exception ignore) {}

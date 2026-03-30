@@ -10,26 +10,23 @@ import utils.NavigationUtil.ScreenKey;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
-import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPasswordField;
-import javax.swing.JRadioButton;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.Font;
 
 public class DangNhapGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -45,8 +42,6 @@ public class DangNhapGUI extends JFrame {
     private JTextField txtUsername;
     private JPasswordField txtPassword;
     private JPanel rootPanel;
-    private JRadioButton rdoLeTan;
-    private JRadioButton rdoQuanLi;
     private JButton btnLogin;
 
     public DangNhapGUI() {
@@ -87,7 +82,7 @@ public class DangNhapGUI extends JFrame {
                 BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
                 new EmptyBorder(26, 30, 26, 30)
         ));
-        card.setPreferredSize(new Dimension(560, 440));
+        card.setPreferredSize(new Dimension(560, 400));
 
         JLabel lblTitle = new JLabel("ĐĂNG NHẬP HỆ THỐNG KHÁCH SẠN", SwingConstants.CENTER);
         lblTitle.setAlignmentX(CENTER_ALIGNMENT);
@@ -151,26 +146,6 @@ public class DangNhapGUI extends JFrame {
         txtPassword = new JPasswordField(20);
         txtPassword.setFont(LABEL_FONT);
 
-        JLabel lblRole = new JLabel("Vai trò:");
-        lblRole.setFont(LABEL_FONT);
-        lblRole.setForeground(TEXT_PRIMARY);
-
-        rdoLeTan = new JRadioButton("Lễ tân", true);
-        rdoQuanLi = new JRadioButton("Quản lí");
-        rdoLeTan.setOpaque(false);
-        rdoQuanLi.setOpaque(false);
-        rdoLeTan.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        rdoQuanLi.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-
-        ButtonGroup roleGroup = new ButtonGroup();
-        roleGroup.add(rdoLeTan);
-        roleGroup.add(rdoQuanLi);
-
-        JPanel rolePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
-        rolePanel.setOpaque(false);
-        rolePanel.add(rdoLeTan);
-        rolePanel.add(rdoQuanLi);
-
         gbc.gridx = 0;
         gbc.gridy = 0;
         form.add(lblUser, gbc);
@@ -190,17 +165,6 @@ public class DangNhapGUI extends JFrame {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
         form.add(txtPassword, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        form.add(lblRole, gbc);
-
-        gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        form.add(rolePanel, gbc);
 
         return form;
     }
@@ -284,16 +248,13 @@ public class DangNhapGUI extends JFrame {
             return;
         }
 
-        String role = rdoLeTan.isSelected() ? "Lễ tân" : "Quản lí";
-
         TaiKhoanDAO taiKhoanDAO = new TaiKhoanDAO();
-        TaiKhoan tk = taiKhoanDAO.dangNhap(username, password, role);
+        TaiKhoan tk = taiKhoanDAO.dangNhap(username, password);
 
         if (tk == null) {
             String message = taiKhoanDAO.getLastLoginMessage();
-
             if (message == null || message.trim().isEmpty()) {
-                message = "Đăng nhập thất bại.";
+                message = "Sai tên đăng nhập hoặc mật khẩu, hoặc tài khoản đã bị khóa.";
             }
 
             JOptionPane.showMessageDialog(
@@ -316,7 +277,6 @@ public class DangNhapGUI extends JFrame {
     private void onClear() {
         txtUsername.setText("");
         txtPassword.setText("");
-        rdoLeTan.setSelected(true);
         txtUsername.requestFocusInWindow();
     }
 

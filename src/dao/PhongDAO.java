@@ -10,7 +10,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class PhongDAO {
     private static final String SELECT_BASE =
@@ -18,6 +20,12 @@ public class PhongDAO {
                     + "p.sucChuaChuan, p.sucChuaToiDa, p.trangThai, lp.tenLoaiPhong "
                     + "FROM Phong p "
                     + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong";
+
+    private static final String ROOM_STATUS_ACTIVE = "Hoạt động";
+    private static final String ROOM_STATUS_INACTIVE = "Không hoạt động";
+    private static final String ROOM_STATUS_MAINTENANCE = "Bảo trì";
+    private static final String ROOM_TYPE_STATUS_ACTIVE = "Đang áp dụng";
+    private static final String ROOM_TYPE_STATUS_INACTIVE = "Ngừng áp dụng";
 
     private String lastErrorMessage = "";
 
@@ -147,6 +155,7 @@ public class PhongDAO {
                         phong.setMaPhong(rs.getInt(1));
                     }
                 }
+                syncLoaiPhongStatusByRooms(con, phong.getMaLoaiPhong());
             }
             return inserted;
         } catch (SQLException e) {
@@ -164,13 +173,21 @@ public class PhongDAO {
             return false;
         }
 
+        Integer oldLoaiPhong = findLoaiPhongIdByRoom(con, phong.getMaPhong());
         String sql = "UPDATE Phong SET maLoaiPhong = ?, soPhong = ?, tang = ?, khuVuc = ?, "
                 + "sucChuaChuan = ?, sucChuaToiDa = ?, trangThai = ? WHERE maPhong = ?";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             fillStatement(stmt, phong);
             stmt.setInt(8, phong.getMaPhong());
-            return stmt.executeUpdate() > 0;
+            boolean updated = stmt.executeUpdate() > 0;
+            if (updated) {
+                syncLoaiPhongStatusByRooms(con, phong.getMaLoaiPhong());
+                if (oldLoaiPhong != null && oldLoaiPhong.intValue() != phong.getMaLoaiPhong()) {
+                    syncLoaiPhongStatusByRooms(con, oldLoaiPhong.intValue());
+                }
+            }
+            return updated;
         } catch (SQLException e) {
             setLastError(e.getMessage());
             e.printStackTrace();
@@ -186,11 +203,16 @@ public class PhongDAO {
             return false;
         }
 
+        Integer maLoaiPhong = findLoaiPhongIdByRoom(con, maPhong);
         String sql = "UPDATE Phong SET trangThai = ? WHERE maPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setString(1, safeTrim(trangThai));
             stmt.setInt(2, maPhong);
-            return stmt.executeUpdate() > 0;
+            boolean updated = stmt.executeUpdate() > 0;
+            if (updated && maLoaiPhong != null) {
+                syncLoaiPhongStatusByRooms(con, maLoaiPhong.intValue());
+            }
+            return updated;
         } catch (SQLException e) {
             setLastError(e.getMessage());
             e.printStackTrace();
@@ -206,12 +228,17 @@ public class PhongDAO {
             return false;
         }
 
+        Integer maLoaiPhong = findLoaiPhongIdByRoom(con, maPhong);
         String sql = "DELETE FROM Phong WHERE maPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maPhong);
-            return stmt.executeUpdate() > 0;
+            boolean deleted = stmt.executeUpdate() > 0;
+            if (deleted && maLoaiPhong != null) {
+                syncLoaiPhongStatusByRooms(con, maLoaiPhong.intValue());
+            }
+            return deleted;
         } catch (SQLException e) {
-            setLastError(e.getMessage());
+            setLastError("Không thể xóa phòng. Phòng này có thể đang được sử dụng hoặc đã phát sinh dữ liệu liên quan.");
             e.printStackTrace();
             return false;
         }
@@ -243,10 +270,6 @@ public class PhongDAO {
         }
     }
 
-    // =========================
-    // PHÒNG CÓ THỂ GÁN
-    // =========================
-
     public List<Phong> findAssignableRooms() {
         return findAssignableRooms(null);
     }
@@ -263,16 +286,17 @@ public class PhongDAO {
         String loaiPhong = safeTrim(maLoaiPhong);
 
         String sql = SELECT_BASE
-                + " WHERE p.trangThai IN (N'Trống', N'Dọn dẹp')"
+                + " WHERE p.trangThai = ?"
                 + " AND (? = '' OR CAST(p.maLoaiPhong AS NVARCHAR(20)) = ? OR lp.tenLoaiPhong = ?)"
                 + " ORDER BY "
                 + "TRY_CAST(REPLACE(REPLACE(p.tang, N'Tầng ', ''), N'Tang ', '') AS INT), "
                 + "TRY_CAST(p.soPhong AS INT), p.soPhong ASC, p.maPhong ASC";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setString(1, loaiPhong);
+            stmt.setString(1, ROOM_STATUS_ACTIVE);
             stmt.setString(2, loaiPhong);
             stmt.setString(3, loaiPhong);
+            stmt.setString(4, loaiPhong);
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -286,7 +310,6 @@ public class PhongDAO {
         return dsPhong;
     }
 
-    // Alias để tương thích với GUI đang gọi sai chính tả
     public List<Phong> findAssiDgnableRooms() {
         return findAssignableRooms();
     }
@@ -295,32 +318,14 @@ public class PhongDAO {
         return findAssignableRooms(maLoaiPhong);
     }
 
-    // =========================
-    // GÁN LOẠI PHÒNG
-    // =========================
-
     public boolean updateLoaiPhongForRooms(List<Integer> roomIds, int maLoaiPhong) {
         return assignLoaiPhongForRooms(roomIds, maLoaiPhong);
     }
 
     public boolean assignLoaiPhong(int maPhong, int maLoaiPhong) {
-        clearLastError();
-        Connection con = ConnectDB.getConnection();
-        if (con == null) {
-            setLastError("Không thể kết nối cơ sở dữ liệu.");
-            return false;
-        }
-
-        String sql = "UPDATE Phong SET maLoaiPhong = ? WHERE maPhong = ?";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setInt(1, maLoaiPhong);
-            stmt.setInt(2, maPhong);
-            return stmt.executeUpdate() > 0;
-        } catch (SQLException e) {
-            setLastError(e.getMessage());
-            e.printStackTrace();
-            return false;
-        }
+        List<Integer> ids = new ArrayList<Integer>();
+        ids.add(Integer.valueOf(maPhong));
+        return assignLoaiPhongForRooms(ids, maLoaiPhong);
     }
 
     public boolean assignLoaiPhongForRooms(List<Integer> roomIds, int maLoaiPhong) {
@@ -336,6 +341,7 @@ public class PhongDAO {
             return false;
         }
 
+        Set<Integer> oldLoaiPhongIds = findDistinctLoaiPhongIdsByRooms(con, roomIds);
         String sql = "UPDATE Phong SET maLoaiPhong = ? WHERE maPhong = ?";
         try {
             con.setAutoCommit(false);
@@ -359,6 +365,13 @@ public class PhongDAO {
                 }
 
                 stmt.executeBatch();
+            }
+
+            syncLoaiPhongStatusByRooms(con, maLoaiPhong);
+            for (Integer oldId : oldLoaiPhongIds) {
+                if (oldId != null && oldId.intValue() != maLoaiPhong) {
+                    syncLoaiPhongStatusByRooms(con, oldId.intValue());
+                }
             }
 
             con.commit();
@@ -405,6 +418,65 @@ public class PhongDAO {
                 rs.getString("trangThai"),
                 rs.getString("tenLoaiPhong")
         );
+    }
+
+    private Integer findLoaiPhongIdByRoom(Connection con, int maPhong) {
+        String sql = "SELECT maLoaiPhong FROM Phong WHERE maPhong = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Integer.valueOf(rs.getInt(1));
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return null;
+    }
+
+    private Set<Integer> findDistinctLoaiPhongIdsByRooms(Connection con, List<Integer> roomIds) {
+        Set<Integer> ids = new LinkedHashSet<Integer>();
+        for (Integer roomId : roomIds) {
+            if (roomId == null || roomId.intValue() <= 0) {
+                continue;
+            }
+            Integer maLoaiPhong = findLoaiPhongIdByRoom(con, roomId.intValue());
+            if (maLoaiPhong != null && maLoaiPhong.intValue() > 0) {
+                ids.add(maLoaiPhong);
+            }
+        }
+        return ids;
+    }
+
+    private void syncLoaiPhongStatusByRooms(Connection con, int maLoaiPhong) throws SQLException {
+        String countSql = "SELECT COUNT(1) AS tongPhong, "
+                + "SUM(CASE WHEN trangThai NOT IN (?, ?) THEN 1 ELSE 0 END) AS tongHoatDong "
+                + "FROM Phong WHERE maLoaiPhong = ?";
+
+        int tongPhong = 0;
+        int tongHoatDong = 0;
+        try (PreparedStatement stmt = con.prepareStatement(countSql)) {
+            stmt.setString(1, ROOM_STATUS_INACTIVE);
+            stmt.setString(2, ROOM_STATUS_MAINTENANCE);
+            stmt.setInt(3, maLoaiPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    tongPhong = rs.getInt("tongPhong");
+                    tongHoatDong = rs.getInt("tongHoatDong");
+                }
+            }
+        }
+
+        if (tongPhong <= 0) {
+            return;
+        }
+
+        String trangThaiLoaiPhong = tongHoatDong > 0 ? ROOM_TYPE_STATUS_ACTIVE : ROOM_TYPE_STATUS_INACTIVE;
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE LoaiPhong SET trangThai = ? WHERE maLoaiPhong = ?")) {
+            stmt.setString(1, trangThaiLoaiPhong);
+            stmt.setInt(2, maLoaiPhong);
+            stmt.executeUpdate();
+        }
     }
 
     private String safeTrim(String value) {

@@ -172,7 +172,6 @@ public class BangGiaGUI extends JFrame {
         card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openEditSelectedBangGia()));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> updateSelectedStatus()));
         card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedBangGia()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadBangGiaData(true, true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -320,7 +319,7 @@ public class BangGiaGUI extends JFrame {
     private JPanel buildFooter() {
         return ScreenUIHelper.createShortcutBar(
                 CARD_BG, BORDER_SOFT, TEXT_MUTED,
-                "F1 Thêm bảng giá", "F2 Cập nhật", "F3 Ngừng áp dụng", "F4 Xem chi tiết", "F5 Làm mới", "Enter Cập nhật"
+                "F1 Thêm bảng giá", "F2 Cập nhật", "F3 Ngừng áp dụng", "F4 Xem chi tiết", "Enter Cập nhật"
         );
     }
 
@@ -329,7 +328,6 @@ public class BangGiaGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "banggia-f2", this::openEditSelectedBangGia);
         ScreenUIHelper.registerShortcut(this, "F3", "banggia-f3", this::updateSelectedStatus);
         ScreenUIHelper.registerShortcut(this, "F4", "banggia-f4", this::openViewSelectedBangGia);
-        ScreenUIHelper.registerShortcut(this, "F5", "banggia-f5", () -> reloadBangGiaData(true, true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "banggia-enter", this::openEditSelectedBangGia);
     }
 

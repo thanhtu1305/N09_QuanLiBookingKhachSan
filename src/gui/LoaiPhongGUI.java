@@ -181,16 +181,19 @@ public class LoaiPhongGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
 
         JButton btnThemLoaiPhong = createPrimaryButton("Thêm loại phòng", new Color(22, 163, 74), Color.WHITE, e -> openCreateRoomTypeDialog());
-        JButton btnCapNhat = createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateRoomTypeDialog());JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
-        JButton btnLamMoi = createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> loadRoomTypes(true, true));
+        JButton btnCapNhat = createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateRoomTypeDialog());
+        JButton btnNgungApDung = createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomTypeDialog());
+        JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
+        JButton btnXoaLoaiPhong = createPrimaryButton("Xóa loại phòng", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedRoomType());
         JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
 
         btnTienNghiMacDinh.setToolTipText("Thiết lập bộ tiện nghi mặc định áp dụng chung cho mọi phòng thuộc loại này.");
 
         card.add(btnThemLoaiPhong);
         card.add(btnCapNhat);
+        card.add(btnNgungApDung);
         card.add(btnTienNghiMacDinh);
-        card.add(btnLamMoi);
+        card.add(btnXoaLoaiPhong);
         card.add(btnTimKiem);
         return card;
     }
@@ -251,7 +254,7 @@ public class LoaiPhongGUI extends JFrame {
                 "F2 Cập nhật",
                 "F3 Ngừng áp dụng",
                 "F4 Tiện nghi mặc định",
-                "F5 Làm mới",
+                "F5 Xóa loại phòng",
                 "Enter Xem chi tiết"
         );
     }
@@ -767,6 +770,35 @@ public class LoaiPhongGUI extends JFrame {
         }
     }
 
+    private void deleteSelectedRoomType() {
+        RoomTypeRecord type = getSelectedRoomType();
+        if (type == null) {
+            return;
+        }
+        boolean accepted = showConfirmDialog(
+                "Xác nhận xóa loại phòng",
+                "Loại phòng " + type.tenLoaiPhong + " sẽ bị xóa khỏi hệ thống. Bạn có chắc muốn tiếp tục không?",
+                "Xóa loại phòng",
+                new Color(220, 38, 38)
+        );
+        if (!accepted) {
+            return;
+        }
+        if (!loaiPhongDAO.delete(type.maLoaiPhong)) {
+            String err = loaiPhongDAO.getLastErrorMessage();
+            showError("Không thể xóa loại phòng." + (err == null || err.trim().isEmpty() ? "" : " " + err));
+            return;
+        }
+        loadRoomTypes(false, false);
+        if (!filteredTypes.isEmpty()) {
+            tblLoaiPhong.setRowSelectionInterval(0, 0);
+            updateDetailPanel(filteredTypes.get(0));
+        } else {
+            clearDetailPanel();
+        }
+        showSuccess("Xóa loại phòng thành công.");
+    }
+
     private JCheckBox createAmenityCheckBox(String text) {
         JCheckBox checkBox = new JCheckBox(text);
         checkBox.setFont(BODY_FONT);
@@ -780,7 +812,7 @@ public class LoaiPhongGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "loaiphong-f2", this::openUpdateRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "loaiphong-f3", this::openDeactivateRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "loaiphong-f4", this::openDefaultAmenitiesDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "loaiphong-f5", () -> loadRoomTypes(true, true));
+        ScreenUIHelper.registerShortcut(this, "F5", "loaiphong-f5", this::deleteSelectedRoomType);
         ScreenUIHelper.registerShortcut(this, "ENTER", "loaiphong-enter", () -> {
             RoomTypeRecord type = getSelectedRoomType();
             if (type != null) {

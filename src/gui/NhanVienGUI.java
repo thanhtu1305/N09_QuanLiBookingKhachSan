@@ -206,7 +206,6 @@ public class NhanVienGUI extends JFrame {
         card.add(createPrimaryButton("Thêm nhân viên", ACCENT_GREEN, Color.WHITE, e -> openNhanVienDialog(null)));
         card.add(createPrimaryButton("Cập nhật", ACCENT_BLUE, Color.WHITE, e -> openEditSelectedNhanVien()));
         card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedNhanVien()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadNhanVien(true, true)));
         return card;
     }
 
@@ -400,7 +399,7 @@ public class NhanVienGUI extends JFrame {
     private JPanel buildFooter() {
         return ScreenUIHelper.createShortcutBar(
                 CARD_BG, BORDER_SOFT, TEXT_MUTED,
-                "F1 Thêm nhân viên", "F2 Cập nhật", "F3 Xóa", "F4 Xem chi tiết", "F5 Làm mới", "Enter Cập nhật"
+                "F1 Thêm nhân viên", "F2 Cập nhật", "F3 Xóa", "F4 Xem chi tiết", "Enter Cập nhật"
         );
     }
 
@@ -572,7 +571,6 @@ public class NhanVienGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "nhanvien-f2", this::openEditSelectedNhanVien);
         ScreenUIHelper.registerShortcut(this, "F3", "nhanvien-f3", this::deleteSelectedNhanVien);
         ScreenUIHelper.registerShortcut(this, "F4", "nhanvien-f4", this::openViewSelectedNhanVien);
-        ScreenUIHelper.registerShortcut(this, "F5", "nhanvien-f5", () -> reloadNhanVien(true, true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "nhanvien-enter", this::openEditSelectedNhanVien);
     }
 

@@ -186,7 +186,6 @@ public class KhachHangGUI extends JFrame {
         card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateCustomerDialog()));
         card.add(createPrimaryButton("Ngừng giao dịch", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateCustomerDialog()));
         card.add(createPrimaryButton("Xem lịch sử", new Color(99, 102, 241), Color.WHITE, e -> openCustomerHistoryDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -492,6 +491,12 @@ public class KhachHangGUI extends JFrame {
         return label;
     }
 
+    private JLabel createValueLabel(String value) {
+        JLabel label = createValueLabel();
+        label.setText(value == null || value.trim().isEmpty() ? "-" : value.trim());
+        return label;
+    }
+
     private JPanel createCardPanel(BorderLayout layout) {
         JPanel panel = new JPanel(layout);
         panel.setBackground(CARD_BG);
@@ -786,7 +791,6 @@ public class KhachHangGUI extends JFrame {
                 "F2 Cập nhật",
                 "F3 Ngừng giao dịch",
                 "F4 Xem lịch sử",
-                "F5 Làm mới",
                 "Enter Xem chi tiết"
         );
     }
@@ -796,7 +800,6 @@ public class KhachHangGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "khachhang-f2", this::openUpdateCustomerDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "khachhang-f3", this::openDeactivateCustomerDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "khachhang-f4", this::openCustomerHistoryDialog);
-        ScreenUIHelper.registerShortcut(this, "F5", "khachhang-f5", () -> reloadSampleData(true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "khachhang-enter", this::openCustomerDetailDialog);
     }
 

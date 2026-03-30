@@ -452,7 +452,7 @@ public class DatPhongDAO {
         if (roomIds == null || roomIds.isEmpty()) {
             return;
         }
-        String sql = "UPDATE Phong SET trangThai = N'Trống' WHERE maPhong = ? AND trangThai IN (N'Đã đặt', N'Trống')";
+        String sql = "UPDATE Phong SET trangThai = N'Hoạt động' WHERE maPhong = ? AND trangThai IN (N'Đã đặt', N'Hoạt động')";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             for (Integer roomId : roomIds) {
                 stmt.setInt(1, roomId.intValue());
@@ -562,7 +562,7 @@ public class DatPhongDAO {
             return "Đang ở";
         }
         if ("Đã hủy".equalsIgnoreCase(status) || "Hủy booking".equalsIgnoreCase(status)) {
-            return "Trống";
+            return "Hoạt động";
         }
         if ("Đã đặt".equalsIgnoreCase(status) || "Đã xác nhận".equalsIgnoreCase(status) || "Chờ check-in".equalsIgnoreCase(status)) {
             return "Đã đặt";

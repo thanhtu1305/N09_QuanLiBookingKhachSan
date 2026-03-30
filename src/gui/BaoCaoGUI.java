@@ -146,7 +146,6 @@ public class BaoCaoGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Xem báo cáo", new Color(22, 163, 74), Color.WHITE, e -> openReportFilterDialog()));
         card.add(createPrimaryButton("Xuất file", new Color(37, 99, 235), Color.WHITE, e -> openExportReportDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true)));
         return card;
     }
 
@@ -453,8 +452,7 @@ public class BaoCaoGUI extends JFrame {
                 BORDER_SOFT,
                 TEXT_MUTED,
                 "F1 Xem BC",
-                "F2 Xuất file",
-                "F3 Làm mới"
+                "F2 Xuất file"
         );
     }
 

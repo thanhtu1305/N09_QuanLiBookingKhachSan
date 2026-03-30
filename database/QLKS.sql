@@ -137,6 +137,7 @@ CREATE TABLE DatPhong (
     soNguoi INT,
     tienCoc DECIMAL(15,0),
     trangThai NVARCHAR(30),
+    ghiChu NVARCHAR(MAX),
     FOREIGN KEY (maKhachHang) REFERENCES KhachHang(maKhachHang),
     FOREIGN KEY (maNhanVien) REFERENCES NhanVien(maNhanVien),
     FOREIGN KEY (maBangGia) REFERENCES BangGia(maBangGia)
@@ -281,12 +282,12 @@ GO
 
 INSERT INTO Phong (maLoaiPhong, soPhong, tang, khuVuc, sucChuaChuan, sucChuaToiDa, trangThai)
 VALUES
-(1, '101', N'Tầng 1', N'Khu A', 2, 3, N'Trống'),
+(1, '101', N'Tầng 1', N'Khu A', 2, 3, N'Hoạt động'),
 (1, '102', N'Tầng 1', N'Khu A', 2, 3, N'Đã đặt'),
 (2, '201', N'Tầng 2', N'Khu A', 2, 4, N'Đang ở'),
-(2, '202', N'Tầng 2', N'Khu B', 2, 4, N'Trống'),
+(2, '202', N'Tầng 2', N'Khu B', 2, 4, N'Hoạt động'),
 (3, '301', N'Tầng 3', N'Khu VIP', 3, 5, N'Bảo trì'),
-(4, '401', N'Tầng 4', N'Khu Family', 4, 6, N'Trống');
+(4, '401', N'Tầng 4', N'Khu Family', 4, 6, N'Hoạt động');
 GO
 
 INSERT INTO BangGia (tenBangGia, maLoaiPhong, ngayBatDau, ngayKetThuc, loaiNgay, trangThai)
@@ -305,11 +306,11 @@ VALUES
 (4, N'Thường', N'00:00-23:59', 350000, 1200000, 1800000, 2000000, 2200000, 150000);
 GO
 
-INSERT INTO DatPhong (maKhachHang, maNhanVien, maBangGia, ngayDat, ngayNhanPhong, ngayTraPhong, soLuongPhong, soNguoi, tienCoc, trangThai)
+INSERT INTO DatPhong (maKhachHang, maNhanVien, maBangGia, ngayDat, ngayNhanPhong, ngayTraPhong, soLuongPhong, soNguoi, tienCoc, trangThai, ghiChu)
 VALUES
-(1, 1, 1, '2026-03-20', '2026-03-26', '2026-03-27', 1, 2, 200000, N'Đã xác nhận'),
-(2, 1, 2, '2026-03-21', '2026-03-26', '2026-03-28', 1, 2, 300000, N'Đang lưu trú'),
-(3, 2, 3, '2026-03-22', '2026-03-27', '2026-03-29', 1, 3, 500000, N'Chờ check-in');
+(1, 1, 1, '2026-03-20', '2026-03-26', '2026-03-27', 1, 2, 200000, N'Đã xác nhận', N'Khách đặt trước qua lễ tân'),
+(2, 1, 2, '2026-03-21', '2026-03-26', '2026-03-28', 1, 2, 300000, N'Đang lưu trú', N'Khách đã check-in'),
+(3, 2, 3, '2026-03-22', '2026-03-27', '2026-03-29', 1, 3, 500000, N'Chờ check-in', N'Khách sẽ đến buổi chiều');
 GO
 
 INSERT INTO ChiTietDatPhong (maDatPhong, maPhong, soNguoi, giaPhong, thanhTien)
@@ -385,3 +386,7 @@ SET phuongThuc = ISNULL(phuongThuc, N'Tiền mặt'),
     soThamChieu = ISNULL(soThamChieu, N''),
     ghiChu = ISNULL(ghiChu, N''),
     loaiGiaoDich = ISNULL(loaiGiaoDich, N'THANH_TOAN');
+
+IF COL_LENGTH('DatPhong', 'ghiChu') IS NULL ALTER TABLE DatPhong ADD ghiChu NVARCHAR(MAX) NULL;
+UPDATE DatPhong SET ghiChu = ISNULL(ghiChu, N'');
+UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai = N'Trống';

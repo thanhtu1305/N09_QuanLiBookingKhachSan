@@ -400,7 +400,7 @@ public class DichVuGUI extends JFrame {
 
     private class ServiceEditor extends JDialog {
         private ServiceEditor(Frame owner, DichVu editing) {
-            super(owner, editing == null ? "Thêm dịch vụ" : "Cập nhật dịch vụ", true);
+            super(ScreenUIHelper.resolveDialogOwner(owner), editing == null ? "Thêm dịch vụ" : "Cập nhật dịch vụ", true);
             getContentPane().setBackground(APP_BG);
             setLayout(new BorderLayout(0, 12));
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -456,7 +456,7 @@ public class DichVuGUI extends JFrame {
         private final SuDungDichVu[] selected = new SuDungDichVu[1];
 
         private ServiceUsageEditor(Frame owner, DichVu preselected) {
-            super(owner, "Sử dụng dịch vụ", true);
+            super(ScreenUIHelper.resolveDialogOwner(owner), "Sử dụng dịch vụ", true);
             getContentPane().setBackground(APP_BG);
             setLayout(new BorderLayout(0, 12));
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));

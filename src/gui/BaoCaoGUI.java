@@ -642,7 +642,6 @@ public class BaoCaoGUI extends JFrame {
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "baocao-f1", this::openReportFilterDialog);
         ScreenUIHelper.registerShortcut(this, "F2", "baocao-f2", this::openExportReportDialog);
-        ScreenUIHelper.registerShortcut(this, "F3", "baocao-f3", () -> reloadSampleData(true));
     }
 
     private String safeValue(String value, String fallback) {

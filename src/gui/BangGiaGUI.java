@@ -782,7 +782,7 @@ public class BangGiaGUI extends JFrame {
 
     private abstract class BaseDialog extends JDialog {
         protected BaseDialog(Frame owner, String title, int width, int height) {
-            super(owner, title, true);
+            super(ScreenUIHelper.resolveDialogOwner(owner), title, true);
             setDefaultCloseOperation(DISPOSE_ON_CLOSE);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));

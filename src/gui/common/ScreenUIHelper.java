@@ -7,6 +7,7 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.RootPaneContainer;
 import javax.swing.JRootPane;
 import javax.swing.JTable;
 import javax.swing.KeyStroke;
@@ -141,6 +142,20 @@ public final class ScreenUIHelper {
         return candidate instanceof Frame ? (Frame) candidate : null;
     }
 
+    public static Window resolveWindowOwner(Window candidate) {
+        if (candidate instanceof Frame) {
+            return resolveDialogOwner((Component) candidate);
+        }
+        if (candidate != null && candidate.isDisplayable()) {
+            return candidate;
+        }
+        AppFrame appFrame = AppFrame.get();
+        if (appFrame.isDisplayable() || appFrame.isShowing()) {
+            return appFrame;
+        }
+        return candidate;
+    }
+
     public static void registerTableDoubleClick(JTable table, Runnable action) {
         if (table == null || action == null) {
             return;
@@ -165,15 +180,29 @@ public final class ScreenUIHelper {
     }
 
     private static void refreshOwner(Window parent) {
-        if (parent == null) {
-            return;
-        }
-
         SwingUtilities.invokeLater(() -> {
-            if (parent instanceof Container) {
-                ((Container) parent).revalidate();
+            Window target = parent;
+            if (target == null || !target.isDisplayable() || !target.isShowing()) {
+                AppFrame appFrame = AppFrame.get();
+                if (appFrame.isDisplayable() || appFrame.isShowing()) {
+                    target = appFrame;
+                }
             }
-            parent.repaint();
+            if (target == null) {
+                return;
+            }
+            if (target instanceof Container) {
+                ((Container) target).revalidate();
+            }
+            if (target instanceof RootPaneContainer) {
+                ((RootPaneContainer) target).getRootPane().revalidate();
+                ((RootPaneContainer) target).getRootPane().repaint();
+            }
+            if (target instanceof Frame) {
+                ((Frame) target).toFront();
+                ((Frame) target).requestFocus();
+            }
+            target.repaint();
         });
     }
 

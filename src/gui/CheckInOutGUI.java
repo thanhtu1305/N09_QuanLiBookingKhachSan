@@ -191,7 +191,6 @@ public class CheckInOutGUI extends JFrame {
         card.add(createPrimaryButton("Đổi phòng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openChangeRoomDialog()));
         card.add(createPrimaryButton("Gia hạn", new Color(59, 130, 246), Color.WHITE, e -> openExtendDialog()));
         card.add(createPrimaryButton("Check-out", new Color(220, 38, 38), Color.WHITE, e -> openCheckOutDialog()));
-        card.add(createPrimaryButton("Làm mới", new Color(107, 114, 128), Color.WHITE, e -> reloadSampleData(true)));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }

@@ -560,6 +560,7 @@ public class DatPhongGUI extends JFrame {
                 "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang " +
                 "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia " +
                 "LEFT JOIN LoaiPhong lp ON bg.maLoaiPhong = lp.maLoaiPhong " +
+                "WHERE ISNULL(dp.trangThai, N'') NOT IN (N'Đã check-out', N'Đã thanh toán', N'Hoàn tất') " +
                 "ORDER BY dp.maDatPhong DESC";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {

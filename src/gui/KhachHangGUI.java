@@ -574,7 +574,7 @@ public class KhachHangGUI extends JFrame {
         if (con == null) {
             return false;
         }
-        String sql = "SELECT COUNT(1) FROM DatPhong WHERE maKhachHang = ? AND trangThai NOT IN (N'Đã hủy', N'Đã check-out', N'Hoàn tất')";
+        String sql = "SELECT COUNT(1) FROM DatPhong WHERE maKhachHang = ? AND trangThai NOT IN (N'Đã hủy', N'Đã check-out', N'Hoàn tất', N'Đã thanh toán')";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, maKhachHang);
             try (ResultSet rs = ps.executeQuery()) {

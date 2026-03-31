@@ -11,11 +11,15 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import java.awt.Component;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.util.Arrays;
+import java.util.List;
 
 public final class SidebarFactory {
 
@@ -23,6 +27,14 @@ public final class SidebarFactory {
     private static final Color TEXT_MUTED    = new Color(107, 114, 128);
     private static final Color BORDER_SOFT   = new Color(229, 231, 235);
     private static final Color BRAND_PRIMARY = new Color(30, 64, 175);
+    private static final Color SIDEBAR_BG    = new Color(244, 247, 251);
+    private static final Color GROUP_BG      = new Color(235, 240, 246);
+    private static final Color GROUP_HOVER   = new Color(228, 234, 242);
+    private static final Color ITEM_BG       = new Color(255, 255, 255);
+    private static final Color ITEM_HOVER    = new Color(241, 245, 249);
+    private static final Color SUBMENU_BG    = new Color(248, 250, 252);
+    private static final Color ACTIVE_BG     = new Color(219, 234, 254);
+    private static final Color ACTIVE_TEXT   = new Color(29, 78, 216);
     private static final int LOGO_W = 132, LOGO_H = 72;
 
     private SidebarFactory() {}
@@ -33,7 +45,7 @@ public final class SidebarFactory {
     public static JPanel createSidebar(Object owner, ScreenKey currentScreen,
                                        String username, String role) {
         JPanel sidebar = new JPanel(new BorderLayout());
-        sidebar.setBackground(new Color(229, 231, 235));
+        sidebar.setBackground(SIDEBAR_BG);
         sidebar.setPreferredSize(new Dimension(228, 0));
         sidebar.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
@@ -65,39 +77,159 @@ public final class SidebarFactory {
         JPanel menuPanel = new JPanel();
         menuPanel.setOpaque(false);
         menuPanel.setLayout(new BoxLayout(menuPanel, BoxLayout.Y_AXIS));
+        menuPanel.setBorder(new EmptyBorder(4, 2, 4, 2));
 
-        for (ScreenKey item : ScreenKey.values()) {
-            JButton button = createMenuButton(item, currentScreen);
-            // Truyền null làm currentFrame — NavigationUtil dùng AppFrame, không cần frame nữa
-            button.addActionListener(e ->
-                    NavigationUtil.navigate(null, currentScreen, item, username, role));
-            menuPanel.add(button);
-            menuPanel.add(Box.createVerticalStrut(6));
-        }
+        addDirectItem(menuPanel, ScreenKey.DASHBOARD, currentScreen, username, role);
+        addGroup(menuPanel, "Quản lý đặt phòng", currentScreen, username, role,
+                ScreenKey.DAT_PHONG, ScreenKey.CHECK_IN_OUT, ScreenKey.THANH_TOAN);
+        addGroup(menuPanel, "Quản lý phòng", currentScreen, username, role,
+                ScreenKey.PHONG, ScreenKey.LOAI_PHONG, ScreenKey.BANG_GIA, ScreenKey.TIEN_NGHI, ScreenKey.DICH_VU);
+        addGroup(menuPanel, "Quản lý khách hàng", currentScreen, username, role,
+                ScreenKey.KHACH_HANG);
+        addGroup(menuPanel, "Quản lý nhân sự", currentScreen, username, role,
+                ScreenKey.NHAN_VIEN, ScreenKey.TAI_KHOAN);
+        addGroup(menuPanel, "Báo cáo thống kê", currentScreen, username, role,
+                ScreenKey.BAO_CAO);
 
         sidebar.add(brand, BorderLayout.NORTH);
         sidebar.add(menuPanel, BorderLayout.CENTER);
         return sidebar;
     }
 
+    private static void addDirectItem(JPanel menuPanel, ScreenKey item, ScreenKey currentScreen,
+                                      String username, String role) {
+        JButton button = createMenuButton(item, currentScreen);
+        button.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
+        menuPanel.add(button);
+        menuPanel.add(Box.createVerticalStrut(6));
+    }
+
+    private static void addGroup(JPanel menuPanel, String title, ScreenKey currentScreen,
+                                 String username, String role, ScreenKey... items) {
+        List<ScreenKey> groupItems = Arrays.asList(items);
+        boolean expanded = groupItems.contains(currentScreen);
+
+        JButton header = createGroupHeader(title, expanded, groupItems.contains(currentScreen));
+        JPanel children = new JPanel();
+        children.setOpaque(true);
+        children.setBackground(SUBMENU_BG);
+        children.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(236, 240, 245), 1, true),
+                new EmptyBorder(6, 6, 6, 6)
+        ));
+        children.setLayout(new BoxLayout(children, BoxLayout.Y_AXIS));
+        children.setVisible(expanded);
+
+        for (ScreenKey item : groupItems) {
+            JButton child = createSubMenuButton(item, currentScreen);
+            child.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
+            children.add(child);
+            children.add(Box.createVerticalStrut(4));
+        }
+
+        header.addActionListener(e -> {
+            boolean visible = !children.isVisible();
+            children.setVisible(visible);
+            header.setText((visible ? "▾ " : "▸ ") + title);
+            children.revalidate();
+            children.repaint();
+        });
+
+        menuPanel.add(header);
+        menuPanel.add(Box.createVerticalStrut(4));
+        menuPanel.add(children);
+        menuPanel.add(Box.createVerticalStrut(10));
+    }
+
+    private static JButton createGroupHeader(String title, boolean expanded, boolean activeGroup) {
+        JButton button = new JButton((expanded ? "▾ " : "▸ ") + title);
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(activeGroup ? ACTIVE_BG : GROUP_BG, 1, true),
+                new EmptyBorder(10, 12, 10, 12)
+        ));
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setBorderPainted(true);
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        if (activeGroup) {
+            button.setBackground(ACTIVE_BG);
+            button.setForeground(ACTIVE_TEXT);
+        } else {
+            button.setBackground(GROUP_BG);
+            button.setForeground(TEXT_PRIMARY);
+        }
+        installHover(button, activeGroup ? ACTIVE_BG : GROUP_BG, activeGroup ? ACTIVE_BG : GROUP_HOVER);
+        return button;
+    }
+
     private static JButton createMenuButton(ScreenKey item, ScreenKey currentScreen) {
         JButton button = new JButton(item.getLabel());
         button.setHorizontalAlignment(SwingConstants.LEFT);
         button.setFocusPainted(false);
-        button.setBorder(new EmptyBorder(10, 12, 10, 12));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(item == currentScreen ? ACTIVE_BG : ITEM_BG, 1, true),
+                new EmptyBorder(10, 12, 10, 12)
+        ));
         button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         button.setOpaque(true);
         button.setContentAreaFilled(true);
         button.setBorderPainted(true);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         if (item == currentScreen) {
-            button.setBackground(new Color(219, 234, 254));
-            button.setForeground(new Color(29, 78, 216));
+            button.setBackground(ACTIVE_BG);
+            button.setForeground(ACTIVE_TEXT);
             button.setFont(new Font("Segoe UI", Font.BOLD, 14));
         } else {
-            button.setBackground(new Color(229, 231, 235));
+            button.setBackground(ITEM_BG);
             button.setForeground(TEXT_PRIMARY);
         }
+        installHover(button, item == currentScreen ? ACTIVE_BG : ITEM_BG, item == currentScreen ? ACTIVE_BG : ITEM_HOVER);
         return button;
+    }
+
+    private static JButton createSubMenuButton(ScreenKey item, ScreenKey currentScreen) {
+        JButton button = new JButton("   " + item.getLabel());
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(item == currentScreen ? ACTIVE_BG : SUBMENU_BG, 1, true),
+                new EmptyBorder(8, 18, 8, 12)
+        ));
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setBorderPainted(true);
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        if (item == currentScreen) {
+            button.setBackground(ACTIVE_BG);
+            button.setForeground(ACTIVE_TEXT);
+            button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        } else {
+            button.setBackground(SUBMENU_BG);
+            button.setForeground(TEXT_PRIMARY);
+        }
+        installHover(button, item == currentScreen ? ACTIVE_BG : SUBMENU_BG, item == currentScreen ? ACTIVE_BG : ITEM_HOVER);
+        return button;
+    }
+
+    private static void installHover(JButton button, Color normalBg, Color hoverBg) {
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                button.setBackground(hoverBg);
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                button.setBackground(normalBg);
+            }
+        });
     }
 }

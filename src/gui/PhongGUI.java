@@ -63,6 +63,7 @@ public class PhongGUI extends JFrame {
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final String[] FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
+    private static final String[] CREATE_ROOM_FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4"};
     private static final String[] ROOM_STATUS_OPTIONS = {"Hoạt động", "Không hoạt động", "Bảo trì"};
     private static final String[] ZONES = {"Khu A", "Khu B", "Khu C", "Khu VIP"};
     private static final java.util.List<PhongGUI> OPEN_INSTANCES = new java.util.ArrayList<PhongGUI>();
@@ -1254,10 +1255,96 @@ public class PhongGUI extends JFrame {
         return phong;
     }
 
+    private Phong validatePhongInput(Integer maPhong, JTextField txtSoPhong, JComboBox<String> cboLoaiPhongInput,
+                                     JComboBox<String> cboTangInput, JTextField txtKhuVuc,
+                                     JTextField txtSucChuaChuan, JTextField txtSucChuaToiDa,
+                                     JComboBox<String> cboTrangThaiInput) {
+        String soPhong = txtSoPhong.getText().trim();
+        String tenLoaiPhong = valueOf(cboLoaiPhongInput.getSelectedItem());
+        String tang = valueOf(cboTangInput.getSelectedItem()).trim();
+        String khuVuc = txtKhuVuc.getText().trim();
+        String sucChuaChuanText = txtSucChuaChuan.getText().trim();
+        String sucChuaToiDaText = txtSucChuaToiDa.getText().trim();
+        String trangThai = valueOf(cboTrangThaiInput.getSelectedItem());
+
+        if (soPhong.isEmpty()) {
+            showValidationMessage("Số phòng không được để trống.");
+            txtSoPhong.requestFocusInWindow();
+            return null;
+        }
+        if (phongDAO.isSoPhongExists(soPhong, maPhong)) {
+            showValidationMessage("Số phòng đã tồn tại.");
+            txtSoPhong.requestFocusInWindow();
+            return null;
+        }
+
+        LoaiPhong loaiPhong = findLoaiPhongByTen(tenLoaiPhong);
+        if (loaiPhong == null || loaiPhong.getMaLoaiPhong() <= 0) {
+            showValidationMessage("Loại phòng không hợp lệ.");
+            cboLoaiPhongInput.requestFocusInWindow();
+            return null;
+        }
+        if (tang.isEmpty()) {
+            showValidationMessage("Vui lòng chọn tầng.");
+            cboTangInput.requestFocusInWindow();
+            return null;
+        }
+        if (khuVuc.isEmpty()) {
+            showValidationMessage("Khu vực không được để trống.");
+            txtKhuVuc.requestFocusInWindow();
+            return null;
+        }
+
+        int sucChuaChuan;
+        int sucChuaToiDa;
+        try {
+            sucChuaChuan = Integer.parseInt(sucChuaChuanText);
+        } catch (NumberFormatException ex) {
+            showValidationMessage("Sức chứa chuẩn phải là số nguyên lớn hơn 0.");
+            txtSucChuaChuan.requestFocusInWindow();
+            return null;
+        }
+        try {
+            sucChuaToiDa = Integer.parseInt(sucChuaToiDaText);
+        } catch (NumberFormatException ex) {
+            showValidationMessage("Sức chứa tối đa phải là số nguyên hợp lệ.");
+            txtSucChuaToiDa.requestFocusInWindow();
+            return null;
+        }
+
+        if (sucChuaChuan <= 0) {
+            showValidationMessage("Sức chứa chuẩn phải lớn hơn 0.");
+            txtSucChuaChuan.requestFocusInWindow();
+            return null;
+        }
+        if (sucChuaToiDa < sucChuaChuan) {
+            showValidationMessage("Sức chứa tối đa phải lớn hơn hoặc bằng sức chứa chuẩn.");
+            txtSucChuaToiDa.requestFocusInWindow();
+            return null;
+        }
+        if (trangThai.isEmpty()) {
+            showValidationMessage("Trạng thái không được để trống.");
+            cboTrangThaiInput.requestFocusInWindow();
+            return null;
+        }
+
+        Phong phong = new Phong();
+        phong.setMaPhong(maPhong == null ? 0 : maPhong.intValue());
+        phong.setMaLoaiPhong(loaiPhong.getMaLoaiPhong());
+        phong.setTenLoaiPhong(loaiPhong.getTenLoaiPhong());
+        phong.setSoPhong(soPhong);
+        phong.setTang(tang);
+        phong.setKhuVuc(khuVuc);
+        phong.setSucChuaChuan(sucChuaChuan);
+        phong.setSucChuaToiDa(sucChuaToiDa);
+        phong.setTrangThai(trangThai);
+        return phong;
+    }
+
     private final class CreateRoomDialog extends BaseRoomDialog {
         private final JTextField txtSoPhongDialog;
         private final JComboBox<String> cboLoaiPhongDialog;
-        private final JTextField txtTangDialog;
+        private final JComboBox<String> cboTangDialog;
         private final JTextField txtSucChuaChuanDialog;
         private final JTextField txtSucChuaToiDaDialog;
         private final JComboBox<String> cboTrangThaiDialog;
@@ -1278,7 +1365,7 @@ public class PhongGUI extends JFrame {
 
             txtSoPhongDialog = createInputField("");
             cboLoaiPhongDialog = createLoaiPhongDialogComboBox();
-            txtTangDialog = createInputField("");
+            cboTangDialog = createComboBox(CREATE_ROOM_FLOORS);
             txtSucChuaChuanDialog = createInputField("");
             txtSucChuaToiDaDialog = createInputField("");
             cboTrangThaiDialog = createComboBox(ROOM_STATUS_OPTIONS);
@@ -1286,7 +1373,7 @@ public class PhongGUI extends JFrame {
 
             addFormRow(form, gbc, 0, "Số phòng", txtSoPhongDialog);
             addFormRow(form, gbc, 1, "Loại phòng", cboLoaiPhongDialog);
-            addFormRow(form, gbc, 2, "Tầng", txtTangDialog);
+            addFormRow(form, gbc, 2, "Tầng", cboTangDialog);
             addFormRow(form, gbc, 3, "Sức chứa chuẩn", txtSucChuaChuanDialog);
             addFormRow(form, gbc, 4, "Sức chứa tối đa", txtSucChuaToiDaDialog);
             addFormRow(form, gbc, 5, "Trạng thái đầu", cboTrangThaiDialog);
@@ -1307,7 +1394,7 @@ public class PhongGUI extends JFrame {
                     null,
                     txtSoPhongDialog,
                     cboLoaiPhongDialog,
-                    txtTangDialog,
+                    cboTangDialog,
                     txtKhuVucDialog,
                     txtSucChuaChuanDialog,
                     txtSucChuaToiDaDialog,
@@ -1336,7 +1423,7 @@ public class PhongGUI extends JFrame {
             if (cboLoaiPhongDialog.getItemCount() > 0) {
                 cboLoaiPhongDialog.setSelectedIndex(0);
             }
-            txtTangDialog.setText("");
+            cboTangDialog.setSelectedIndex(0);
             txtSucChuaChuanDialog.setText("");
             txtSucChuaToiDaDialog.setText("");
             cboTrangThaiDialog.setSelectedIndex(0);

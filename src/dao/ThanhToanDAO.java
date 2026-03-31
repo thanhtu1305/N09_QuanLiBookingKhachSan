@@ -593,6 +593,7 @@ public class ThanhToanDAO {
             ps.executeUpdate();
         }
         if ("Đã thanh toán".equalsIgnoreCase(status)) {
+            syncBookingAndRoomsAfterPayment(con, maHoaDon);
             syncCustomerAfterInvoicePaid(con, maHoaDon);
         }
     }
@@ -721,6 +722,7 @@ public class ThanhToanDAO {
                 ps.setInt(3, invoiceId.intValue());
                 boolean ok = ps.executeUpdate() > 0;
                 if (ok) {
+                    syncBookingAndRoomsAfterPayment(con, invoiceId.intValue());
                     syncCustomerAfterInvoicePaid(con, invoiceId.intValue());
                 }
                 return ok;
@@ -863,6 +865,49 @@ public class ThanhToanDAO {
                         }
                     }
                 }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void syncBookingAndRoomsAfterPayment(Connection con, int maHoaDon) {
+        try {
+            int maDatPhong = 0;
+            try (PreparedStatement ps = con.prepareStatement("SELECT ISNULL(maDatPhong, 0) AS maDatPhong FROM HoaDon WHERE maHoaDon = ?")) {
+                ps.setInt(1, maHoaDon);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        maDatPhong = rs.getInt("maDatPhong");
+                    }
+                }
+            }
+            if (maDatPhong <= 0) {
+                return;
+            }
+
+            boolean allPaid = true;
+            try (PreparedStatement ps = con.prepareStatement(
+                    "SELECT COUNT(*) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'Chờ thanh toán') <> N'Đã thanh toán'")) {
+                ps.setInt(1, maDatPhong);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        allPaid = rs.getInt(1) == 0;
+                    }
+                }
+            }
+            if (!allPaid) {
+                return;
+            }
+
+            try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'Đã thanh toán' WHERE maDatPhong = ?")) {
+                ps.setInt(1, maDatPhong);
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE Phong SET trangThai = N'Hoạt động' " +
+                            "WHERE maPhong IN (SELECT DISTINCT maPhong FROM LuuTru WHERE maDatPhong = ? AND maPhong IS NOT NULL)")) {
+                ps.setInt(1, maDatPhong);
+                ps.executeUpdate();
             }
         } catch (Exception ignored) {
         }

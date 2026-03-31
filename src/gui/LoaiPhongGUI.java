@@ -1034,7 +1034,7 @@ public class LoaiPhongGUI extends JFrame {
             content.add(card, BorderLayout.CENTER);
 
             JButton btnSave = createPrimaryButton("Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit(false));
-            JButton btnSaveNew = createOutlineButton("Lưu và tạo mới", new Color(37, 99, 235), e -> submit(true));
+            JButton btnSaveNew = createOutlineButton("Lưu và tiếp tục", new Color(37, 99, 235), e -> submit(true));
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnSaveNew, btnSave), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);

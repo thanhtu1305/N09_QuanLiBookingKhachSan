@@ -7,6 +7,7 @@ import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.RootPaneContainer;
 import javax.swing.JRootPane;
 import javax.swing.JTable;
@@ -21,12 +22,18 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsEnvironment;
+import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.awt.BorderLayout;
 
 public final class ScreenUIHelper {
     private static final String DIALOG_PREPARED_KEY = "dialogPrepared";
@@ -104,21 +111,34 @@ public final class ScreenUIHelper {
         int safeMinWidth = Math.max(minWidth, 320);
         int safeMinHeight = Math.max(minHeight, 180);
 
+        ensureScrollableDialogContent(dialog);
         dialog.getContentPane().revalidate();
         dialog.getContentPane().repaint();
         dialog.pack();
 
+        Rectangle usableBounds = getUsableBounds(dialog, parent);
         Dimension packedSize = dialog.getSize();
-        int targetWidth = Math.max(packedSize.width, safeMinWidth);
-        int targetHeight = Math.max(packedSize.height, safeMinHeight);
+        int maxWidth = Math.max(320, (int) Math.floor(usableBounds.width * 0.90d));
+        int maxHeight = Math.max(220, (int) Math.floor(usableBounds.height * 0.85d));
+        int targetWidth = Math.min(maxWidth, Math.max(packedSize.width, safeMinWidth));
+        int targetHeight = Math.min(maxHeight, Math.max(packedSize.height, safeMinHeight));
 
-        dialog.setMinimumSize(new Dimension(safeMinWidth, safeMinHeight));
-        if (packedSize.width != targetWidth || packedSize.height != targetHeight) {
-            dialog.setSize(targetWidth, targetHeight);
-        }
-        dialog.setLocationRelativeTo(parent);
+        dialog.setMinimumSize(new Dimension(Math.min(safeMinWidth, maxWidth), Math.min(safeMinHeight, maxHeight)));
+        dialog.setSize(targetWidth, targetHeight);
+        positionWindow(dialog, usableBounds, parent);
         dialog.getContentPane().revalidate();
         dialog.getContentPane().repaint();
+    }
+
+    public static void prepareFrame(Window window, int preferredWidth, int preferredHeight) {
+        if (window == null) {
+            return;
+        }
+        Rectangle usableBounds = getUsableBounds(window, null);
+        int width = Math.min(Math.max(preferredWidth, 800), usableBounds.width);
+        int height = Math.min(Math.max(preferredHeight, 600), usableBounds.height);
+        window.setSize(width, height);
+        positionWindow(window, usableBounds, null);
     }
 
     public static Frame resolveDialogOwner(Component candidate) {
@@ -204,6 +224,95 @@ public final class ScreenUIHelper {
             }
             target.repaint();
         });
+    }
+
+    private static void ensureScrollableDialogContent(JDialog dialog) {
+        if (dialog == null || !(dialog.getContentPane() instanceof Container)) {
+            return;
+        }
+        ensureScrollableCenter((Container) dialog.getContentPane());
+    }
+
+    private static void ensureScrollableCenter(Container container) {
+        if (container == null || !(container.getLayout() instanceof BorderLayout)) {
+            return;
+        }
+
+        BorderLayout layout = (BorderLayout) container.getLayout();
+        Component south = layout.getLayoutComponent(container, BorderLayout.SOUTH);
+        Component center = layout.getLayoutComponent(container, BorderLayout.CENTER);
+        if (center == null) {
+            return;
+        }
+
+        if (south != null) {
+            wrapCenterComponent(container, center);
+            return;
+        }
+
+        if (center instanceof Container) {
+            ensureScrollableCenter((Container) center);
+        }
+    }
+
+    private static void wrapCenterComponent(Container parent, Component center) {
+        if (center instanceof JScrollPane) {
+            return;
+        }
+
+        BorderLayout layout = (BorderLayout) parent.getLayout();
+        parent.remove(center);
+
+        JScrollPane scrollPane = new JScrollPane(center);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.setOpaque(false);
+
+        parent.add(scrollPane, BorderLayout.CENTER);
+        parent.revalidate();
+        parent.repaint();
+    }
+
+    private static Rectangle getUsableBounds(Window window, Window owner) {
+        GraphicsConfiguration config = null;
+        if (window != null && window.getGraphicsConfiguration() != null) {
+            config = window.getGraphicsConfiguration();
+        } else if (owner != null && owner.getGraphicsConfiguration() != null) {
+            config = owner.getGraphicsConfiguration();
+        }
+        if (config == null) {
+            GraphicsEnvironment environment = GraphicsEnvironment.getLocalGraphicsEnvironment();
+            config = environment.getDefaultScreenDevice().getDefaultConfiguration();
+        }
+
+        Rectangle bounds = new Rectangle(config.getBounds());
+        Insets insets = Toolkit.getDefaultToolkit().getScreenInsets(config);
+        bounds.x += insets.left;
+        bounds.y += insets.top;
+        bounds.width -= (insets.left + insets.right);
+        bounds.height -= (insets.top + insets.bottom);
+        return bounds;
+    }
+
+    private static void positionWindow(Window window, Rectangle usableBounds, Window owner) {
+        int x;
+        int y;
+        if (owner != null && owner.isShowing()) {
+            Rectangle ownerBounds = owner.getBounds();
+            x = ownerBounds.x + (ownerBounds.width - window.getWidth()) / 2;
+            y = ownerBounds.y + (ownerBounds.height - window.getHeight()) / 2;
+        } else {
+            x = usableBounds.x + (usableBounds.width - window.getWidth()) / 2;
+            y = usableBounds.y + (usableBounds.height - window.getHeight()) / 2;
+        }
+
+        int maxX = usableBounds.x + usableBounds.width - window.getWidth();
+        int maxY = usableBounds.y + usableBounds.height - window.getHeight();
+        x = Math.max(usableBounds.x, Math.min(x, maxX));
+        y = Math.max(usableBounds.y, Math.min(y, maxY));
+        window.setLocation(x, y);
     }
 
     private static JButton createWindowButton(String text, Color textPrimary, Color borderSoft,

@@ -1328,8 +1328,7 @@ public class NhanVienGUI extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             NhanVienGUI gui = new NhanVienGUI();
-            gui.setSize(1450, 850);
-            gui.setLocationRelativeTo(null);
+            ScreenUIHelper.prepareFrame(gui, 1450, 850);
             gui.setVisible(true);
         });
     }

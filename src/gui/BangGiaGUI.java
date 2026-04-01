@@ -785,15 +785,25 @@ public class BangGiaGUI extends JFrame {
     }
 
     private abstract class BaseDialog extends JDialog {
+        private final int minimumWidth;
+        private final int minimumHeight;
+
         protected BaseDialog(Frame owner, String title, int width, int height) {
             super(ScreenUIHelper.resolveDialogOwner(owner), title, true);
+            this.minimumWidth = width;
+            this.minimumHeight = height;
             setDefaultCloseOperation(DISPOSE_ON_CLOSE);
             getContentPane().setBackground(APP_BG);
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
             setLayout(new BorderLayout(0, 12));
-            setPreferredSize(new Dimension(width, height));
-            pack();
-            setLocationRelativeTo(owner);
+        }
+
+        @Override
+        public void setVisible(boolean visible) {
+            if (visible) {
+                ScreenUIHelper.prepareDialog(this, getOwner(), minimumWidth, minimumHeight);
+            }
+            super.setVisible(visible);
         }
 
         protected JPanel buildHeader(String title, String subtitle) {
@@ -1120,8 +1130,7 @@ public class BangGiaGUI extends JFrame {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             BangGiaGUI gui = new BangGiaGUI();
-            gui.setSize(1400, 820);
-            gui.setLocationRelativeTo(null);
+            ScreenUIHelper.prepareFrame(gui, 1400, 820);
             gui.setVisible(true);
         });
     }

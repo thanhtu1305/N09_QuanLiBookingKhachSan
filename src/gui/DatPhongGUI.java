@@ -1319,7 +1319,6 @@ public class DatPhongGUI extends JFrame {
         private final boolean editing;
         private final List<BookingDetailRecord> detailRows = new ArrayList<BookingDetailRecord>();
 
-        private JTextField txtMaBooking;
         private AppDatePickerField txtNgayDatDialog;
         private JComboBox<String> cboNguonBookingDialog;
         private JTextField txtCccdDialog;
@@ -1391,8 +1390,6 @@ public class DatPhongGUI extends JFrame {
 
             CustomerLookup existingCustomer = editing ? loadCustomerLookup(editingBooking.maKhachHang) : null;
 
-            txtMaBooking = createInputField(editing ? "DP" + editingBooking.maDatPhong : "(Tự sinh)");
-            txtMaBooking.setEditable(false);
             txtNgayDatDialog = new AppDatePickerField(editing && editingBooking.ngayDat != null ? editingBooking.formatNgayDat() : LocalDate.now().format(DATE_FORMAT), true);
             cboNguonBookingDialog = createComboBox(new String[]{"Đặt trước", "Walk-in"});
             txtCccdDialog = createInputField(editing ? editingBooking.cccd : "");
@@ -1416,17 +1413,16 @@ public class DatPhongGUI extends JFrame {
 
             txtCccdDialog.addActionListener(e -> lookupCustomerByPassportOrCccd());
 
-            addFormRow(form, gbc, 0, "Mã booking", txtMaBooking);
-            addFormRow(form, gbc, 1, "Ngày đặt", txtNgayDatDialog);
-            addFormRow(form, gbc, 2, "Nguồn booking", cboNguonBookingDialog);
-            addFormRow(form, gbc, 3, "CCCD/Passport", txtCccdDialog);
-            addFormRow(form, gbc, 4, "Họ tên KH", txtHoTen);
-            addFormRow(form, gbc, 5, "SĐT", txtSdt);
-            addFormRow(form, gbc, 6, "Ngày sinh", txtNgaySinhKhach);
-            addFormRow(form, gbc, 7, "Email", txtEmailKhach);
-            addFormRow(form, gbc, 8, "Địa chỉ", new JScrollPane(txtDiaChiKhach));
-            addFormRow(form, gbc, 9, "Tổng tiền cọc", txtTongDatCocDialog);
-            addFormRow(form, gbc, 10, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 0, "Ngày đặt", txtNgayDatDialog);
+            addFormRow(form, gbc, 1, "Nguồn booking", cboNguonBookingDialog);
+            addFormRow(form, gbc, 2, "CCCD/Passport", txtCccdDialog);
+            addFormRow(form, gbc, 3, "Họ tên KH", txtHoTen);
+            addFormRow(form, gbc, 4, "SĐT", txtSdt);
+            addFormRow(form, gbc, 5, "Ngày sinh", txtNgaySinhKhach);
+            addFormRow(form, gbc, 6, "Email", txtEmailKhach);
+            addFormRow(form, gbc, 7, "Địa chỉ", new JScrollPane(txtDiaChiKhach));
+            addFormRow(form, gbc, 8, "Tổng tiền cọc", txtTongDatCocDialog);
+            addFormRow(form, gbc, 9, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             wrapper.add(lblSection, BorderLayout.NORTH);
             wrapper.add(form, BorderLayout.CENTER);

@@ -71,6 +71,7 @@ public class LoaiPhongGUI extends JFrame {
     private static final String STATUS_ACTIVE = "\u0110ang \u00e1p d\u1ee5ng";
     private static final String STATUS_INACTIVE = "Ng\u1eebng \u00e1p d\u1ee5ng";
     private static final String AUTO_CODE_TEXT = "T\u1ef1 \u0111\u1ed9ng";
+    private static final String ROOM_TYPE_CODE_PREFIX = "ML";
     private static final String DEFAULT_EMPTY_DESCRIPTION = "Ch\u01b0a c\u00f3 m\u00f4 t\u1ea3.";
 
     private final String username;
@@ -991,7 +992,6 @@ public class LoaiPhongGUI extends JFrame {
     }
 
     private final class CreateRoomTypeDialog extends BaseRoomTypeDialog {
-        private final JTextField txtMaLoai;
         private final JTextField txtTenLoai;
         private final JTextField txtKhachToiDaDialog;
         private final JTextField txtDienTichDialog;
@@ -1012,9 +1012,6 @@ public class LoaiPhongGUI extends JFrame {
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            txtMaLoai = createInputField("");
-            txtMaLoai.setEditable(false);
-            txtMaLoai.setText(AUTO_CODE_TEXT);
             txtTenLoai = createInputField("");
             txtKhachToiDaDialog = createInputField("");
             txtDienTichDialog = createInputField("");
@@ -1022,13 +1019,12 @@ public class LoaiPhongGUI extends JFrame {
             cboTrangThaiDialog = createComboBox(ROOM_TYPE_STATUS_OPTIONS);
             txtMoTaDialog = createDialogTextArea(4);
 
-            addFormRow(form, gbc, 0, "Mã loại phòng", txtMaLoai);
-            addFormRow(form, gbc, 1, "Tên loại phòng", txtTenLoai);
-            addFormRow(form, gbc, 2, "Khách tối đa", txtKhachToiDaDialog);
-            addFormRow(form, gbc, 3, "Diện tích", txtDienTichDialog);
-            addFormRow(form, gbc, 4, "Giá tham chiếu", txtGiaThamChieuDialog);
-            addFormRow(form, gbc, 5, "Trạng thái đầu", cboTrangThaiDialog);
-            addFormRow(form, gbc, 6, "Mô tả", new JScrollPane(txtMoTaDialog));
+            addFormRow(form, gbc, 0, "Tên loại phòng", txtTenLoai);
+            addFormRow(form, gbc, 1, "Khách tối đa", txtKhachToiDaDialog);
+            addFormRow(form, gbc, 2, "Diện tích", txtDienTichDialog);
+            addFormRow(form, gbc, 3, "Giá tham chiếu", txtGiaThamChieuDialog);
+            addFormRow(form, gbc, 4, "Trạng thái đầu", cboTrangThaiDialog);
+            addFormRow(form, gbc, 5, "Mô tả", new JScrollPane(txtMoTaDialog));
 
             card.add(form, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
@@ -1099,7 +1095,6 @@ public class LoaiPhongGUI extends JFrame {
         }
 
         private void resetForm() {
-            txtMaLoai.setText(AUTO_CODE_TEXT);
             txtTenLoai.setText("");
             txtKhachToiDaDialog.setText("");
             txtDienTichDialog.setText("");
@@ -1533,6 +1528,11 @@ public class LoaiPhongGUI extends JFrame {
         return "1 giường Queen";
     }
 
+    private String formatRoomTypeCode(int maLoaiPhong) {
+        return ROOM_TYPE_CODE_PREFIX + maLoaiPhong;
+    }
+
+
     private static final class RoomTypeRecord {
         private int maLoaiPhong;
         private String maLoai;
@@ -1562,7 +1562,7 @@ public class LoaiPhongGUI extends JFrame {
         private static RoomTypeRecord fromEntity(LoaiPhong loaiPhong) {
             RoomTypeRecord type = new RoomTypeRecord();
             type.maLoaiPhong = loaiPhong.getMaLoaiPhong();
-            type.maLoai = String.valueOf(loaiPhong.getMaLoaiPhong());
+            type.maLoai = ROOM_TYPE_CODE_PREFIX + loaiPhong.getMaLoaiPhong();
             type.tenLoaiPhong = loaiPhong.getTenLoaiPhong();
             type.moTa = loaiPhong.getMoTa() == null ? "" : loaiPhong.getMoTa();
             type.khachToiDa = loaiPhong.getKhachToiDa();

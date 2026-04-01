@@ -566,7 +566,7 @@ public class TienNghiGUI extends JFrame {
         tableModel.setRowCount(0);
         for (AmenityRecord amenity : filteredAmenities) {
             tableModel.addRow(new Object[]{
-                    amenity.maTienNghi,
+                    formatAmenityCode(parseAmenityId(amenity.maTienNghi)),
                     amenity.tenTienNghi,
                     amenity.nhomTienNghi,
                     amenity.uuTienHienThi,
@@ -584,7 +584,7 @@ public class TienNghiGUI extends JFrame {
     }
 
     private void updateDetailPanel(AmenityRecord amenity) {
-        lblMaTienNghi.setText(amenity.maTienNghi);
+        lblMaTienNghi.setText(formatAmenityCode(parseAmenityId(amenity.maTienNghi)));
         setWrappedValue(lblTenTienNghi, amenity.tenTienNghi);
         lblNhomTienNghi.setText(amenity.nhomTienNghi);
         lblTrangThaiChiTiet.setText(amenity.trangThai);
@@ -725,12 +725,20 @@ public class TienNghiGUI extends JFrame {
         return "Tất cả".equalsIgnoreCase(normalized) ? "" : normalized;
     }
 
+    private String formatAmenityCode(int id) {
+        return id <= 0 ? "" : "TN" + id;
+    }
+
     private int parseAmenityId(String value) {
         if (value == null || value.trim().isEmpty()) {
             return -1;
         }
+        String normalized = value.trim().toUpperCase();
+        if (normalized.startsWith("TN")) {
+            normalized = normalized.substring(2).trim();
+        }
         try {
-            return Integer.parseInt(value.trim());
+            return Integer.parseInt(normalized);
         } catch (NumberFormatException ex) {
             return -1;
         }
@@ -875,7 +883,6 @@ public class TienNghiGUI extends JFrame {
     private final class AmenityEditorDialog extends BaseAmenityDialog {
         private final AmenityRecord amenity;
 
-        private JTextField txtMaTienNghiDialog;
         private JTextField txtTenTienNghiDialog;
         private JComboBox<String> cboNhomTienNghiDialog;
         private JComboBox<String> cboTrangThaiDialog;
@@ -899,15 +906,12 @@ public class TienNghiGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            txtMaTienNghiDialog = createInputField(amenity == null ? "" : amenity.maTienNghi);
             txtTenTienNghiDialog = createInputField(amenity == null ? "" : amenity.tenTienNghi);
             cboNhomTienNghiDialog = createComboBox(AMENITY_GROUP_OPTIONS);
             cboTrangThaiDialog = createComboBox(new String[]{"Đang áp dụng", "Ngừng áp dụng"});
             txtUuTien = createInputField(amenity == null ? "1" : String.valueOf(amenity.uuTienHienThi));
             txtMoTaDialog = createDialogTextArea(4);
             txtGhiChuDialog = createDialogTextArea(3);
-            txtMaTienNghiDialog.setEditable(false);
-
             if (amenity != null) {
                 cboNhomTienNghiDialog.setSelectedItem(amenity.nhomTienNghi);
                 cboTrangThaiDialog.setSelectedItem(amenity.trangThai);
@@ -915,13 +919,12 @@ public class TienNghiGUI extends JFrame {
                 txtGhiChuDialog.setText(amenity.ghiChu);
             }
 
-            addFormRow(form, gbc, 0, "Mã tiện nghi", txtMaTienNghiDialog);
-            addFormRow(form, gbc, 1, "Tên tiện nghi", txtTenTienNghiDialog);
-            addFormRow(form, gbc, 2, "Nhóm tiện nghi", cboNhomTienNghiDialog);
-            addFormRow(form, gbc, 3, "Trạng thái", cboTrangThaiDialog);
-            addFormRow(form, gbc, 4, "Mức ưu tiên hiển thị", txtUuTien);
-            addFormRow(form, gbc, 5, "Mô tả", new JScrollPane(txtMoTaDialog));
-            addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 0, "Tên tiện nghi", txtTenTienNghiDialog);
+            addFormRow(form, gbc, 1, "Nhóm tiện nghi", cboNhomTienNghiDialog);
+            addFormRow(form, gbc, 2, "Trạng thái", cboTrangThaiDialog);
+            addFormRow(form, gbc, 3, "Mức ưu tiên hiển thị", txtUuTien);
+            addFormRow(form, gbc, 4, "Mô tả", new JScrollPane(txtMoTaDialog));
+            addFormRow(form, gbc, 5, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             JPanel card = createDialogCardPanel();
             card.add(form, BorderLayout.CENTER);
@@ -1014,7 +1017,6 @@ public class TienNghiGUI extends JFrame {
         }
 
         private void resetEditorForm() {
-            txtMaTienNghiDialog.setText("");
             txtTenTienNghiDialog.setText("");
             txtUuTien.setText("1");
             txtMoTaDialog.setText("");
@@ -1066,7 +1068,7 @@ public class TienNghiGUI extends JFrame {
             txtLyDo = createDialogTextArea(3);
             txtGhiChu = createDialogTextArea(3);
 
-            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(amenity.maTienNghi));
+            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(formatAmenityCode(parseAmenityId(amenity.maTienNghi))));
             addFormRow(form, gbc, 1, "Tên tiện nghi", createValueLabel(amenity.tenTienNghi));
             addFormRow(form, gbc, 2, "Trạng thái hiện tại", createValueLabel(amenity.trangThai));
             addFormRow(form, gbc, 3, "Từ ngày", txtTuNgay);
@@ -1131,7 +1133,7 @@ public class TienNghiGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(amenity.maTienNghi));
+            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(formatAmenityCode(parseAmenityId(amenity.maTienNghi))));
             addFormRow(form, gbc, 1, "Tên tiện nghi", createValueLabel(amenity.tenTienNghi));
             addFormRow(form, gbc, 2, "Nhóm tiện nghi", createValueLabel(amenity.nhomTienNghi));
             addFormRow(form, gbc, 3, "Trạng thái", createValueLabel(amenity.trangThai));
@@ -1229,7 +1231,7 @@ public class TienNghiGUI extends JFrame {
                 ghiChu = combined.substring(splitIndex + separator.length()).trim();
             }
             return create(
-                    String.valueOf(tienNghi.getMaTienNghi()),
+                    "TN" + tienNghi.getMaTienNghi(),
                     tienNghi.getTenTienNghi(),
                     tienNghi.getNhomTienNghi(),
                     tienNghi.getTrangThai(),

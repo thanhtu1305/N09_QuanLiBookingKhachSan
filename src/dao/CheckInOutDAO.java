@@ -135,8 +135,8 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateRoomStatus(con, parseIntOrNull(luuTru.getMaPhong()), shouldMoveToCleaning(luuTru) ? "Dọn dẹp" : "Đang ở");
             updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "Đã check-out" : "Đang lưu trú");
+            synchronizeOperationalStatuses(con);
             con.commit();
             return true;
         } catch (Exception e) {
@@ -171,8 +171,8 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateRoomStatus(con, parseIntOrNull(luuTru.getMaPhong()), shouldMoveToCleaning(luuTru) ? "Dọn dẹp" : "Đang ở");
             updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "Đã check-out" : "Đang lưu trú");
+            synchronizeOperationalStatuses(con);
             con.commit();
             return true;
         } catch (Exception e) {
@@ -210,8 +210,8 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateRoomStatus(con, parseIntOrNull(existing.getMaPhong()), "Trống");
             updateBookingStatus(con, parseIntOrNull(existing.getMaDatPhong()), "Đã xác nhận");
+            synchronizeOperationalStatuses(con);
             con.commit();
             return true;
         } catch (Exception e) {
@@ -325,8 +325,8 @@ public class CheckInOutDAO {
                 stmt.executeUpdate();
             }
 
-            updateRoomStatus(con, roomId, "Đang ở");
             updateBookingStatus(con, bookingId, "Đang lưu trú");
+            synchronizeOperationalStatuses(con);
             con.commit();
             return true;
         } catch (Exception e) {
@@ -366,9 +366,9 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateRoomStatus(con, parseIntOrNull(current.getMaPhong()), "Dọn dẹp");
             updateBookingStatus(con, parseIntOrNull(current.getMaDatPhong()), "Đã check-out");
             updateCustomerStatusByBooking(con, parseIntOrNull(current.getMaDatPhong()), "Ngừng giao dịch");
+            synchronizeOperationalStatuses(con);
             con.commit();
             return true;
         } catch (Exception e) {
@@ -378,6 +378,35 @@ public class CheckInOutDAO {
             return false;
         } finally {
             resetAutoCommit(con);
+        }
+    }
+
+    private void synchronizeOperationalStatuses(Connection con) throws SQLException {
+        if (con == null) {
+            return;
+        }
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở', N'Dọn dẹp')")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'Đã đặt' FROM Phong p WHERE EXISTS (" +
+                        "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in'))")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'Dọn dẹp' FROM Phong p WHERE EXISTS (" +
+                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đã check-out')")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'Đang ở' FROM Phong p WHERE EXISTS (" +
+                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đang lưu trú')")) {
+            ps.executeUpdate();
         }
     }
 

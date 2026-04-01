@@ -543,7 +543,7 @@ public class ThanhToanGUI extends JFrame {
             tableModel.addRow(new Object[]{
                     "HD" + invoice.getMaHoaDon(),
                     safeValue(invoice.getKhachHang(), "-"),
-                    invoice.getPhongVaSoDong(),
+                    formatRoomAndCount(invoice),
                     ThanhToan.formatMoney(invoice.getTongPhaiThu()),
                     safeValue(invoice.getTrangThai(), "-"),
                     formatDateTime(invoice.getNgayLap())
@@ -557,6 +557,31 @@ public class ThanhToanGUI extends JFrame {
             clearDetailPanel();
         }
     }
+
+    private String formatRoomAndCount(ThanhToan invoice) {
+        if (invoice == null) {
+            return "-";
+        }
+        String soPhong = safeValue(invoice.getSoPhong(), "-");
+        if ("-".equals(soPhong)) {
+            return soPhong;
+        }
+        String[] parts = soPhong.split(",");
+        int roomCount = 0;
+        java.util.LinkedHashSet<String> uniqueRooms = new java.util.LinkedHashSet<String>();
+        for (String part : parts) {
+            String room = safeValue(part, "");
+            if (!room.isEmpty()) {
+                uniqueRooms.add(room);
+            }
+        }
+        roomCount = uniqueRooms.size();
+        if (roomCount <= 0) {
+            roomCount = 1;
+        }
+        return soPhong + " / " + roomCount + " phòng";
+    }
+
 
     private void updateDetailPanel(ThanhToan invoice) {
         lblMaHoaDon.setText("HD" + invoice.getMaHoaDon());

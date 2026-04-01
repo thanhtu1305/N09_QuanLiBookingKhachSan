@@ -42,16 +42,33 @@ public class ThanhToanDAO {
             ensureExtendedSchema(con);
             synchronizeInvoices(con);
 
-            String sql = "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
+            String sql = "WITH ranked AS (" +
+                    "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
                     "hd.tienPhong, hd.tienDichVu, ISNULL(hd.phuThu,0) AS phuThu, ISNULL(hd.giamGia,0) AS giamGia, " +
                     "ISNULL(hd.tienCocTru,0) AS tienCocTru, ISNULL(hd.trangThai,N'Chờ thanh toán') AS trangThai, " +
-                    "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, p.soPhong, lt.tienCoc AS tienCocGoc " +
+                    "ISNULL(hd.ghiChu,N'') AS ghiChu, dp.trangThai AS trangThaiDatPhong, " +
+                    "ROW_NUMBER() OVER (PARTITION BY hd.maDatPhong ORDER BY hd.maHoaDon DESC) AS rn " +
                     "FROM HoaDon hd " +
-                    "LEFT JOIN LuuTru lt ON hd.maLuuTru = lt.maLuuTru " +
                     "LEFT JOIN DatPhong dp ON hd.maDatPhong = dp.maDatPhong " +
-                    "LEFT JOIN KhachHang kh ON hd.maKhachHang = kh.maKhachHang " +
-                    "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
-                    "ORDER BY hd.maHoaDon DESC";
+                    "WHERE ISNULL(dp.trangThai, N'') IN (N'Đã check-out', N'Đã thanh toán')" +
+                    ") " +
+                    "SELECT ranked.maHoaDon, ranked.maLuuTru, ranked.maDatPhong, ranked.maKhachHang, ranked.ngayLap, ranked.ngayThanhToan, " +
+                    "ranked.tienPhong, ranked.tienDichVu, ranked.phuThu, ranked.giamGia, ranked.tienCocTru, ranked.trangThai, ranked.ghiChu, " +
+                    "kh.hoTen, kh.soDienThoai, ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
+                    "FROM ranked " +
+                    "LEFT JOIN DatPhong dp ON ranked.maDatPhong = dp.maDatPhong " +
+                    "LEFT JOIN KhachHang kh ON ranked.maKhachHang = kh.maKhachHang " +
+                    "OUTER APPLY (" +
+                    "   SELECT STUFF((" +
+                    "       SELECT N', ' + p2.soPhong " +
+                    "       FROM ChiTietDatPhong c2 " +
+                    "       JOIN Phong p2 ON c2.maPhong = p2.maPhong " +
+                    "       WHERE c2.maDatPhong = ranked.maDatPhong " +
+                    "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong " +
+                    "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong" +
+                    ") roomSummary " +
+                    "WHERE ranked.rn = 1 " +
+                    "ORDER BY ranked.maHoaDon DESC";
 
             try (PreparedStatement ps = con.prepareStatement(sql);
                  ResultSet rs = ps.executeQuery()) {
@@ -85,12 +102,19 @@ public class ThanhToanDAO {
             String sql = "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
                     "hd.tienPhong, hd.tienDichVu, ISNULL(hd.phuThu,0) AS phuThu, ISNULL(hd.giamGia,0) AS giamGia, " +
                     "ISNULL(hd.tienCocTru,0) AS tienCocTru, ISNULL(hd.trangThai,N'Chờ thanh toán') AS trangThai, " +
-                    "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, p.soPhong, lt.tienCoc AS tienCocGoc " +
+                    "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
                     "FROM HoaDon hd " +
-                    "LEFT JOIN LuuTru lt ON hd.maLuuTru = lt.maLuuTru " +
                     "LEFT JOIN DatPhong dp ON hd.maDatPhong = dp.maDatPhong " +
                     "LEFT JOIN KhachHang kh ON hd.maKhachHang = kh.maKhachHang " +
-                    "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
+                    "OUTER APPLY (" +
+                    "   SELECT STUFF((" +
+                    "       SELECT N', ' + p2.soPhong " +
+                    "       FROM ChiTietDatPhong c2 " +
+                    "       JOIN Phong p2 ON c2.maPhong = p2.maPhong " +
+                    "       WHERE c2.maDatPhong = hd.maDatPhong " +
+                    "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong " +
+                    "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong" +
+                    ") roomSummary " +
                     "WHERE hd.maHoaDon = ?";
 
             try (PreparedStatement ps = con.prepareStatement(sql)) {
@@ -158,7 +182,7 @@ public class ThanhToanDAO {
                 ps.setInt(6, invoiceId.intValue());
                 boolean ok = ps.executeUpdate() > 0;
                 if (ok) {
-                    rebuildInvoiceLines(con, invoiceId.intValue(), thanhToan.getMaLuuTru());
+                    rebuildInvoiceLines(con, invoiceId.intValue(), Integer.parseInt(thanhToan.getMaLuuTru()));
                 }
                 return ok;
             }
@@ -222,7 +246,7 @@ public class ThanhToanDAO {
                 ps.executeUpdate();
             }
 
-            rebuildInvoiceLines(con, invoiceId.intValue(), invoice.getMaLuuTru());
+            rebuildInvoiceLines(con, invoiceId.intValue(), parseIntOrZero(invoice.getMaDatPhong()));
             refreshInvoiceStatus(con, invoiceId.intValue());
             con.commit();
             syncCustomerAfterInvoicePaid(con, invoiceId.intValue());
@@ -357,59 +381,75 @@ public class ThanhToanDAO {
             return;
         }
         synchronizingInvoices = true;
-        String sql = "SELECT lt.maLuuTru, lt.maDatPhong, dp.maKhachHang, lt.tienCoc, lt.giaPhong, lt.checkIn, lt.checkOut, " +
-                "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, " +
-                "ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
-                "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong " +
-                "FROM LuuTru lt " +
-                "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
-                "OUTER APPLY ( " +
-                "   SELECT TOP 1 " +
-                "       ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
-                "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
-                "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
-                "   FROM ChiTietDatPhong ctdp " +
-                "   WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong " +
-                ") ct";
+        try {
+            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, dp.maKhachHang, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+                    "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, " +
+                    "ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
+                    "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong " +
+                    "FROM LuuTru lt " +
+                    "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
+                    "OUTER APPLY ( " +
+                    "   SELECT TOP 1 " +
+                    "       ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
+                    "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
+                    "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
+                    "   FROM ChiTietDatPhong ctdp " +
+                    "   WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong " +
+                    ") ct " +
+                    "WHERE dp.trangThai IN (N'Đã check-out', N'Đã thanh toán')";
 
-        try (PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                int maLuuTru = rs.getInt("maLuuTru");
-                int maDatPhong = rs.getInt("maDatPhong");
-                int maKhachHang = rs.getInt("maKhachHang");
-                double tienCoc = rs.getDouble("tienCoc");
-                double giaPhong = rs.getDouble("giaPhong");
-                Timestamp checkIn = rs.getTimestamp("checkIn");
-                Timestamp checkOut = rs.getTimestamp("checkOut");
-                long soDemDatPhong = rs.getLong("soDemDatPhong");
-                double giaPhongDatPhong = rs.getDouble("giaPhongDatPhong");
-                double thanhTienDatPhong = rs.getDouble("thanhTienDatPhong");
+            Map<Integer, InvoiceAggregate> aggregates = new LinkedHashMap<Integer, InvoiceAggregate>();
+            try (PreparedStatement ps = con.prepareStatement(sql);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int maDatPhong = rs.getInt("maDatPhong");
+                    InvoiceAggregate aggregate = aggregates.get(Integer.valueOf(maDatPhong));
+                    if (aggregate == null) {
+                        aggregate = new InvoiceAggregate();
+                        aggregate.maDatPhong = maDatPhong;
+                        aggregate.maKhachHang = rs.getInt("maKhachHang");
+                        aggregate.maLuuTruDaiDien = rs.getInt("maLuuTru");
+                        aggregate.tienCoc = rs.getDouble("tienCocDatPhong");
+                        aggregates.put(Integer.valueOf(maDatPhong), aggregate);
+                    }
+                    double tienPhong = resolveRoomCharge(
+                            rs.getDouble("giaPhong"),
+                            rs.getTimestamp("checkIn"),
+                            rs.getTimestamp("checkOut"),
+                            rs.getLong("soDemDatPhong"),
+                            rs.getDouble("giaPhongDatPhong"),
+                            rs.getDouble("thanhTienDatPhong"));
+                    aggregate.tienPhong += tienPhong;
+                    aggregate.tienDichVu += loadServiceCharge(con, rs.getInt("maLuuTru"));
+                }
+            }
 
-                double tienPhong = resolveRoomCharge(giaPhong, checkIn, checkOut, soDemDatPhong, giaPhongDatPhong, thanhTienDatPhong);
-                double tienDichVu = loadServiceCharge(con, maLuuTru);
-
-                Integer maHoaDon = findInvoiceIdByStay(con, maLuuTru);
+            for (InvoiceAggregate aggregate : aggregates.values()) {
+                Integer maHoaDon = findLatestInvoiceIdByBooking(con, aggregate.maDatPhong);
                 if (maHoaDon == null) {
-                    maHoaDon = insertInvoiceHeader(con, maLuuTru, maDatPhong, maKhachHang, tienPhong, tienDichVu, tienCoc);
+                    maHoaDon = insertInvoiceHeader(con, aggregate.maLuuTruDaiDien, aggregate.maDatPhong, aggregate.maKhachHang,
+                            aggregate.tienPhong, aggregate.tienDichVu, aggregate.tienCoc);
                 } else {
                     try (PreparedStatement update = con.prepareStatement(
-                            "UPDATE HoaDon SET tienPhong = ?, tienDichVu = ?, tienCocTru = CASE " +
+                            "UPDATE HoaDon SET maLuuTru = ?, maKhachHang = ?, tienPhong = ?, tienDichVu = ?, tienCocTru = CASE " +
                                     "WHEN tienCocTru IS NULL THEN ? " +
                                     "WHEN tienCocTru > ? THEN ? ELSE tienCocTru END " +
                                     "WHERE maHoaDon = ?")) {
-                        double tienCocTru = Math.min(tienCoc, Math.max(0d, tienPhong + tienDichVu));
-                        update.setDouble(1, tienPhong);
-                        update.setDouble(2, tienDichVu);
-                        update.setDouble(3, tienCocTru);
-                        update.setDouble(4, tienCoc);
+                        double tienCocTru = Math.min(aggregate.tienCoc, Math.max(0d, aggregate.tienPhong + aggregate.tienDichVu));
+                        update.setInt(1, aggregate.maLuuTruDaiDien);
+                        update.setInt(2, aggregate.maKhachHang);
+                        update.setDouble(3, aggregate.tienPhong);
+                        update.setDouble(4, aggregate.tienDichVu);
                         update.setDouble(5, tienCocTru);
-                        update.setInt(6, maHoaDon.intValue());
+                        update.setDouble(6, aggregate.tienCoc);
+                        update.setDouble(7, tienCocTru);
+                        update.setInt(8, maHoaDon.intValue());
                         update.executeUpdate();
                     }
                 }
 
-                rebuildInvoiceLines(con, maHoaDon.intValue(), String.valueOf(maLuuTru));
+                cleanupDuplicateInvoicesForBooking(con, aggregate.maDatPhong, maHoaDon.intValue());
+                rebuildInvoiceLines(con, maHoaDon.intValue(), aggregate.maDatPhong);
                 refreshInvoiceStatus(con, maHoaDon.intValue());
             }
         } finally {
@@ -438,7 +478,7 @@ public class ThanhToanDAO {
         return null;
     }
 
-    private void rebuildInvoiceLines(Connection con, int maHoaDon, String maLuuTru) throws Exception {
+    private void rebuildInvoiceLines(Connection con, int maHoaDon, int maDatPhong) throws Exception {
         try (PreparedStatement del = con.prepareStatement("DELETE FROM ChiTietHoaDon WHERE maHoaDon = ?")) {
             del.setInt(1, maHoaDon);
             del.executeUpdate();
@@ -454,9 +494,10 @@ public class ThanhToanDAO {
         String serviceSql = "SELECT dv.tenDichVu, SUM(sddv.soLuong) AS soLuong, MAX(sddv.donGia) AS donGia " +
                 "FROM SuDungDichVu sddv " +
                 "JOIN DichVu dv ON sddv.maDichVu = dv.maDichVu " +
-                "WHERE sddv.maLuuTru = ? GROUP BY dv.tenDichVu ORDER BY dv.tenDichVu";
+                "JOIN LuuTru lt ON sddv.maLuuTru = lt.maLuuTru " +
+                "WHERE lt.maDatPhong = ? GROUP BY dv.tenDichVu ORDER BY dv.tenDichVu";
         try (PreparedStatement ps = con.prepareStatement(serviceSql)) {
-            ps.setInt(1, parseIntOrZero(maLuuTru));
+            ps.setInt(1, maDatPhong);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     insertInvoiceLine(
@@ -602,11 +643,19 @@ public class ThanhToanDAO {
         String sql = "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
                 "hd.tienPhong, hd.tienDichVu, ISNULL(hd.phuThu,0) AS phuThu, ISNULL(hd.giamGia,0) AS giamGia, " +
                 "ISNULL(hd.tienCocTru,0) AS tienCocTru, ISNULL(hd.trangThai,N'Chờ thanh toán') AS trangThai, " +
-                "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, p.soPhong, lt.tienCoc AS tienCocGoc " +
+                "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
                 "FROM HoaDon hd " +
-                "LEFT JOIN LuuTru lt ON hd.maLuuTru = lt.maLuuTru " +
+                "LEFT JOIN DatPhong dp ON hd.maDatPhong = dp.maDatPhong " +
                 "LEFT JOIN KhachHang kh ON hd.maKhachHang = kh.maKhachHang " +
-                "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
+                "OUTER APPLY (" +
+                "   SELECT STUFF((" +
+                "       SELECT N', ' + p2.soPhong " +
+                "       FROM ChiTietDatPhong c2 " +
+                "       JOIN Phong p2 ON c2.maPhong = p2.maPhong " +
+                "       WHERE c2.maDatPhong = hd.maDatPhong " +
+                "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong " +
+                "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong" +
+                ") roomSummary " +
                 "WHERE hd.maHoaDon = ?";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, maHoaDon);
@@ -625,7 +674,7 @@ public class ThanhToanDAO {
         invoice.setMaLuuTru(rs.getObject("maLuuTru") == null ? "" : String.valueOf(rs.getInt("maLuuTru")));
         invoice.setMaDatPhong(rs.getObject("maDatPhong") == null ? "" : String.valueOf(rs.getInt("maDatPhong")));
         invoice.setMaKhachHang(rs.getObject("maKhachHang") == null ? "" : String.valueOf(rs.getInt("maKhachHang")));
-        invoice.setMaHoSo(isBlank(invoice.getMaLuuTru()) ? "-" : "LT-" + invoice.getMaLuuTru());
+        invoice.setMaHoSo(isBlank(invoice.getMaDatPhong()) ? "-" : "LT-DP" + invoice.getMaDatPhong());
         invoice.setKhachHang(safeTrim(rs.getString("hoTen")));
         invoice.setSoPhong(safeTrim(rs.getString("soPhong")));
         invoice.setSoDienThoai(safeTrim(rs.getString("soDienThoai")));
@@ -686,9 +735,9 @@ public class ThanhToanDAO {
         return 0d;
     }
 
-    private Integer findInvoiceIdByStay(Connection con, int maLuuTru) throws Exception {
-        try (PreparedStatement ps = con.prepareStatement("SELECT TOP 1 maHoaDon FROM HoaDon WHERE maLuuTru = ? ORDER BY maHoaDon DESC")) {
-            ps.setInt(1, maLuuTru);
+    private Integer findLatestInvoiceIdByBooking(Connection con, int maDatPhong) throws Exception {
+        try (PreparedStatement ps = con.prepareStatement("SELECT TOP 1 maHoaDon FROM HoaDon WHERE maDatPhong = ? ORDER BY maHoaDon DESC")) {
+            ps.setInt(1, maDatPhong);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return Integer.valueOf(rs.getInt(1));
@@ -696,6 +745,39 @@ public class ThanhToanDAO {
             }
         }
         return null;
+    }
+
+    private void cleanupDuplicateInvoicesForBooking(Connection con, int maDatPhong, int keepMaHoaDon) throws Exception {
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT maHoaDon FROM HoaDon WHERE maDatPhong = ? AND maHoaDon <> ? ORDER BY maHoaDon DESC")) {
+            ps.setInt(1, maDatPhong);
+            ps.setInt(2, keepMaHoaDon);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int duplicateId = rs.getInt(1);
+                    if (hasAnyPaymentTransaction(con, duplicateId)) {
+                        continue;
+                    }
+                    try (PreparedStatement delLines = con.prepareStatement("DELETE FROM ChiTietHoaDon WHERE maHoaDon = ?")) {
+                        delLines.setInt(1, duplicateId);
+                        delLines.executeUpdate();
+                    }
+                    try (PreparedStatement delHeader = con.prepareStatement("DELETE FROM HoaDon WHERE maHoaDon = ?")) {
+                        delHeader.setInt(1, duplicateId);
+                        delHeader.executeUpdate();
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean hasAnyPaymentTransaction(Connection con, int maHoaDon) throws Exception {
+        try (PreparedStatement ps = con.prepareStatement("SELECT COUNT(1) FROM ThanhToan WHERE maHoaDon = ?")) {
+            ps.setInt(1, maHoaDon);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
     }
 
     public boolean markInvoiceAsPaid(String maHoaDon, int maNhanVien, String ghiChu) {
@@ -751,6 +833,15 @@ public class ThanhToanDAO {
             builder.append(entry.getKey()).append(": ").append(ThanhToan.formatMoney(entry.getValue().doubleValue()));
         }
         return builder.toString();
+    }
+
+    private static final class InvoiceAggregate {
+        private int maDatPhong;
+        private int maKhachHang;
+        private int maLuuTruDaiDien;
+        private double tienPhong;
+        private double tienDichVu;
+        private double tienCoc;
     }
 
     private void ensureExtendedSchema(Connection con) throws Exception {
@@ -885,28 +976,40 @@ public class ThanhToanDAO {
                 return;
             }
 
-            boolean allPaid = true;
-            try (PreparedStatement ps = con.prepareStatement(
-                    "SELECT COUNT(*) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'Chờ thanh toán') <> N'Đã thanh toán'")) {
-                ps.setInt(1, maDatPhong);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        allPaid = rs.getInt(1) == 0;
-                    }
-                }
-            }
-            if (!allPaid) {
-                return;
-            }
-
             try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'Đã thanh toán' WHERE maDatPhong = ?")) {
                 ps.setInt(1, maDatPhong);
                 ps.executeUpdate();
             }
+            synchronizeOperationalStatuses(con);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void synchronizeOperationalStatuses(Connection con) {
+        try {
+            if (con == null) {
+                return;
+            }
             try (PreparedStatement ps = con.prepareStatement(
-                    "UPDATE Phong SET trangThai = N'Hoạt động' " +
-                            "WHERE maPhong IN (SELECT DISTINCT maPhong FROM LuuTru WHERE maDatPhong = ? AND maPhong IS NOT NULL)")) {
-                ps.setInt(1, maDatPhong);
+                    "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở', N'Dọn dẹp')")) {
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE p SET p.trangThai = N'Đã đặt' FROM Phong p WHERE EXISTS (" +
+                            "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                            "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in'))")) {
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE p SET p.trangThai = N'Dọn dẹp' FROM Phong p WHERE EXISTS (" +
+                            "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                            "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đã check-out')")) {
+                ps.executeUpdate();
+            }
+            try (PreparedStatement ps = con.prepareStatement(
+                    "UPDATE p SET p.trangThai = N'Đang ở' FROM Phong p WHERE EXISTS (" +
+                            "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                            "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đang lưu trú')")) {
                 ps.executeUpdate();
             }
         } catch (Exception ignored) {

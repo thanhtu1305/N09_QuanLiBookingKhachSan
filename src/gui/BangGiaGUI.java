@@ -399,7 +399,7 @@ public class BangGiaGUI extends JFrame {
         bangGiaModel.setRowCount(0);
         for (BangGia bangGia : displayedBangGia) {
             bangGiaModel.addRow(new Object[]{
-                    bangGia.getMaBangGia(),
+                    formatBangGiaCode(bangGia.getMaBangGia()),
                     bangGia.getTenBangGia(),
                     bangGia.getTenLoaiPhong(),
                     formatDate(bangGia.getTuNgay()),
@@ -426,7 +426,7 @@ public class BangGiaGUI extends JFrame {
         displayedChiTiet.clear();
         displayedChiTiet.addAll(chiTietBangGiaDAO.getByMaBangGia(bangGia.getMaBangGia()));
 
-        lblMaBangGia.setText(String.valueOf(bangGia.getMaBangGia()));
+        lblMaBangGia.setText(formatBangGiaCode(bangGia.getMaBangGia()));
         lblTenBangGia.setText(safeValue(bangGia.getTenBangGia(), "-"));
         lblLoaiPhongChiTiet.setText(safeValue(bangGia.getTenLoaiPhong(), "-"));
         lblLoaiNgayChiTiet.setText(safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "-"));
@@ -444,7 +444,7 @@ public class BangGiaGUI extends JFrame {
         chiTietModel.setRowCount(0);
         for (ChiTietBangGia chiTiet : displayedChiTiet) {
             chiTietModel.addRow(new Object[]{
-                    chiTiet.getMaChiTietBangGia(),
+                    "CT" + chiTiet.getMaChiTietBangGia(),
                     chiTiet.getLoaiNgay(),
                     chiTiet.getKhungGio(),
                     formatCurrency(chiTiet.getGiaTheoGio()),
@@ -674,6 +674,10 @@ public class BangGiaGUI extends JFrame {
 
     private String valueOf(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private String formatBangGiaCode(int maBangGia) {
+        return "BG" + maBangGia;
     }
 
     private LoaiPhong findLoaiPhongByTen(String tenLoaiPhong) {
@@ -1068,7 +1072,7 @@ public class BangGiaGUI extends JFrame {
             JPanel form = createFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new Insets(6, 0, 6, 12);
-            addFormRow(form, gbc, 0, "Mã bảng giá", new JLabel(String.valueOf(bangGia.getMaBangGia())));
+            addFormRow(form, gbc, 0, "Mã bảng giá", new JLabel(formatBangGiaCode(bangGia.getMaBangGia())));
             addFormRow(form, gbc, 1, "Tên bảng giá", new JLabel(safeValue(bangGia.getTenBangGia(), "-")));
             addFormRow(form, gbc, 2, "Loại phòng", new JLabel(safeValue(bangGia.getTenLoaiPhong(), "-")));
             addFormRow(form, gbc, 3, "Ngày bắt đầu", new JLabel(formatDate(bangGia.getTuNgay())));
@@ -1090,7 +1094,7 @@ public class BangGiaGUI extends JFrame {
             table.setRowHeight(28);
             for (ChiTietBangGia chiTiet : chiTietBangGiaDAO.getByMaBangGia(bangGia.getMaBangGia())) {
                 model.addRow(new Object[]{
-                        chiTiet.getMaChiTietBangGia(), chiTiet.getLoaiNgay(), chiTiet.getKhungGio(),
+                        "CT" + chiTiet.getMaChiTietBangGia(), chiTiet.getLoaiNgay(), chiTiet.getKhungGio(),
                         formatCurrency(chiTiet.getGiaTheoGio()), formatCurrency(chiTiet.getGiaQuaDem()),
                         formatCurrency(chiTiet.getGiaTheoNgay()), formatCurrency(chiTiet.getGiaCuoiTuan()),
                         formatCurrency(chiTiet.getGiaLe()), formatCurrency(chiTiet.getPhuThu())

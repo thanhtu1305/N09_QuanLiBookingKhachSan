@@ -1309,6 +1309,7 @@ public class CheckInOutGUI extends JFrame {
                     ps.executeUpdate();
                 }
 
+                synchronizeOperationalStatuses(con);
                 con.commit();
                 PhongGUI.refreshAllOpenInstances();
                 DatPhongGUI.refreshAllOpenInstances();
@@ -1607,13 +1608,6 @@ public class CheckInOutGUI extends JFrame {
                     ps.setInt(2, record.maDatPhong);
                     ps.executeUpdate();
                 }
-                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'Dọn dẹp' WHERE maPhong = ?")) {
-                    for (Integer maPhongId : record.maPhongIds) {
-                        ps.setInt(1, maPhongId.intValue());
-                        ps.addBatch();
-                    }
-                    ps.executeBatch();
-                }
                 try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'Đã check-out' WHERE maDatPhong = ?")) {
                     ps.setInt(1, record.maDatPhong);
                     ps.executeUpdate();
@@ -1624,6 +1618,7 @@ public class CheckInOutGUI extends JFrame {
                     ps.setInt(1, record.maDatPhong);
                     ps.executeUpdate();
                 }
+                synchronizeOperationalStatuses(con);
                 con.commit();
                 PhongGUI.refreshAllOpenInstances();
                 DatPhongGUI.refreshAllOpenInstances();
@@ -1644,6 +1639,52 @@ public class CheckInOutGUI extends JFrame {
             } finally {
                 try { con.setAutoCommit(true); } catch (Exception ignore) {}
             }
+        }
+    }
+
+    private void synchronizeOperationalStatuses(Connection con) throws Exception {
+        if (con == null) {
+            return;
+        }
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Phong SET trangThai = N'Hoạt động' " +
+                        "WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở', N'Dọn dẹp')")) {
+            ps.executeUpdate();
+        }
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'Đã đặt' " +
+                        "FROM Phong p " +
+                        "WHERE EXISTS (" +
+                        "    SELECT 1 FROM ChiTietDatPhong ctdp " +
+                        "    JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                        "    WHERE ctdp.maPhong = p.maPhong " +
+                        "      AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in')" +
+                        ")")) {
+            ps.executeUpdate();
+        }
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'Dọn dẹp' " +
+                        "FROM Phong p " +
+                        "WHERE EXISTS (" +
+                        "    SELECT 1 FROM LuuTru lt " +
+                        "    JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                        "    WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đã check-out'" +
+                        ")")) {
+            ps.executeUpdate();
+        }
+
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'Đang ở' " +
+                        "FROM Phong p " +
+                        "WHERE EXISTS (" +
+                        "    SELECT 1 FROM LuuTru lt " +
+                        "    JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                        "    WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đang lưu trú'" +
+                        ")")) {
+            ps.executeUpdate();
         }
     }
 

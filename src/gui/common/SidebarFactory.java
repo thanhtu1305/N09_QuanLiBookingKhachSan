@@ -10,6 +10,7 @@ import javax.swing.JButton;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
@@ -101,8 +102,16 @@ public final class SidebarFactory {
                 "/images/bao_cao_thong_ke.png",
                 ScreenKey.BAO_CAO);
 
+        JScrollPane menuScrollPane = new JScrollPane(menuPanel);
+        menuScrollPane.setBorder(null);
+        menuScrollPane.setOpaque(false);
+        menuScrollPane.getViewport().setOpaque(false);
+        menuScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        menuScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        menuScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+
         sidebar.add(brand, BorderLayout.NORTH);
-        sidebar.add(menuPanel, BorderLayout.CENTER);
+        sidebar.add(menuScrollPane, BorderLayout.CENTER);
         return sidebar;
     }
 

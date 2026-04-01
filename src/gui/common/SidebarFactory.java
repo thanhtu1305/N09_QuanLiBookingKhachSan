@@ -7,17 +7,20 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
-import java.awt.Component;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.Image;
+import java.net.URL;
 import java.util.Arrays;
 import java.util.List;
 
@@ -36,6 +39,7 @@ public final class SidebarFactory {
     private static final Color ACTIVE_BG     = new Color(219, 234, 254);
     private static final Color ACTIVE_TEXT   = new Color(29, 78, 216);
     private static final int LOGO_W = 132, LOGO_H = 72;
+    private static final int MENU_ICON_SIZE = 24;
 
     private SidebarFactory() {}
 
@@ -79,16 +83,22 @@ public final class SidebarFactory {
         menuPanel.setLayout(new BoxLayout(menuPanel, BoxLayout.Y_AXIS));
         menuPanel.setBorder(new EmptyBorder(4, 2, 4, 2));
 
-        addDirectItem(menuPanel, ScreenKey.DASHBOARD, currentScreen, username, role);
+        addDirectItem(menuPanel, ScreenKey.DASHBOARD, currentScreen, username, role,
+                "/images/tong_quan.png");
         addGroup(menuPanel, "Quản lý đặt phòng", currentScreen, username, role,
+                "/images/quan_ly_dat_phong.png",
                 ScreenKey.DAT_PHONG, ScreenKey.CHECK_IN_OUT, ScreenKey.THANH_TOAN);
         addGroup(menuPanel, "Quản lý phòng", currentScreen, username, role,
+                "/images/quan_ly_phong.png",
                 ScreenKey.PHONG, ScreenKey.LOAI_PHONG, ScreenKey.BANG_GIA, ScreenKey.TIEN_NGHI, ScreenKey.DICH_VU);
         addGroup(menuPanel, "Quản lý khách hàng", currentScreen, username, role,
+                "/images/quan_ly_khach_hang.png",
                 ScreenKey.KHACH_HANG);
         addGroup(menuPanel, "Quản lý nhân sự", currentScreen, username, role,
+                "/images/quan_ly_nhan_su.png",
                 ScreenKey.NHAN_VIEN, ScreenKey.TAI_KHOAN);
         addGroup(menuPanel, "Báo cáo thống kê", currentScreen, username, role,
+                "/images/bao_cao_thong_ke.png",
                 ScreenKey.BAO_CAO);
 
         sidebar.add(brand, BorderLayout.NORTH);
@@ -97,19 +107,19 @@ public final class SidebarFactory {
     }
 
     private static void addDirectItem(JPanel menuPanel, ScreenKey item, ScreenKey currentScreen,
-                                      String username, String role) {
-        JButton button = createMenuButton(item, currentScreen);
+                                      String username, String role, String iconPath) {
+        JButton button = createMenuButton(item, currentScreen, iconPath);
         button.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
         menuPanel.add(button);
         menuPanel.add(Box.createVerticalStrut(6));
     }
 
     private static void addGroup(JPanel menuPanel, String title, ScreenKey currentScreen,
-                                 String username, String role, ScreenKey... items) {
+                                 String username, String role, String iconPath, ScreenKey... items) {
         List<ScreenKey> groupItems = Arrays.asList(items);
         boolean expanded = groupItems.contains(currentScreen);
 
-        JButton header = createGroupHeader(title, expanded, groupItems.contains(currentScreen));
+        JButton header = createGroupHeader(title, expanded, groupItems.contains(currentScreen), iconPath);
         JPanel children = new JPanel();
         children.setOpaque(true);
         children.setBackground(SUBMENU_BG);
@@ -130,9 +140,10 @@ public final class SidebarFactory {
         header.addActionListener(e -> {
             boolean visible = !children.isVisible();
             children.setVisible(visible);
-            header.setText((visible ? "▾ " : "▸ ") + title);
+            header.putClientProperty("expanded", visible);
             children.revalidate();
             children.repaint();
+            header.repaint();
         });
 
         menuPanel.add(header);
@@ -141,9 +152,13 @@ public final class SidebarFactory {
         menuPanel.add(Box.createVerticalStrut(10));
     }
 
-    private static JButton createGroupHeader(String title, boolean expanded, boolean activeGroup) {
-        JButton button = new JButton((expanded ? "▾ " : "▸ ") + title);
+    private static JButton createGroupHeader(String title, boolean expanded, boolean activeGroup, String iconPath) {
+        JButton button = new JButton(title);
+        button.putClientProperty("expanded", expanded);
         button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
+        button.setIcon(loadMenuIcon(iconPath, MENU_ICON_SIZE, MENU_ICON_SIZE));
+        button.setIconTextGap(14);
         button.setFocusPainted(false);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(activeGroup ? ACTIVE_BG : GROUP_BG, 1, true),
@@ -166,9 +181,12 @@ public final class SidebarFactory {
         return button;
     }
 
-    private static JButton createMenuButton(ScreenKey item, ScreenKey currentScreen) {
+    private static JButton createMenuButton(ScreenKey item, ScreenKey currentScreen, String iconPath) {
         JButton button = new JButton(item.getLabel());
         button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
+        button.setIcon(loadMenuIcon(iconPath, MENU_ICON_SIZE, MENU_ICON_SIZE));
+        button.setIconTextGap(14);
         button.setFocusPainted(false);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(item == currentScreen ? ACTIVE_BG : ITEM_BG, 1, true),
@@ -193,12 +211,13 @@ public final class SidebarFactory {
     }
 
     private static JButton createSubMenuButton(ScreenKey item, ScreenKey currentScreen) {
-        JButton button = new JButton("   " + item.getLabel());
+        JButton button = new JButton(item.getLabel());
         button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
         button.setFocusPainted(false);
         button.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(item == currentScreen ? ACTIVE_BG : SUBMENU_BG, 1, true),
-                new EmptyBorder(8, 18, 8, 12)
+                new EmptyBorder(8, 24, 8, 12)
         ));
         button.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         button.setOpaque(true);
@@ -231,5 +250,18 @@ public final class SidebarFactory {
                 button.setBackground(normalBg);
             }
         });
+    }
+
+    private static ImageIcon loadMenuIcon(String path, int w, int h) {
+        if (path == null || path.trim().isEmpty()) return null;
+
+        URL resource = SidebarFactory.class.getResource(path);
+        if (resource == null) return null;
+
+        ImageIcon raw = new ImageIcon(resource);
+        if (raw.getIconWidth() <= 0 || raw.getIconHeight() <= 0) return null;
+
+        Image scaled = raw.getImage().getScaledInstance(w, h, Image.SCALE_SMOOTH);
+        return new ImageIcon(scaled);
     }
 }

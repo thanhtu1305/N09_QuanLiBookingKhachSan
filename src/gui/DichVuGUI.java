@@ -90,11 +90,11 @@ public class DichVuGUI extends JFrame {
         this.username = username == null || username.trim().isEmpty() ? "guest" : username.trim();
         this.role = role == null || role.trim().isEmpty() ? "Lễ tân" : role.trim();
         setTitle("Quản lý dịch vụ - Hotel PMS");
-        setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         initUI();
         loadServices(true, false);
         registerShortcuts();
+        ScreenUIHelper.prepareFrame(this, 1360, 820);
     }
 
     private void initUI() {
@@ -175,6 +175,7 @@ public class DichVuGUI extends JFrame {
 
         txtTuKhoa = input("");
         txtTuKhoa.setPreferredSize(new Dimension(300, 34));
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
 
         JPanel right = new JPanel();
         right.setOpaque(false);
@@ -189,7 +190,6 @@ public class DichVuGUI extends JFrame {
         JPanel row = new JPanel(new BorderLayout(8, 0));
         row.setOpaque(false);
         row.add(txtTuKhoa, BorderLayout.CENTER);
-        row.add(outline("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(row);
 
         card.add(left, BorderLayout.CENTER);
@@ -317,8 +317,7 @@ public class DichVuGUI extends JFrame {
             if (!FILTER_ALL.equals(donVi) && !safe(dichVu.getDonVi()).equalsIgnoreCase(donVi)) {
                 continue;
             }
-            String searchSource = (dichVu.getMaDichVu() + " " + safe(dichVu.getTenDichVu()) + " " + safe(dichVu.getDonVi())).toLowerCase(Locale.ROOT);
-            if (!keyword.isEmpty() && !searchSource.contains(keyword)) {
+            if (!keyword.isEmpty() && !buildServiceSearchText(dichVu).contains(keyword)) {
                 continue;
             }
             filteredServices.add(dichVu);
@@ -340,6 +339,15 @@ public class DichVuGUI extends JFrame {
         if (notify) {
             info("Đã lọc được " + filteredServices.size() + " dịch vụ phù hợp.");
         }
+    }
+
+    private String buildServiceSearchText(DichVu dichVu) {
+        return (
+                formatServiceCode(dichVu.getMaDichVu()) + " " +
+                safe(dichVu.getTenDichVu()) + " " +
+                money(dichVu.getDonGia()) + " " +
+                safe(dichVu.getDonVi())
+        ).toLowerCase(Locale.ROOT);
     }
 
     private void updateDetail(DichVu dichVu) {

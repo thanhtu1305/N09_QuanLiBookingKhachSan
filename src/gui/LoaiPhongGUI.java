@@ -209,6 +209,7 @@ public class LoaiPhongGUI extends JFrame {
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(290, 34));
         txtTuKhoa.setToolTipText("Mã loại / tên loại phòng");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
 
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
 
@@ -225,7 +226,6 @@ public class LoaiPhongGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -673,11 +673,8 @@ public class LoaiPhongGUI extends JFrame {
             if (!"Tất cả".equals(trangThai) && !type.trangThai.equals(trangThai)) {
                 continue;
             }
-            if (!tuKhoa.isEmpty()) {
-                String source = (type.maLoai + " " + type.tenLoaiPhong).toLowerCase(Locale.ROOT);
-                if (!source.contains(tuKhoa)) {
-                    continue;
-                }
+            if (!tuKhoa.isEmpty() && !buildRoomTypeSearchText(type).contains(tuKhoa)) {
+                continue;
             }
             filteredTypes.add(type);
         }
@@ -686,6 +683,16 @@ public class LoaiPhongGUI extends JFrame {
         if (showMessage) {
             showSuccess("Đã lọc được " + filteredTypes.size() + " loại phòng phù hợp.");
         }
+    }
+
+    private String buildRoomTypeSearchText(RoomTypeRecord type) {
+        return (
+                type.maLoai + " " +
+                type.tenLoaiPhong + " " +
+                type.getKhachToiDaLabel() + " " +
+                type.getDienTichLabel() + " " +
+                type.trangThai
+        ).toLowerCase(Locale.ROOT);
     }
 
     private void refillTable() {

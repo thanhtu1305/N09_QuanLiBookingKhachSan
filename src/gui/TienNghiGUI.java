@@ -38,6 +38,7 @@ import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.util.Locale;
 import java.awt.Insets;
 import java.util.ArrayList;
 import java.util.List;
@@ -177,6 +178,7 @@ public class TienNghiGUI extends JFrame {
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(290, 34));
         txtTuKhoa.setToolTipText("Mã tiện nghi / tên tiện nghi");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
 
         left.add(createFieldGroup("Nhóm tiện nghi", cboNhomTienNghi));
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
@@ -194,7 +196,6 @@ public class TienNghiGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -525,10 +526,11 @@ public class TienNghiGUI extends JFrame {
 
     private void applyFilters(boolean showMessage) {
         loadAmenities(
-                txtTuKhoa.getText(),
+                "",
                 normalizeFilterValue(valueOf(cboNhomTienNghi.getSelectedItem())),
                 normalizeFilterValue(valueOf(cboTrangThai.getSelectedItem()))
         );
+        filterAmenitiesByKeyword(txtTuKhoa.getText());
         refreshCurrentView();
         if (showMessage) {
             showSuccess("Đã lọc được " + filteredAmenities.size() + " tiện nghi phù hợp.");
@@ -581,6 +583,34 @@ public class TienNghiGUI extends JFrame {
             clearDetailPanel();
         }
         refreshCurrentView();
+    }
+
+    private void filterAmenitiesByKeyword(String keyword) {
+        String tuKhoa = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
+        if (tuKhoa.isEmpty()) {
+            filteredAmenities.clear();
+            filteredAmenities.addAll(allAmenities);
+            refillTable();
+            return;
+        }
+
+        filteredAmenities.clear();
+        for (AmenityRecord amenity : allAmenities) {
+            if (buildAmenitySearchText(amenity).contains(tuKhoa)) {
+                filteredAmenities.add(amenity);
+            }
+        }
+        refillTable();
+    }
+
+    private String buildAmenitySearchText(AmenityRecord amenity) {
+        return (
+                formatAmenityCode(parseAmenityId(amenity.maTienNghi)) + " " +
+                amenity.tenTienNghi + " " +
+                amenity.nhomTienNghi + " " +
+                amenity.uuTienHienThi + " " +
+                amenity.trangThai
+        ).toLowerCase(Locale.ROOT);
     }
 
     private void updateDetailPanel(AmenityRecord amenity) {

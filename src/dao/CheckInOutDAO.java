@@ -385,6 +385,10 @@ public class CheckInOutDAO {
         if (con == null) {
             return;
         }
+        if (useDirectActiveStatusAfterCheckout()) {
+            synchronizeOperationalStatusesWithoutCleaning(con);
+            return;
+        }
 
         try (PreparedStatement ps = con.prepareStatement(
                 "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở', N'Dọn dẹp')")) {
@@ -408,6 +412,30 @@ public class CheckInOutDAO {
                         "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đang lưu trú')")) {
             ps.executeUpdate();
         }
+    }
+
+    private void synchronizeOperationalStatusesWithoutCleaning(Connection con) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE Phong SET trangThai = N'Ho\u1ea1t \u0111\u1ed9ng' " +
+                        "WHERE trangThai IN (N'Ho\u1ea1t \u0111\u1ed9ng', N'Tr\u1ed1ng', N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110ang \u1edf', N'D\u1ecdn d\u1eb9p')")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'\u0110\u00e3 \u0111\u1eb7t' FROM Phong p WHERE EXISTS (" +
+                        "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in'))")) {
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = con.prepareStatement(
+                "UPDATE p SET p.trangThai = N'\u0110ang \u1edf' FROM Phong p WHERE EXISTS (" +
+                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
+                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'\u0110ang l\u01b0u tr\u00fa')")) {
+            ps.executeUpdate();
+        }
+    }
+
+    private boolean useDirectActiveStatusAfterCheckout() {
+        return true;
     }
 
     private void fillStatement(PreparedStatement stmt, LuuTru luuTru) throws SQLException {

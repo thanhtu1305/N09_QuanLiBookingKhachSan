@@ -21,8 +21,7 @@ public class AppFrame extends JFrame {
         setMinimumSize(new Dimension(1024, 700));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setContentPane(container);
-        setLocationRelativeTo(null);
-        setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
+        ScreenUIHelper.prepareFrame(this, 1440, 900);
     }
 
     public static AppFrame get() {

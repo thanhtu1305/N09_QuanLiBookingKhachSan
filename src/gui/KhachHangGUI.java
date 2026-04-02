@@ -202,6 +202,7 @@ public class KhachHangGUI extends JFrame {
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(320, 34));
         txtTuKhoa.setToolTipText("Mã khách hàng / tên / số điện thoại / CCCD");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
 
         left.add(createFieldGroup("Loại khách", cboLoaiKhach));
         left.add(createFieldGroup("Hạng khách", cboHangKhach));
@@ -220,7 +221,6 @@ public class KhachHangGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -639,11 +639,8 @@ public class KhachHangGUI extends JFrame {
             if (!"Tất cả".equals(trangThai) && !customer.trangThai.equalsIgnoreCase(trangThai)) {
                 continue;
             }
-            if (!tuKhoa.isEmpty()) {
-                String source = (customer.maKhachHang + " " + customer.hoTen + " " + customer.soDienThoai + " " + customer.cccdPassport).toLowerCase(Locale.ROOT);
-                if (!source.contains(tuKhoa)) {
-                    continue;
-                }
+            if (!tuKhoa.isEmpty() && !buildCustomerSearchText(customer).contains(tuKhoa)) {
+                continue;
             }
             filteredCustomers.add(customer);
         }
@@ -652,6 +649,17 @@ public class KhachHangGUI extends JFrame {
         if (showMessage) {
             showSuccess("Đã lọc được " + filteredCustomers.size() + " khách hàng phù hợp.");
         }
+    }
+
+    private String buildCustomerSearchText(CustomerRecord customer) {
+        return (
+                customer.maKhachHang + " " +
+                customer.hoTen + " " +
+                customer.soDienThoai + " " +
+                customer.cccdPassport + " " +
+                customer.hangThanhVien + " " +
+                customer.trangThai
+        ).toLowerCase(Locale.ROOT);
     }
 
     private void refillTable() {

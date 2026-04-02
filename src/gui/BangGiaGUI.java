@@ -201,10 +201,10 @@ public class BangGiaGUI extends JFrame {
         right.add(Box.createVerticalStrut(4));
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(260, 34));
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -380,9 +380,13 @@ public class BangGiaGUI extends JFrame {
         String loaiNgay = "Tất cả".equals(valueOf(cboLoaiNgay.getSelectedItem())) ? "" : valueOf(cboLoaiNgay.getSelectedItem());
         String trangThai = valueOf(cboTrangThai.getSelectedItem());
 
+        String tuKhoa = safeValue(txtTuKhoa.getText(), "").trim().toLowerCase(Locale.ROOT);
         displayedBangGia.clear();
-        for (BangGia bangGia : bangGiaDAO.search(txtTuKhoa.getText().trim(), maLoaiPhong, from, to, loaiNgay)) {
+        for (BangGia bangGia : bangGiaDAO.search("", maLoaiPhong, from, to, loaiNgay)) {
             if (!"Tất cả".equals(trangThai) && !safeValue(bangGia.getTrangThai(), "").equals(trangThai)) {
+                continue;
+            }
+            if (!tuKhoa.isEmpty() && !buildBangGiaSearchText(bangGia).contains(tuKhoa)) {
                 continue;
             }
             displayedBangGia.add(bangGia);
@@ -393,6 +397,18 @@ public class BangGiaGUI extends JFrame {
         if (showMessage) {
             JOptionPane.showMessageDialog(this, "Đã lọc được " + displayedBangGia.size() + " bảng giá phù hợp.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
         }
+    }
+
+    private String buildBangGiaSearchText(BangGia bangGia) {
+        return (
+                formatBangGiaCode(bangGia.getMaBangGia()) + " " +
+                safeValue(bangGia.getTenBangGia(), "") + " " +
+                safeValue(bangGia.getTenLoaiPhong(), "") + " " +
+                formatDate(bangGia.getTuNgay()) + " " +
+                formatDate(bangGia.getDenNgay()) + " " +
+                safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "") + " " +
+                safeValue(bangGia.getTrangThai(), "")
+        ).toLowerCase(Locale.ROOT);
     }
 
     private void refillBangGiaTable() {

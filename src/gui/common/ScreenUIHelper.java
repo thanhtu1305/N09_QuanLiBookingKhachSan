@@ -11,10 +11,13 @@ import javax.swing.JScrollPane;
 import javax.swing.RootPaneContainer;
 import javax.swing.JRootPane;
 import javax.swing.JTable;
+import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Container;
@@ -223,6 +226,29 @@ public final class ScreenUIHelper {
                 ((Frame) target).requestFocus();
             }
             target.repaint();
+        });
+    }
+
+    public static void installLiveSearch(JTextField textField, Runnable filterAction) {
+        if (textField == null || filterAction == null) {
+            return;
+        }
+
+        textField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                filterAction.run();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                filterAction.run();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                filterAction.run();
+            }
         });
     }
 

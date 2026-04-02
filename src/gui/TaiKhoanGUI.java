@@ -60,7 +60,7 @@ public class TaiKhoanGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
-    private static final String[] ROLE_OPTIONS = {"Lễ tân", "Kế toán", "Quản trị", "Quản lý"};
+    private static final String[] ROLE_OPTIONS = {"Quản lý", "Lễ tân"};
     private static final String[] STATUS_OPTIONS = {"Hoạt động", "Khóa"};
 
     private final String username;
@@ -84,7 +84,7 @@ public class TaiKhoanGUI extends JFrame {
 
     public TaiKhoanGUI(String username, String role) {
         this.username = safeValue(username, "guest");
-        this.role = safeValue(role, "Lễ tân");
+        this.role = normalizeRole(role);
 
         // Lễ tân: không khởi tạo UI — buildPanel() sẽ hiện dialog thông báo
         if (isLetanRole()) return;
@@ -146,7 +146,7 @@ public class TaiKhoanGUI extends JFrame {
                 String tenDN = rs.getString("tenDangNhap");
                 String hoTen = rs.getString("hoTen");
                 if (hoTen == null) hoTen = "Không xác định";
-                String vaiTro = rs.getString("vaiTro");
+                String vaiTro = normalizeRole(rs.getString("vaiTro"));
                 String trangThai = rs.getString("trangThai");
                 String lanDN = rs.getTimestamp("lanDangNhapCuoi") != null
                         ? rs.getTimestamp("lanDangNhapCuoi").toString().substring(0, 16)
@@ -380,7 +380,7 @@ public class TaiKhoanGUI extends JFrame {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        cboVaiTro = createComboBox(new String[]{"Tất cả", "Lễ tân", "Kế toán", "Quản trị", "Quản lý"});
+        cboVaiTro = createComboBox(prependAll(ROLE_OPTIONS));
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Khóa"});
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(320, 34));
@@ -728,6 +728,18 @@ public class TaiKhoanGUI extends JFrame {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
+    private String[] prependAll(String[] values) {
+        String[] result = new String[values.length + 1];
+        result[0] = "Tất cả";
+        System.arraycopy(values, 0, result, 1, values.length);
+        return result;
+    }
+
+    private static String normalizeRole(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return "Lễ tân".equalsIgnoreCase(normalized) ? "Lễ tân" : "Quản lý";
+    }
+
     private String valueOf(Object value) {
         return value == null ? "" : value.toString();
     }
@@ -925,7 +937,7 @@ public class TaiKhoanGUI extends JFrame {
             String matKhau = new String(txtMatKhauTam.getPassword()).trim();
             String xacNhan = new String(txtXacNhanMatKhau.getPassword()).trim();
             String email = txtEmailKhoiPhucDialog.getText().trim();
-            String vaiTro = valueOf(cboVaiTroDialog.getSelectedItem());
+            String vaiTro = normalizeRole(valueOf(cboVaiTroDialog.getSelectedItem()));
             String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
             int idx = cboNhanVien.getSelectedIndex();
             int maNV = (idx >= 0 && idx < maNhanVienList.size()) ? maNhanVienList.get(idx) : 0;
@@ -1116,7 +1128,7 @@ public class TaiKhoanGUI extends JFrame {
             gbc.anchor = GridBagConstraints.WEST;
 
             cboVaiTroDialog = createComboBox(ROLE_OPTIONS);
-            cboVaiTroDialog.setSelectedItem(account.vaiTro);
+            cboVaiTroDialog.setSelectedItem(normalizeRole(account.vaiTro));
             cboVaiTroDialog.addActionListener(e -> applyRolePresetIfNeeded());
 
             addFormRow(infoForm, gbc, 0, "Tài khoản", createValueTag(account.tenDangNhap));
@@ -1194,7 +1206,7 @@ public class TaiKhoanGUI extends JFrame {
         }
 
         private void applyRolePresetIfNeeded() {
-            String selectedRole = valueOf(cboVaiTroDialog.getSelectedItem());
+            String selectedRole = normalizeRole(valueOf(cboVaiTroDialog.getSelectedItem()));
             if ("Lễ tân".equals(selectedRole)) {
                 // Lễ tân KHÔNG được có quyền Tài khoản & Nhân viên
                 chkTaiKhoanDialog.setSelected(false);
@@ -1208,6 +1220,7 @@ public class TaiKhoanGUI extends JFrame {
         }
 
         private void applyRoleDefaults(String selectedRole) {
+            selectedRole = normalizeRole(selectedRole);
             AccountRecord snapshot = new AccountRecord(
                     0, account.tenDangNhap, account.nhanVien, selectedRole,
                     account.trangThai, account.lanDangNhapCuoi, account.emailKhoiPhuc, ""
@@ -1241,7 +1254,7 @@ public class TaiKhoanGUI extends JFrame {
         }
 
         private void submit() {
-            String vaiTroMoi = valueOf(cboVaiTroDialog.getSelectedItem());
+            String vaiTroMoi = normalizeRole(valueOf(cboVaiTroDialog.getSelectedItem()));
 
             // Áp dụng quyền vào record
             account.vaiTro        = vaiTroMoi;
@@ -1452,7 +1465,7 @@ public class TaiKhoanGUI extends JFrame {
             this.maTaiKhoan = maTaiKhoan;
             this.tenDangNhap = tenDangNhap;
             this.nhanVien = nhanVien;
-            this.vaiTro = vaiTro;
+            this.vaiTro = normalizeRole(vaiTro);
             this.trangThai = trangThai;
             this.lanDangNhapCuoi = lanDangNhapCuoi;
             this.emailKhoiPhuc = emailKhoiPhuc;
@@ -1464,6 +1477,8 @@ public class TaiKhoanGUI extends JFrame {
          * Đây là giá trị khởi tạo; có thể bị ghi đè bởi TaiKhoanQuyen trong DB.
          */
         void applyRoleDefaults(String selectedRole) {
+            selectedRole = normalizeRole(selectedRole);
+            vaiTro = selectedRole;
             permDashboard = true;
             permDatPhong  = true;
             permCheckInOut = true;
@@ -1477,24 +1492,6 @@ public class TaiKhoanGUI extends JFrame {
                 return;
             }
 
-            if ("Kế toán".equals(selectedRole)) {
-                permThanhToan = true;
-                permPhong = false; permLoaiPhong = false;
-                permBangGia = true;
-                permDichVu = false; permTienNghi = false;
-                permTaiKhoan = false; permNhanVien = false; permBaoCao = true;
-                return;
-            }
-
-            if ("Quản lý".equals(selectedRole)) {
-                permThanhToan = true;
-                permPhong = true; permLoaiPhong = true; permBangGia = true;
-                permDichVu = true; permTienNghi = true;
-                permTaiKhoan = true; permNhanVien = true; permBaoCao = true;
-                return;
-            }
-
-            // Quản trị — toàn quyền
             permThanhToan = true;
             permPhong = true; permLoaiPhong = true; permBangGia = true;
             permDichVu = true; permTienNghi = true;

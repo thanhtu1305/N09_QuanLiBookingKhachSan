@@ -209,7 +209,7 @@ public class DichVuGUI extends JFrame {
         tblDichVu.setRowHeight(32);
         tblDichVu.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tblDichVu.setGridColor(BORDER_SOFT);
-        tblDichVu.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
+        ScreenUIHelper.styleTableHeader(tblDichVu);
         tblDichVu.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 DichVu dichVu = getSelectedService(false);
@@ -527,7 +527,7 @@ public class DichVuGUI extends JFrame {
             tblUsage.setRowHeight(30);
             tblUsage.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             tblUsage.setGridColor(BORDER_SOFT);
-            tblUsage.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
+            ScreenUIHelper.styleTableHeader(tblUsage);
 
             usageContext = new UsageContext(
                     txtCccdPassport,

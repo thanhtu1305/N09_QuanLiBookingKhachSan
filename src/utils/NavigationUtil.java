@@ -13,6 +13,7 @@ import gui.PhongGUI;
 import gui.TaiKhoanGUI;
 import gui.ThanhToanGUI;
 import gui.TienNghiGUI;
+import gui.common.AccountPermissionHelper;
 import gui.common.AppFrame;
 
 import javax.swing.JOptionPane;
@@ -66,6 +67,15 @@ public final class NavigationUtil {
                                 ScreenKey targetScreen, String username, String role) {
         if (targetScreen == null) return;
         if (currentScreen != null && currentScreen == targetScreen) return;
+        if (!AccountPermissionHelper.hasPermission(username, role, targetScreen)) {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                    AppFrame.get(),
+                    "Tài khoản này không được cấp quyền sử dụng màn " + SCREEN_TITLES.getOrDefault(targetScreen, targetScreen.name()) + ".",
+                    "Không có quyền truy cập",
+                    JOptionPane.WARNING_MESSAGE
+            ));
+            return;
+        }
 
         SwingUtilities.invokeLater(() -> {
             JPanel panel = createPanel(targetScreen, username, role);

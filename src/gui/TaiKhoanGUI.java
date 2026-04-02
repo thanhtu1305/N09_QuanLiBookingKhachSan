@@ -5,6 +5,7 @@ import dao.NhanVienDAO;
 import db.ConnectDB;
 import entity.TaiKhoan;
 import entity.NhanVien;
+import gui.common.AccountPermissionHelper;
 import gui.common.AppBranding;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -87,7 +88,6 @@ public class TaiKhoanGUI extends JFrame {
         this.role = normalizeRole(role);
 
         // Lễ tân: không khởi tạo UI — buildPanel() sẽ hiện dialog thông báo
-        if (isLetanRole()) return;
 
         setTitle("Hotel PMS - Tài khoản");
         setLocationRelativeTo(null);
@@ -445,9 +445,7 @@ public class TaiKhoanGUI extends JFrame {
         tblTaiKhoan.setGridColor(BORDER_SOFT);
         tblTaiKhoan.setShowGrid(true);
         tblTaiKhoan.setFillsViewportHeight(true);
-        tblTaiKhoan.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblTaiKhoan.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblTaiKhoan.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblTaiKhoan);
 
         tblTaiKhoan.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -545,7 +543,6 @@ public class TaiKhoanGUI extends JFrame {
         int row = tblTaiKhoan.getSelectedRow();
         if (row < 0 || row >= filteredAccounts.size()) {
             showWarning("Vui lòng chọn một tài khoản trong danh sách.");
-            return null;
         }
         return filteredAccounts.get(row);
     }
@@ -583,6 +580,22 @@ public class TaiKhoanGUI extends JFrame {
         applyFilters(false);
         selectAccount(account);
         showSuccess(message);
+    }
+
+    private int getManagerAccountCount() {
+        int count = 0;
+        for (AccountRecord account : allAccounts) {
+            if ("Quản lý".equals(normalizeRole(account.vaiTro))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean isOnlyManagerAccount(AccountRecord account) {
+        return account != null
+                && "Quản lý".equals(normalizeRole(account.vaiTro))
+                && getManagerAccountCount() <= 1;
     }
 
     private void selectAccount(AccountRecord target) {
@@ -736,8 +749,15 @@ public class TaiKhoanGUI extends JFrame {
     }
 
     private static String normalizeRole(String value) {
-        String normalized = value == null ? "" : value.trim();
-        return "Lễ tân".equalsIgnoreCase(normalized) ? "Lễ tân" : "Quản lý";
+        return AccountPermissionHelper.normalizeRole(value);
+    }
+
+    private static boolean isManagerRole(String value) {
+        return AccountPermissionHelper.isManagerRole(value);
+    }
+
+    private static boolean isReceptionistRole(String value) {
+        return AccountPermissionHelper.isReceptionistRole(value);
     }
 
     private String valueOf(Object value) {
@@ -883,7 +903,9 @@ public class TaiKhoanGUI extends JFrame {
             txtTenDangNhapDialog = createInputField("");
             txtMatKhauTam = createPasswordField();
             txtXacNhanMatKhau = createPasswordField();
-            cboVaiTroDialog = createComboBox(ROLE_OPTIONS);
+            cboVaiTroDialog = createComboBox(new String[]{"Lễ tân"});
+            cboVaiTroDialog.setSelectedItem("Lễ tân");
+            cboVaiTroDialog.setEnabled(false);
             cboTrangThaiDialog = createComboBox(STATUS_OPTIONS);
             txtEmailKhoiPhucDialog = createInputField("");
             txtGhiChuDialog = createDialogTextArea(4);
@@ -893,9 +915,10 @@ public class TaiKhoanGUI extends JFrame {
             addFormRow(form, gbc, 2, "Mật khẩu tạm", txtMatKhauTam);
             addFormRow(form, gbc, 3, "Xác nhận mật khẩu", txtXacNhanMatKhau);
             addFormRow(form, gbc, 4, "Vai trò", cboVaiTroDialog);
-            addFormRow(form, gbc, 5, "Trạng thái", cboTrangThaiDialog);
-            addFormRow(form, gbc, 6, "Email khôi phục", txtEmailKhoiPhucDialog);
-            addFormRow(form, gbc, 7, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 5, "Ghi chú", createValueTag("Tài khoản tạo mới chỉ áp dụng cho nhân viên Lễ tân."));
+            addFormRow(form, gbc, 6, "Trạng thái", cboTrangThaiDialog);
+            addFormRow(form, gbc, 7, "Email khôi phục", txtEmailKhoiPhucDialog);
+            addFormRow(form, gbc, 8, "Ghi chú thêm", new JScrollPane(txtGhiChuDialog));
 
             card.add(form, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
@@ -914,7 +937,13 @@ public class TaiKhoanGUI extends JFrame {
                 Connection con = ConnectDB.getConnection();
                 if (con != null) {
                     PreparedStatement ps = con.prepareStatement(
-                            "SELECT maNhanVien, hoTen FROM NhanVien WHERE trangThai = N'Hoạt động' ORDER BY hoTen"
+                            "SELECT nv.maNhanVien, nv.hoTen " +
+                                    "FROM NhanVien nv " +
+                                    "LEFT JOIN TaiKhoan tk ON tk.maNhanVien = nv.maNhanVien " +
+                                    "WHERE nv.trangThai = N'Hoạt động' " +
+                                    "  AND nv.chucVu = N'Lễ tân' " +
+                                    "  AND tk.maTaiKhoan IS NULL " +
+                                    "ORDER BY nv.hoTen"
                     );
                     ResultSet rs = ps.executeQuery();
                     while (rs.next()) {
@@ -927,7 +956,7 @@ public class TaiKhoanGUI extends JFrame {
             }
             if (labels.isEmpty()) {
                 maNhanVienList.add(0);
-                labels.add("Không có nhân viên");
+                labels.add("Không có nhân viên Lễ tân khả dụng");
             }
             return createComboBox(labels.toArray(new String[0]));
         }
@@ -945,6 +974,7 @@ public class TaiKhoanGUI extends JFrame {
             if (tenDangNhap.isEmpty()) { showError("Tên đăng nhập không được để trống."); return; }
             if (matKhau.isEmpty())     { showError("Mật khẩu tạm không được để trống."); return; }
             if (!matKhau.equals(xacNhan)) { showError("Mật khẩu và xác nhận mật khẩu phải khớp nhau."); return; }
+            if (maNV <= 0) { showError("Không có nhân viên Lễ tân khả dụng để liên kết tài khoản."); return; }
 
             // Kiểm tra trùng tên đăng nhập trong DB
             for (AccountRecord ac : allAccounts) {
@@ -1127,15 +1157,22 @@ public class TaiKhoanGUI extends JFrame {
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            cboVaiTroDialog = createComboBox(ROLE_OPTIONS);
+            cboVaiTroDialog = createComboBox(isOnlyManagerAccount(account) || "Qu\u1ea3n l\u00fd".equals(normalizeRole(account.vaiTro)) ? new String[]{"Qu\u1ea3n l\u00fd"} : new String[]{"L\u1ec5 t\u00e2n"});
             cboVaiTroDialog.setSelectedItem(normalizeRole(account.vaiTro));
-            cboVaiTroDialog.addActionListener(e -> applyRolePresetIfNeeded());
+            cboVaiTroDialog.setEnabled(false);
 
             addFormRow(infoForm, gbc, 0, "Tài khoản", createValueTag(account.tenDangNhap));
             addFormRow(infoForm, gbc, 1, "Nhân viên", createValueTag(account.nhanVien));
             addFormRow(infoForm, gbc, 2, "Email", createValueTag(account.emailKhoiPhuc == null || account.emailKhoiPhuc.trim().isEmpty() ? "-" : account.emailKhoiPhuc));
             addFormRow(infoForm, gbc, 3, "Vai trò hiện tại", createValueTag(account.vaiTro));
             addFormRow(infoForm, gbc, 4, "Vai trò áp dụng", cboVaiTroDialog);
+            if (isOnlyManagerAccount(account)) {
+                addFormRow(infoForm, gbc, 5, "Ghi ch\u00fa", createValueTag("H\u1ec7 th\u1ed1ng ch\u1ec9 c\u00f3 m\u1ed9t Qu\u1ea3n l\u00fd duy nh\u1ea5t, kh\u00f4ng th\u1ec3 \u0111\u1ed5i t\u00e0i kho\u1ea3n n\u00e0y th\u00e0nh L\u1ec5 t\u00e2n."));
+                cboVaiTroDialog.setEnabled(false);
+            } else {
+                addFormRow(infoForm, gbc, 5, "Ghi ch\u00fa", createValueTag("L\u1ec5 t\u00e2n m\u1eb7c \u0111\u1ecbnh kh\u00f4ng \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng m\u00e0n T\u00e0i kho\u1ea3n v\u00e0 Nh\u00e2n vi\u00ean."));
+            }
+
 
             JPanel permissionGrid = new JPanel(new GridLayout(7, 2, 10, 8));
             permissionGrid.setOpaque(false);
@@ -1154,14 +1191,6 @@ public class TaiKhoanGUI extends JFrame {
             chkNhanVienDialog   = createEditableCheck("Nhân viên",         account.permNhanVien);
             chkBaoCaoDialog     = createEditableCheck("Báo cáo thống kê",  account.permBaoCao);
 
-            // Lễ tân KHÔNG được cấp quyền Tài khoản & Nhân viên
-            if ("Lễ tân".equals(account.vaiTro)) {
-                chkTaiKhoanDialog.setEnabled(false);
-                chkNhanVienDialog.setEnabled(false);
-                chkTaiKhoanDialog.setSelected(false);
-                chkNhanVienDialog.setSelected(false);
-            }
-
             permissionGrid.add(chkDashboardDialog);
             permissionGrid.add(chkDatPhongDialog);
             permissionGrid.add(chkCheckInOutDialog);
@@ -1172,8 +1201,6 @@ public class TaiKhoanGUI extends JFrame {
             permissionGrid.add(chkBangGiaDialog);
             permissionGrid.add(chkDichVuDialog);
             permissionGrid.add(chkTienNghiDialog);
-            permissionGrid.add(chkTaiKhoanDialog);
-            permissionGrid.add(chkNhanVienDialog);
             permissionGrid.add(chkBaoCaoDialog);
 
             JPanel permissionCard = new JPanel(new BorderLayout(0, 8));
@@ -1195,6 +1222,7 @@ public class TaiKhoanGUI extends JFrame {
             JButton btnCancel  = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnDefault, btnSave), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+            applyRolePresetIfNeeded();
         }
 
         private JCheckBox createEditableCheck(String text, boolean selected) {
@@ -1207,16 +1235,24 @@ public class TaiKhoanGUI extends JFrame {
 
         private void applyRolePresetIfNeeded() {
             String selectedRole = normalizeRole(valueOf(cboVaiTroDialog.getSelectedItem()));
-            if ("Lễ tân".equals(selectedRole)) {
-                // Lễ tân KHÔNG được có quyền Tài khoản & Nhân viên
-                chkTaiKhoanDialog.setSelected(false);
-                chkTaiKhoanDialog.setEnabled(false);
-                chkNhanVienDialog.setSelected(false);
-                chkNhanVienDialog.setEnabled(false);
+            if ("Quản lý".equals(selectedRole)) {
+                applyRoleDefaults(selectedRole);
             } else {
-                chkTaiKhoanDialog.setEnabled(true);
-                chkNhanVienDialog.setEnabled(true);
+                chkDashboardDialog.setSelected(account.permDashboard);
+                chkDatPhongDialog.setSelected(account.permDatPhong);
+                chkCheckInOutDialog.setSelected(account.permCheckInOut);
+                chkThanhToanDialog.setSelected(account.permThanhToan);
+                chkKhachHangDialog.setSelected(account.permKhachHang);
+                chkPhongDialog.setSelected(account.permPhong);
+                chkLoaiPhongDialog.setSelected(account.permLoaiPhong);
+                chkBangGiaDialog.setSelected(account.permBangGia);
+                chkDichVuDialog.setSelected(account.permDichVu);
+                chkTienNghiDialog.setSelected(account.permTienNghi);
+                chkTaiKhoanDialog.setSelected(false);
+                chkNhanVienDialog.setSelected(false);
+                chkBaoCaoDialog.setSelected(account.permBaoCao);
             }
+            setPermissionEditorEnabled(!"Quản lý".equals(selectedRole));
         }
 
         private void applyRoleDefaults(String selectedRole) {
@@ -1241,41 +1277,56 @@ public class TaiKhoanGUI extends JFrame {
             chkNhanVienDialog.setSelected(snapshot.permNhanVien);
             chkBaoCaoDialog.setSelected(snapshot.permBaoCao);
 
-            // Đảm bảo Lễ tân không có quyền Tài khoản/Nhân viên
-            if ("Lễ tân".equals(selectedRole)) {
-                chkTaiKhoanDialog.setSelected(false);
-                chkTaiKhoanDialog.setEnabled(false);
-                chkNhanVienDialog.setSelected(false);
-                chkNhanVienDialog.setEnabled(false);
-            } else {
-                chkTaiKhoanDialog.setEnabled(true);
-                chkNhanVienDialog.setEnabled(true);
-            }
+            setPermissionEditorEnabled(!"Quản lý".equals(selectedRole));
+        }
+
+        private void setPermissionEditorEnabled(boolean enabled) {
+            chkDashboardDialog.setEnabled(enabled);
+            chkDatPhongDialog.setEnabled(enabled);
+            chkCheckInOutDialog.setEnabled(enabled);
+            chkThanhToanDialog.setEnabled(enabled);
+            chkKhachHangDialog.setEnabled(enabled);
+            chkPhongDialog.setEnabled(enabled);
+            chkLoaiPhongDialog.setEnabled(enabled);
+            chkBangGiaDialog.setEnabled(enabled);
+            chkDichVuDialog.setEnabled(enabled);
+            chkTienNghiDialog.setEnabled(enabled);
+            chkTaiKhoanDialog.setEnabled(enabled);
+            chkNhanVienDialog.setEnabled(enabled);
+            chkBaoCaoDialog.setEnabled(enabled);
         }
 
         private void submit() {
             String vaiTroMoi = normalizeRole(valueOf(cboVaiTroDialog.getSelectedItem()));
 
-            // Áp dụng quyền vào record
-            account.vaiTro        = vaiTroMoi;
-            account.permDashboard  = chkDashboardDialog.isSelected();
-            account.permDatPhong   = chkDatPhongDialog.isSelected();
-            account.permCheckInOut = chkCheckInOutDialog.isSelected();
-            account.permThanhToan  = chkThanhToanDialog.isSelected();
-            account.permKhachHang  = chkKhachHangDialog.isSelected();
-            account.permPhong      = chkPhongDialog.isSelected();
-            account.permLoaiPhong  = chkLoaiPhongDialog.isSelected();
-            account.permBangGia    = chkBangGiaDialog.isSelected();
-            account.permDichVu     = chkDichVuDialog.isSelected();
-            account.permTienNghi   = chkTienNghiDialog.isSelected();
-            account.permTaiKhoan   = chkTaiKhoanDialog.isSelected();
-            account.permNhanVien   = chkNhanVienDialog.isSelected();
-            account.permBaoCao     = chkBaoCaoDialog.isSelected();
+            if (isOnlyManagerAccount(account) && !"Quản lý".equals(vaiTroMoi)) {
+                showError("Không thể đổi tài khoản Quản lý duy nhất thành Lễ tân.");
+                return;
+            }
+            if (!"Quản lý".equals(normalizeRole(account.vaiTro))
+                    && "Quản lý".equals(vaiTroMoi)
+                    && getManagerAccountCount() >= 1) {
+                showError("Ứng dụng chỉ cho phép một tài khoản Quản lý duy nhất.");
+                return;
+            }
 
-            // Lễ tân bắt buộc false
-            if ("Lễ tân".equals(vaiTroMoi)) {
-                account.permTaiKhoan = false;
-                account.permNhanVien = false;
+            account.vaiTro        = vaiTroMoi;
+            if ("Quản lý".equals(vaiTroMoi)) {
+                account.applyRoleDefaults(vaiTroMoi);
+            } else {
+                account.permDashboard  = chkDashboardDialog.isSelected();
+                account.permDatPhong   = chkDatPhongDialog.isSelected();
+                account.permCheckInOut = chkCheckInOutDialog.isSelected();
+                account.permThanhToan  = chkThanhToanDialog.isSelected();
+                account.permKhachHang  = chkKhachHangDialog.isSelected();
+                account.permPhong      = chkPhongDialog.isSelected();
+                account.permLoaiPhong  = chkLoaiPhongDialog.isSelected();
+                account.permBangGia    = chkBangGiaDialog.isSelected();
+                account.permDichVu     = chkDichVuDialog.isSelected();
+                account.permTienNghi   = chkTienNghiDialog.isSelected();
+                account.permTaiKhoan   = false;
+                account.permNhanVien   = false;
+                account.permBaoCao     = chkBaoCaoDialog.isSelected();
             }
 
             account.ghiChu = "Đã cập nhật phân quyền cho vai trò " + vaiTroMoi + ".";
@@ -1508,11 +1559,12 @@ public class TaiKhoanGUI extends JFrame {
      * (NavigationUtil phải kiểm tra null để không swap màn hình).
      */
     public JPanel buildPanel() {
-        if (isLetanRole()) {
-            showAccessDeniedDialog();
-            return null;   // Không swap — giữ nguyên màn hình hiện tại
+        if (rootPanel == null) {
+            loadFromDatabase();
+            initUI();
+            reloadData(false);
+            registerShortcuts();
         }
-        if (rootPanel == null) initUI();
         return rootPanel;
     }
 }

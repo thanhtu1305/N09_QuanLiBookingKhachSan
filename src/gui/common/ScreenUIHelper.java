@@ -16,6 +16,9 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.Color;
@@ -40,6 +43,10 @@ import java.awt.BorderLayout;
 
 public final class ScreenUIHelper {
     private static final String DIALOG_PREPARED_KEY = "dialogPrepared";
+    private static final Color TABLE_HEADER_BG = new Color(44, 94, 143);
+    private static final Color TABLE_HEADER_FG = Color.WHITE;
+    private static final Color TABLE_HEADER_BORDER = new Color(122, 162, 202);
+    private static final Font TABLE_HEADER_FONT = new Font("Segoe UI", Font.BOLD, 13);
 
     private ScreenUIHelper() {}
 
@@ -115,6 +122,7 @@ public final class ScreenUIHelper {
         int safeMinHeight = Math.max(minHeight, 180);
 
         ensureScrollableDialogContent(dialog);
+        styleTablesRecursively(dialog.getContentPane());
         dialog.getContentPane().revalidate();
         dialog.getContentPane().repaint();
         dialog.pack();
@@ -141,7 +149,76 @@ public final class ScreenUIHelper {
         int width = Math.min(Math.max(preferredWidth, 800), usableBounds.width);
         int height = Math.min(Math.max(preferredHeight, 600), usableBounds.height);
         window.setSize(width, height);
+        if (window instanceof RootPaneContainer) {
+            styleTablesRecursively(((RootPaneContainer) window).getContentPane());
+        }
         positionWindow(window, usableBounds, null);
+    }
+
+    public static void styleTableHeader(JTable table) {
+        if (table == null) {
+            return;
+        }
+
+        JTableHeader header = table.getTableHeader();
+        if (header == null) {
+            return;
+        }
+
+        header.setReorderingAllowed(false);
+        header.setResizingAllowed(true);
+        header.setOpaque(true);
+        header.setBackground(TABLE_HEADER_BG);
+        header.setForeground(TABLE_HEADER_FG);
+        header.setFont(TABLE_HEADER_FONT);
+        header.setPreferredSize(new Dimension(header.getPreferredSize().width, 38));
+
+        final TableCellRenderer fallbackRenderer = header.getDefaultRenderer();
+        header.setDefaultRenderer(new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable tbl, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component component;
+                if (fallbackRenderer != null) {
+                    component = fallbackRenderer.getTableCellRendererComponent(tbl, value, isSelected, hasFocus, row, column);
+                } else {
+                    component = super.getTableCellRendererComponent(tbl, value, isSelected, hasFocus, row, column);
+                }
+
+                if (component instanceof JLabel) {
+                    JLabel label = (JLabel) component;
+                    label.setHorizontalAlignment(SwingConstants.CENTER);
+                    label.setFont(TABLE_HEADER_FONT);
+                    label.setForeground(TABLE_HEADER_FG);
+                    label.setBackground(TABLE_HEADER_BG);
+                    label.setOpaque(true);
+                    label.setBorder(BorderFactory.createCompoundBorder(
+                            BorderFactory.createMatteBorder(0, 0, 1, 1, TABLE_HEADER_BORDER),
+                            new EmptyBorder(8, 8, 8, 8)
+                    ));
+                } else {
+                    component.setForeground(TABLE_HEADER_FG);
+                    component.setBackground(TABLE_HEADER_BG);
+                }
+                return component;
+            }
+        });
+        header.repaint();
+    }
+
+    public static void styleTablesRecursively(Component component) {
+        if (component == null) {
+            return;
+        }
+
+        if (component instanceof JTable) {
+            styleTableHeader((JTable) component);
+        }
+
+        if (component instanceof Container) {
+            for (Component child : ((Container) component).getComponents()) {
+                styleTablesRecursively(child);
+            }
+        }
     }
 
     public static Frame resolveDialogOwner(Component candidate) {

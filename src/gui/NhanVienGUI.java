@@ -72,11 +72,11 @@ public class NhanVienGUI extends JFrame {
     private static final Pattern PHONE_PATTERN = Pattern.compile("^\\d{9,15}$");
     private static final Pattern CCCD_PATTERN = Pattern.compile("^\\d{9,20}$");
     private static final String[] GIOI_TINH_OPTIONS = {"Nam", "Nữ", "Khác"};
-    private static final String[] BO_PHAN_OPTIONS = {"Quản lý", "Lễ tân"};
-    private static final String[] CHUC_VU_OPTIONS = {"Quản lý", "Lễ tân"};
+    private static final String[] BO_PHAN_OPTIONS = {"Lễ tân"};
+    private static final String[] CHUC_VU_OPTIONS = {"Lễ tân"};
     private static final String[] CA_LAM_OPTIONS = {"Ca sáng", "Ca chiều", "Ca tối"};
     private static final String[] TRANG_THAI_OPTIONS = {"Hoạt động", "Tạm ngừng", "Ngừng làm việc", "Khóa"};
-    private static final String[] STAFF_ROLE_OPTIONS = {"Quản lý", "Lễ tân"};
+    private static final String[] STAFF_ROLE_OPTIONS = {"Lễ tân"};
 
     private final NhanVienDAO nhanVienDAO = new NhanVienDAO();
     private final String username;
@@ -86,7 +86,6 @@ public class NhanVienGUI extends JFrame {
     private JPanel rootPanel;
     private JTable tblNhanVien;
     private DefaultTableModel tableModel;
-    private JComboBox<String> cboBoPhanFilter;
     private JComboBox<String> cboChucVuFilter;
     private JComboBox<String> cboTrangThaiFilter;
     private JTextField txtHoTenFilter;
@@ -98,7 +97,6 @@ public class NhanVienGUI extends JFrame {
     private JLabel lblCccd;
     private JLabel lblSoDienThoai;
     private JLabel lblEmail;
-    private JLabel lblBoPhan;
     private JLabel lblChucVu;
     private JLabel lblCaLam;
     private JLabel lblNgayVaoLam;
@@ -115,7 +113,6 @@ public class NhanVienGUI extends JFrame {
         this.role = safeValue(role, "Lễ tân");
 
         // Lễ tân: không khởi tạo UI — buildPanel() sẽ hiện dialog thông báo
-        if (isLetanRole()) return;
 
         setTitle("Quản lý nhân viên - " + AppBranding.APP_DISPLAY_NAME);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
@@ -214,14 +211,12 @@ public class NhanVienGUI extends JFrame {
         JPanel card = createCardPanel(new BorderLayout(12, 10));
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
-        cboBoPhanFilter = createComboBox(prependAll(STAFF_ROLE_OPTIONS));
         cboChucVuFilter = createComboBox(prependAll(STAFF_ROLE_OPTIONS));
         cboTrangThaiFilter = createComboBox(prependAll(TRANG_THAI_OPTIONS));
         txtHoTenFilter = createInputField("");
         txtHoTenFilter.setPreferredSize(new Dimension(260, 34));
         ScreenUIHelper.installLiveSearch(txtHoTenFilter, () -> applyFilters(false));
 
-        left.add(createFieldGroup("Bộ phận", cboBoPhanFilter));
         left.add(createFieldGroup("Chức vụ", cboChucVuFilter));
         left.add(createFieldGroup("Trạng thái", cboTrangThaiFilter));
 
@@ -270,7 +265,7 @@ public class NhanVienGUI extends JFrame {
         titleRow.add(lblSub, BorderLayout.EAST);
 
         tableModel = new DefaultTableModel(new String[]{
-                "Mã NV", "Họ tên", "SĐT", "Bộ phận", "Chức vụ", "Trạng thái"
+                "Mã NV", "Họ tên", "SĐT", "Chức vụ", "Trạng thái"
         }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -285,9 +280,7 @@ public class NhanVienGUI extends JFrame {
         tblNhanVien.setGridColor(BORDER_SOFT);
         tblNhanVien.setShowGrid(true);
         tblNhanVien.setFillsViewportHeight(true);
-        tblNhanVien.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblNhanVien.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblNhanVien.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblNhanVien);
         tblNhanVien.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 showSelectedNhanVien();
@@ -336,7 +329,6 @@ public class NhanVienGUI extends JFrame {
         lblCccd = createValueLabel();
         lblSoDienThoai = createValueLabel();
         lblEmail = createValueLabel();
-        lblBoPhan = createValueLabel();
         lblChucVu = createValueLabel();
         lblCaLam = createValueLabel();
         lblNgayVaoLam = createValueLabel();
@@ -349,7 +341,6 @@ public class NhanVienGUI extends JFrame {
         addDetailRow(body, "CCCD", lblCccd);
         addDetailRow(body, "Số điện thoại", lblSoDienThoai);
         addDetailRow(body, "Email", lblEmail);
-        addDetailRow(body, "Bộ phận", lblBoPhan);
         addDetailRow(body, "Chức vụ", lblChucVu);
         addDetailRow(body, "Ca làm", lblCaLam);
         addDetailRow(body, "Ngày vào làm", lblNgayVaoLam);
@@ -406,7 +397,6 @@ public class NhanVienGUI extends JFrame {
 
     private void reloadNhanVien(boolean resetFilters, boolean showMessage) {
         if (resetFilters) {
-            cboBoPhanFilter.setSelectedIndex(0);
             cboChucVuFilter.setSelectedIndex(0);
             cboTrangThaiFilter.setSelectedIndex(0);
             txtHoTenFilter.setText("");
@@ -419,7 +409,6 @@ public class NhanVienGUI extends JFrame {
     }
 
     private void applyFilters(boolean showMessage) {
-        String boPhan = "Tất cả".equals(valueOf(cboBoPhanFilter.getSelectedItem())) ? "" : valueOf(cboBoPhanFilter.getSelectedItem());
         String chucVu = "Tất cả".equals(valueOf(cboChucVuFilter.getSelectedItem())) ? "" : valueOf(cboChucVuFilter.getSelectedItem());
         String trangThai = "Tất cả".equals(valueOf(cboTrangThaiFilter.getSelectedItem())) ? "" : valueOf(cboTrangThaiFilter.getSelectedItem());
 
@@ -428,9 +417,6 @@ public class NhanVienGUI extends JFrame {
         displayedNhanVien.clear();
         for (NhanVien nhanVien : nhanVienDAO.search("", "", "", trangThai)) {
             normalizePersonnelFields(nhanVien);
-            if (!boPhan.isEmpty() && !boPhan.equals(safeValue(nhanVien.getBoPhan(), ""))) {
-                continue;
-            }
             if (!chucVu.isEmpty() && !chucVu.equals(safeValue(nhanVien.getChucVu(), ""))) {
                 continue;
             }
@@ -455,7 +441,6 @@ public class NhanVienGUI extends JFrame {
                     formatEmployeeCode(nhanVien.getMaNhanVien()),
                     nhanVien.getHoTen(),
                     nhanVien.getSoDienThoai(),
-                    nhanVien.getBoPhan(),
                     nhanVien.getChucVu(),
                     nhanVien.getTrangThai()
             });
@@ -485,7 +470,6 @@ public class NhanVienGUI extends JFrame {
         lblCccd.setText(safeValue(nhanVien.getCccd(), "-"));
         lblSoDienThoai.setText(safeValue(nhanVien.getSoDienThoai(), "-"));
         lblEmail.setText(safeValue(nhanVien.getEmail(), "-"));
-        lblBoPhan.setText(safeValue(nhanVien.getBoPhan(), "-"));
         lblChucVu.setText(safeValue(nhanVien.getChucVu(), "-"));
         lblCaLam.setText(safeValue(nhanVien.getCaLam(), "-"));
         lblNgayVaoLam.setText(formatDate(nhanVien.getNgayVaoLam()));
@@ -503,7 +487,6 @@ public class NhanVienGUI extends JFrame {
         lblCccd.setText("-");
         lblSoDienThoai.setText("-");
         lblEmail.setText("-");
-        lblBoPhan.setText("-");
         lblChucVu.setText("-");
         lblCaLam.setText("-");
         lblNgayVaoLam.setText("-");
@@ -566,7 +549,6 @@ public class NhanVienGUI extends JFrame {
             if (showMessage) {
                 JOptionPane.showMessageDialog(this, "Vui lòng chọn một nhân viên.", "Thông báo", JOptionPane.WARNING_MESSAGE);
             }
-            return null;
         }
         return displayedNhanVien.get(row);
     }
@@ -814,12 +796,10 @@ public class NhanVienGUI extends JFrame {
      * (NavigationUtil phải kiểm tra null để không swap màn hình).
      */
     public JPanel buildPanel() {
-        if (isLetanRole()) {
-            showAccessDeniedDialog();
-            return null;   // Không swap — giữ nguyên màn hình hiện tại
-        }
         if (rootPanel == null) {
             initUI();
+            reloadNhanVien(true, false);
+            registerShortcuts();
         }
         return rootPanel;
     }
@@ -901,7 +881,6 @@ public class NhanVienGUI extends JFrame {
         private final JTextField txtSoDienThoaiDialog;
         private final JTextField txtEmailDialog;
         private final JTextArea txtDiaChiDialog;
-        private final JComboBox<String> cboBoPhanDialog;
         private final JComboBox<String> cboChucVuDialog;
         private final JComboBox<String> cboCaLamDialog;
         private final AppDatePickerField pickerNgayVaoLam;
@@ -929,8 +908,9 @@ public class NhanVienGUI extends JFrame {
             txtSoDienThoaiDialog = createInputField(nhanVien == null ? "" : safeValue(nhanVien.getSoDienThoai()));
             txtEmailDialog = createInputField(nhanVien == null ? "" : safeValue(nhanVien.getEmail()));
             txtDiaChiDialog = createDialogTextArea(3);
-            cboBoPhanDialog = createComboBox(STAFF_ROLE_OPTIONS);
             cboChucVuDialog = createComboBox(STAFF_ROLE_OPTIONS);
+            cboChucVuDialog.setSelectedItem("Lễ tân");
+            cboChucVuDialog.setEnabled(false);
             cboCaLamDialog = createComboBox(CA_LAM_OPTIONS);
             pickerNgayVaoLam = new AppDatePickerField(nhanVien == null ? "" : formatDateOrEmpty(nhanVien.getNgayVaoLam()), true);
             cboTrangThaiDialog = createComboBox(TRANG_THAI_OPTIONS);
@@ -939,8 +919,8 @@ public class NhanVienGUI extends JFrame {
             if (nhanVien != null) {
                 cboGioiTinhDialog.setSelectedItem(safeValue(nhanVien.getGioiTinh(), GIOI_TINH_OPTIONS[0]));
                 txtDiaChiDialog.setText(safeValue(nhanVien.getDiaChi()));
-                cboBoPhanDialog.setSelectedItem(normalizePersonnelCategory(nhanVien.getBoPhan()));
                 cboChucVuDialog.setSelectedItem(normalizePersonnelCategory(nhanVien.getChucVu()));
+                cboChucVuDialog.setEnabled(false);
                 cboCaLamDialog.setSelectedItem(safeValue(nhanVien.getCaLam(), CA_LAM_OPTIONS[0]));
                 cboTrangThaiDialog.setSelectedItem(safeValue(nhanVien.getTrangThai(), TRANG_THAI_OPTIONS[0]));
                 txtGhiChuDialog.setText(safeValue(nhanVien.getGhiChu()));
@@ -953,12 +933,11 @@ public class NhanVienGUI extends JFrame {
             addFormRow(form, gbc, 4, "Số điện thoại", txtSoDienThoaiDialog);
             addFormRow(form, gbc, 5, "Email", txtEmailDialog);
             addFormRow(form, gbc, 6, "Địa chỉ", new JScrollPane(txtDiaChiDialog));
-            addFormRow(form, gbc, 7, "Bộ phận", cboBoPhanDialog);
-            addFormRow(form, gbc, 8, "Chức vụ", cboChucVuDialog);
-            addFormRow(form, gbc, 9, "Ca làm", cboCaLamDialog);
-            addFormRow(form, gbc, 10, "Ngày vào làm", pickerNgayVaoLam);
-            addFormRow(form, gbc, 11, "Trạng thái", cboTrangThaiDialog);
-            addFormRow(form, gbc, 12, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 7, "Chức vụ", cboChucVuDialog);
+            addFormRow(form, gbc, 8, "Ca làm", cboCaLamDialog);
+            addFormRow(form, gbc, 9, "Ngày vào làm", pickerNgayVaoLam);
+            addFormRow(form, gbc, 10, "Trạng thái", cboTrangThaiDialog);
+            addFormRow(form, gbc, 11, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             card.add(form, BorderLayout.CENTER);
             add(card, BorderLayout.CENTER);
@@ -1025,7 +1004,6 @@ public class NhanVienGUI extends JFrame {
             String hoTen = txtHoTenDialog.getText().trim();
             if (hoTen.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "Họ tên không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
-                return null;
             }
 
             Date ngaySinh = parseRequiredDate(pickerNgaySinh.getText(), "Ngày sinh không đúng định dạng dd/MM/yyyy.");
@@ -1056,12 +1034,6 @@ public class NhanVienGUI extends JFrame {
             String email = txtEmailDialog.getText().trim();
             if (!email.isEmpty() && !EMAIL_PATTERN.matcher(email).matches()) {
                 JOptionPane.showMessageDialog(this, "Email không hợp lệ.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
-                return null;
-            }
-
-            String boPhan = normalizePersonnelCategory(valueOf(cboBoPhanDialog.getSelectedItem()).trim());
-            if (boPhan.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Bộ phận không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
                 return null;
             }
 
@@ -1100,7 +1072,7 @@ public class NhanVienGUI extends JFrame {
                     soDienThoai,
                     email,
                     txtDiaChiDialog.getText().trim(),
-                    boPhan,
+                    chucVu,
                     chucVu,
                     caLam,
                     ngayVaoLam,
@@ -1117,7 +1089,6 @@ public class NhanVienGUI extends JFrame {
             txtSoDienThoaiDialog.setText("");
             txtEmailDialog.setText("");
             txtDiaChiDialog.setText("");
-            cboBoPhanDialog.setSelectedIndex(0);
             cboChucVuDialog.setSelectedIndex(0);
             cboCaLamDialog.setSelectedIndex(0);
             pickerNgayVaoLam.setText("");
@@ -1151,13 +1122,12 @@ public class NhanVienGUI extends JFrame {
             addFormRow(form, gbc, 4, "CCCD", createValueLabel(safeValue(nhanVien.getCccd(), "-")));
             addFormRow(form, gbc, 5, "Số điện thoại", createValueLabel(safeValue(nhanVien.getSoDienThoai(), "-")));
             addFormRow(form, gbc, 6, "Email", createValueLabel(safeValue(nhanVien.getEmail(), "-")));
-            addFormRow(form, gbc, 7, "Bộ phận", createValueLabel(safeValue(nhanVien.getBoPhan(), "-")));
-            addFormRow(form, gbc, 8, "Chức vụ", createValueLabel(safeValue(nhanVien.getChucVu(), "-")));
-            addFormRow(form, gbc, 9, "Ca làm", createValueLabel(safeValue(nhanVien.getCaLam(), "-")));
-            addFormRow(form, gbc, 10, "Ngày vào làm", createValueLabel(formatDate(nhanVien.getNgayVaoLam())));
-            addFormRow(form, gbc, 11, "Trạng thái", createValueLabel(safeValue(nhanVien.getTrangThai(), "-")));
-            addFormRow(form, gbc, 12, "Địa chỉ", new JScrollPane(readOnlyDialogArea(safeValue(nhanVien.getDiaChi()))));
-            addFormRow(form, gbc, 13, "Ghi chú", new JScrollPane(readOnlyDialogArea(safeValue(nhanVien.getGhiChu()))));
+            addFormRow(form, gbc, 7, "Ch\u1ee9c v\u1ee5", createValueLabel(safeValue(nhanVien.getChucVu(), "-")));
+            addFormRow(form, gbc, 8, "Ca l\u00e0m", createValueLabel(safeValue(nhanVien.getCaLam(), "-")));
+            addFormRow(form, gbc, 9, "Ng\u00e0y v\u00e0o l\u00e0m", createValueLabel(formatDate(nhanVien.getNgayVaoLam())));
+            addFormRow(form, gbc, 10, "Tr\u1ea1ng th\u00e1i", createValueLabel(safeValue(nhanVien.getTrangThai(), "-")));
+            addFormRow(form, gbc, 11, "\u0110\u1ecba ch\u1ec9", new JScrollPane(readOnlyDialogArea(safeValue(nhanVien.getDiaChi()))));
+            addFormRow(form, gbc, 12, "Ghi ch\u00fa", new JScrollPane(readOnlyDialogArea(safeValue(nhanVien.getGhiChu()))));
 
             formCard.add(form, BorderLayout.CENTER);
             body.add(formCard, BorderLayout.CENTER);

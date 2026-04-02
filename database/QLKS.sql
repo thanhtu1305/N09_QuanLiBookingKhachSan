@@ -220,11 +220,11 @@ CREATE TABLE ThanhToan (
 );
 GO
 
-INSERT INTO NhanVien (hoTen, ngaySinh, gioiTinh, cccd, soDienThoai, email, diaChi, boPhan, chucVu, caLam, ngayVaoLam, trangThai, ghiChu)
+INSERT INTO NhanVien (hoTen, ngaySinh, gioiTinh, cccd, soDienThoai, email, diaChi, chucVu, caLam, ngayVaoLam, trangThai, ghiChu)
 VALUES
-(N'Nguyễn Văn A', '2000-01-01', N'Nam', '012345678901', '0909000001', 'nva@gmail.com', N'Hà Nội', N'Lễ tân', N'Nhân viên', N'Ca sáng', '2024-01-01', N'Hoạt động', N'Nhân viên lễ tân'),
-(N'Trần Thị B', '1998-05-10', N'Nữ', '012345678902', '0909000002', 'ttb@gmail.com', N'Đà Nẵng', N'Quản lý', N'Quản lí', N'Ca hành chính', '2023-01-01', N'Hoạt động', N'Quản lý khách sạn'),
-(N'Lê Văn C', '1999-08-20', N'Nam', '012345678903', '0909000003', 'lvc@gmail.com', N'TP.HCM', N'Buồng phòng', N'Nhân viên', N'Ca chiều', '2024-02-15', N'Hoạt động', N'Nhân viên hỗ trợ');
+(N'Nguyễn Văn A', '2000-01-01', N'Nam', '012345678901', '0909000001', 'nva@gmail.com', N'Hà Nội', N'Lễ Tân', N'Ca sáng', '2024-01-01', N'Hoạt động', N'Nhân viên lễ tân'),
+(N'Trần Thị B', '1998-05-10', N'Nữ', '012345678902', '0909000002', 'ttb@gmail.com', N'Đà Nẵng', N'Quản lí', N'Ca hành chính', '2023-01-01', N'Hoạt động', N'Quản lý khách sạn'),
+(N'Lê Văn C', '1999-08-20', N'Nam', '012345678903', '0909000003', 'lvc@gmail.com', N'TP.HCM', N'Lễ Tân', N'Ca chiều', '2024-02-15', N'Hoạt động', N'Nhân viên Lễ tân');
 GO
 
 INSERT INTO TaiKhoan (maNhanVien, tenDangNhap, matKhau, vaiTro, trangThai, lanDangNhapCuoi, emailKhoiPhuc)

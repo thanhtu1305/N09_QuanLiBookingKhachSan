@@ -15,21 +15,25 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComponent;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JScrollBar;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.Scrollable;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.plaf.basic.BasicScrollBarUI;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -39,10 +43,13 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
+import java.awt.LayoutManager;
 import java.lang.reflect.Method;
 import java.sql.Timestamp;
 import java.time.LocalDate;
@@ -50,6 +57,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.awt.print.PageFormat;
+import java.awt.print.Printable;
+import java.awt.print.PrinterException;
+import java.awt.print.PrinterJob;
 
 public class ThanhToanGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -290,7 +301,7 @@ public class ThanhToanGUI extends JFrame {
         tblHoaDon.setGridColor(BORDER_SOFT);
         tblHoaDon.setShowGrid(true);
         tblHoaDon.setFillsViewportHeight(true);
-        tblHoaDon.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
+        ScreenUIHelper.styleTableHeader(tblHoaDon);
 
         tblHoaDon.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -691,7 +702,7 @@ public class ThanhToanGUI extends JFrame {
     private void openInvoicePreviewDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
-            new InvoicePreviewDialog(this, invoice).setVisible(true);
+            new ModernInvoicePreviewDialog(this, invoice).setVisible(true);
         }
     }
 
@@ -1387,6 +1398,79 @@ public class ThanhToanGUI extends JFrame {
         }
     }
 
+    private final class ModernInvoicePreviewDialog extends BasePaymentDialog {
+        private final ThanhToan invoice;
+        private final InvoicePrintPanel previewPanel;
+
+        private ModernInvoicePreviewDialog(Frame owner, ThanhToan invoice) {
+            super(owner, "Xem trước hóa đơn", 1040, 820);
+            this.invoice = invoice;
+            this.previewPanel = new InvoicePrintPanel(invoice);
+
+            JPanel content = new JPanel(new BorderLayout(0, 12));
+            content.setOpaque(false);
+            content.add(buildDialogHeader("XEM TRƯỚC HÓA ĐƠN", "Mẫu hóa đơn khách sạn theo bố cục header-detail để xem trước và in."), BorderLayout.NORTH);
+
+            JScrollPane scrollPane = new JScrollPane(previewPanel);
+            scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+            scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+            scrollPane.getViewport().setBackground(APP_BG);
+            scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+            scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+            styleInvoicePreviewScrollBar(scrollPane.getVerticalScrollBar());
+
+            content.add(scrollPane, BorderLayout.CENTER);
+            content.add(buildDialogButtons(
+                    createOutlineButton("Đóng", new Color(107, 114, 128), e -> dispose()),
+                    createPrimaryButton("In hóa đơn", new Color(37, 99, 235), Color.WHITE, e -> printInvoice())
+            ), BorderLayout.SOUTH);
+            add(content, BorderLayout.CENTER);
+        }
+
+        private void printInvoice() {
+            Dimension preferred = previewPanel.getPreferredSize();
+            previewPanel.setSize(preferred);
+            previewPanel.doLayout();
+
+            PrinterJob printerJob = PrinterJob.getPrinterJob();
+            printerJob.setJobName("HoaDon_" + formatInvoiceCode(invoice.getMaHoaDon()));
+            printerJob.setPrintable(new Printable() {
+                @Override
+                public int print(Graphics graphics, PageFormat pageFormat, int pageIndex) throws PrinterException {
+                    if (pageIndex > 0) {
+                        return Printable.NO_SUCH_PAGE;
+                    }
+
+                    Graphics2D g2 = (Graphics2D) graphics.create();
+                    try {
+                        double scale = Math.min(
+                                pageFormat.getImageableWidth() / previewPanel.getWidth(),
+                                pageFormat.getImageableHeight() / previewPanel.getHeight()
+                        );
+                        g2.translate(pageFormat.getImageableX(), pageFormat.getImageableY());
+                        g2.scale(scale, scale);
+                        previewPanel.printAll(g2);
+                        return Printable.PAGE_EXISTS;
+                    } finally {
+                        g2.dispose();
+                    }
+                }
+            });
+
+            if (!printerJob.printDialog()) {
+                return;
+            }
+
+            try {
+                printerJob.print();
+                showSuccess("In hóa đơn thành công.");
+                dispose();
+            } catch (PrinterException ex) {
+                showError("Không thể in hóa đơn: " + safeValue(ex.getMessage(), "Không xác định."));
+            }
+        }
+    }
+
     private final class InvoiceDetailDialog extends BasePaymentDialog {
         private InvoiceDetailDialog(Frame owner, ThanhToan invoice) {
             super(owner, "Chi tiết hóa đơn", 720, 540);
@@ -1458,7 +1542,7 @@ public class ThanhToanGUI extends JFrame {
         JTable table = new JTable(model);
         table.setFont(BODY_FONT);
         table.setRowHeight(28);
-        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        ScreenUIHelper.styleTableHeader(table);
         table.setFillsViewportHeight(true);
 
         JScrollPane scrollPane = new JScrollPane(table);
@@ -1469,12 +1553,579 @@ public class ThanhToanGUI extends JFrame {
         return card;
     }
 
+    private String formatInvoiceCode(String maHoaDon) {
+        return isBlank(maHoaDon) ? "-" : "HD-" + maHoaDon;
+    }
+
+    private String formatCurrency(double value) {
+        return ThanhToan.formatMoney(value) + " đ";
+    }
+
+    private String formatDateOnly(Timestamp value) {
+        if (value == null) {
+            return "-";
+        }
+        return value.toLocalDateTime().format(DATE_FORMAT);
+    }
+
+    private String resolveStayNights(ThanhToan invoice) {
+        int nights = 0;
+        for (ChiTietDong line : invoice.getChiTiet()) {
+            String type = safeValue(line.getLoaiChiPhi(), "").toLowerCase(Locale.ROOT);
+            if (type.contains("phòng") || type.contains("phong")) {
+                nights = Math.max(nights, line.getSoLuong());
+            }
+        }
+        return nights > 0 ? String.valueOf(nights) : "-";
+    }
+
+    private String resolveLinePeriod(ThanhToan invoice, ChiTietDong line) {
+        String type = safeValue(line.getLoaiChiPhi(), "").toLowerCase(Locale.ROOT);
+        if (type.contains("phòng") || type.contains("phong")) {
+            return "Theo đêm lưu trú";
+        }
+        if (type.contains("dịch vụ") || type.contains("dich vu")) {
+            return formatDateOnly(invoice.getNgayThanhToan());
+        }
+        return formatDateOnly(invoice.getNgayThanhToan());
+    }
+
+    private List<InvoiceLineView> buildInvoicePreviewLines(ThanhToan invoice) {
+        List<InvoiceLineView> rows = new ArrayList<InvoiceLineView>();
+        List<ChiTietDong> lines = invoice.getChiTiet();
+        for (int i = 0; i < lines.size(); i++) {
+            ChiTietDong line = lines.get(i);
+            rows.add(new InvoiceLineView(
+                    i + 1,
+                    safeValue(line.getDienGiai(), safeValue(line.getLoaiChiPhi(), "-")),
+                    resolveLinePeriod(invoice, line),
+                    Math.max(1, line.getSoLuong()),
+                    line.getDonGia(),
+                    line.getThanhTien()
+            ));
+        }
+
+        if (!rows.isEmpty()) {
+            return rows;
+        }
+
+        int index = 1;
+        if (invoice.getTienPhong() > 0d) {
+            rows.add(new InvoiceLineView(index++, "Tiền phòng " + safeValue(invoice.getSoPhong(), "-"), "Theo đêm lưu trú", 1, invoice.getTienPhong(), invoice.getTienPhong()));
+        }
+        if (invoice.getTienDichVu() > 0d) {
+            rows.add(new InvoiceLineView(index++, "Dịch vụ phát sinh", formatDateOnly(invoice.getNgayThanhToan()), 1, invoice.getTienDichVu(), invoice.getTienDichVu()));
+        }
+        if (invoice.getPhuThu() > 0d) {
+            rows.add(new InvoiceLineView(index, "Phụ thu", formatDateOnly(invoice.getNgayThanhToan()), 1, invoice.getPhuThu(), invoice.getPhuThu()));
+        }
+        return rows;
+    }
+
+    private JPanel createInvoiceHeaderPanel(ThanhToan invoice) {
+        Color darkBlue = new Color(39, 86, 132);
+        Color lightBlue = new Color(227, 237, 247);
+
+        JPanel header = new JPanel(new GridLayout(1, 2, 0, 0));
+        header.setOpaque(false);
+        header.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
+
+        JPanel left = new JPanel();
+        left.setBackground(darkBlue);
+        left.setBorder(new EmptyBorder(16, 18, 14, 18));
+        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
+
+        JLabel hotel = new JLabel(AppBranding.APP_DISPLAY_NAME);
+        hotel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        hotel.setForeground(Color.WHITE);
+        JLabel line1 = createHeaderLine("Địa chỉ: 12 Nguyễn Văn Bảo, Phường Hạnh Thông, Quận Gò Vấp,TP.HCM", Color.WHITE);
+        JLabel line2 = createHeaderLine("Điện thoại: 0236 3 888 999 | Email:info@hotelvtttt.vn", Color.WHITE);
+        JLabel line3 = createHeaderLine("MST: 4201234567", Color.WHITE);
+        left.add(hotel);
+        left.add(Box.createVerticalStrut(8));
+        left.add(line1);
+        left.add(Box.createVerticalStrut(2));
+        left.add(line2);
+        left.add(Box.createVerticalStrut(2));
+        left.add(line3);
+        left.add(Box.createVerticalStrut(2));
+
+        JPanel right = new JPanel();
+        right.setBackground(lightBlue);
+        right.setBorder(new EmptyBorder(14, 18, 14, 18));
+        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
+        JLabel title = new JLabel("HÓA ĐƠN KHÁCH SẠN", SwingConstants.CENTER);
+        title.setAlignmentX(Component.CENTER_ALIGNMENT);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 17));
+        title.setForeground(darkBlue);
+        JLabel invoiceNo = new JLabel("Số HĐ: " + formatInvoiceCode(invoice.getMaHoaDon()), SwingConstants.CENTER);
+        invoiceNo.setAlignmentX(Component.CENTER_ALIGNMENT);
+        invoiceNo.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        invoiceNo.setForeground(TEXT_PRIMARY);
+        JLabel issueDate = new JLabel("Ngày lập: " + formatDateOnly(invoice.getNgayLap()), SwingConstants.CENTER);
+        issueDate.setAlignmentX(Component.CENTER_ALIGNMENT);
+        issueDate.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        issueDate.setForeground(TEXT_PRIMARY);
+        right.add(title);
+        right.add(Box.createVerticalStrut(8));
+        right.add(Box.createVerticalStrut(6));
+        right.add(invoiceNo);
+        right.add(Box.createVerticalStrut(6));
+        right.add(issueDate);
+
+        header.add(left);
+        header.add(right);
+        return header;
+    }
+
+    private JLabel createHeaderLine(String text, Color color) {
+        JLabel label = new JLabel(text);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        label.setForeground(color);
+        return label;
+    }
+
+    private JPanel createInvoiceInfoSection(String title, String[][] rows) {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setOpaque(false);
+        card.setBorder(BorderFactory.createLineBorder(new Color(191, 219, 254), 1));
+
+        JLabel heading = new JLabel(title);
+        heading.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        heading.setForeground(new Color(39, 86, 132));
+        heading.setBorder(new EmptyBorder(10, 12, 4, 12));
+        card.add(heading, BorderLayout.NORTH);
+
+        JPanel body = new JPanel();
+        body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(0, 12, 10, 12));
+        for (String[] row : rows) {
+            JLabel label = new JLabel(row[0] + ": " + safeValue(row[1], "-"));
+            label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            label.setForeground(TEXT_PRIMARY);
+            label.setAlignmentX(Component.LEFT_ALIGNMENT);
+            body.add(label);
+            body.add(Box.createVerticalStrut(4));
+        }
+        card.add(body, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel createCompactCustomerInfoSection(ThanhToan invoice) {
+        return createInvoiceInfoSection("THÔNG TIN KHÁCH HÀNG", new String[][]{
+                {"Khách hàng", safeValue(invoice.getKhachHang(), "-")},
+                {"CCCD/Hộ chiếu", safeValue(invoice.getCccdPassport(), "-")},
+                {"Điện thoại", safeValue(invoice.getSoDienThoai(), "-")},
+                {"Email", safeValue(invoice.getEmail(), "-")}
+        });
+    }
+
+    private JPanel createCompactStayInfoSection(ThanhToan invoice) {
+        return createInvoiceInfoSection("THÔNG TIN LƯU TRÚ", new String[][]{
+                {"Mã đặt phòng", safeValue(invoice.getMaHoSo(), isBlank(invoice.getMaDatPhong()) ? "-" : "DP-" + invoice.getMaDatPhong())},
+                {"Phòng", safeValue(invoice.getSoPhong(), "-")},
+                {"Check-in", formatDateTime(invoice.getNgayNhanPhong())},
+                {"Check-out", formatDateTime(invoice.getNgayTraPhong())},
+                {"Số đêm", resolveStayNights(invoice)}
+        });
+    }
+
+    private JPanel createInvoiceTablePanelWithoutPeriod(ThanhToan invoice) {
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setOpaque(false);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel heading = new JLabel("CHI TIẾT THANH TOÁN");
+        heading.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        heading.setForeground(new Color(39, 86, 132));
+        panel.add(heading, BorderLayout.NORTH);
+
+        JPanel table = new JPanel(new GridBagLayout());
+        table.setOpaque(false);
+        double[] weights = {0.7d, 3.45d, 0.8d, 1.25d, 1.4d};
+        String[] header = {"STT", "Diễn giải", "SL", "Đơn giá (VND)", "Thành tiền\n(VND)"};
+        addInvoiceGridRow(table, 0, header, weights, true, false);
+
+        List<InvoiceLineView> rows = buildInvoicePreviewLines(invoice);
+        if (rows.isEmpty()) {
+            addInvoiceGridRow(table, 1, new String[]{"-", "Chưa có dòng chi tiết", "-", "-", "-"}, weights, false, false);
+        } else {
+            for (int i = 0; i < rows.size(); i++) {
+                InvoiceLineView row = rows.get(i);
+                addInvoiceGridRow(table, i + 1, new String[]{
+                        String.valueOf(row.index),
+                        row.description,
+                        String.valueOf(row.quantity),
+                        ThanhToan.formatMoney(row.unitPrice),
+                        ThanhToan.formatMoney(row.total)
+                }, weights, false, false);
+            }
+        }
+
+        int rowCount = Math.max(2, rows.size() + 1);
+        table.setPreferredSize(new Dimension(0, rowCount * 42));
+        table.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowCount * 42));
+        panel.add(table, BorderLayout.CENTER);
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowCount * 42 + 42));
+        return panel;
+    }
+
+    private JPanel createInvoiceTablePanel(ThanhToan invoice) {
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setOpaque(false);
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel heading = new JLabel("CHI TIẾT THANH TOÁN");
+        heading.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        heading.setForeground(new Color(39, 86, 132));
+        panel.add(heading, BorderLayout.NORTH);
+
+        JPanel table = new JPanel(new GridBagLayout());
+        table.setOpaque(false);
+        double[] weights = {0.7d, 2.8d, 1.45d, 0.7d, 1.2d, 1.3d};
+        String[] header = {"STT", "Diễn giải", "Ngày/Khung\nthời gian", "SL", "Đơn giá (VND)", "Thành tiền\n(VND)"};
+        addInvoiceGridRow(table, 0, header, weights, true, false);
+
+        List<InvoiceLineView> rows = buildInvoicePreviewLines(invoice);
+        if (rows.isEmpty()) {
+            addInvoiceGridRow(table, 1, new String[]{"-", "Chưa có dòng chi tiết", "-", "-", "-", "-"}, weights, false, false);
+        } else {
+            for (int i = 0; i < rows.size(); i++) {
+                InvoiceLineView row = rows.get(i);
+                addInvoiceGridRow(table, i + 1, new String[]{
+                        String.valueOf(row.index),
+                        row.description,
+                        row.period,
+                        String.valueOf(row.quantity),
+                        ThanhToan.formatMoney(row.unitPrice),
+                        ThanhToan.formatMoney(row.total)
+                }, weights, false, false);
+            }
+        }
+        int rowCount = Math.max(2, rows.size() + 1);
+        table.setPreferredSize(new Dimension(0, rowCount * 42));
+        table.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowCount * 42));
+        panel.add(table, BorderLayout.CENTER);
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, rowCount * 42 + 42));
+        return panel;
+    }
+
+    private void addInvoiceGridRow(JPanel panel, int rowIndex, String[] values, double[] weights, boolean header, boolean alternate) {
+        Color darkBlue = new Color(39, 86, 132);
+        Color border = new Color(191, 219, 254);
+        for (int i = 0; i < values.length; i++) {
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.gridx = i;
+            gbc.gridy = rowIndex;
+            gbc.weightx = weights[i];
+            gbc.fill = GridBagConstraints.BOTH;
+
+            JLabel cell = new JLabel("<html><div style='text-align:center;'>" + safeValue(values[i], "-").replace("\n", "<br>") + "</div></html>");
+            cell.setOpaque(true);
+            cell.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 1, border),
+                    new EmptyBorder(header ? 10 : 8, 8, header ? 10 : 8, 8)
+            ));
+            cell.setFont(new Font("Segoe UI", header ? Font.BOLD : Font.PLAIN, header ? 12 : 13));
+            cell.setForeground(header ? Color.WHITE : TEXT_PRIMARY);
+            cell.setBackground(header ? darkBlue : Color.WHITE);
+            if (i == 1) {
+                cell.setHorizontalAlignment(SwingConstants.LEFT);
+            } else if (!header && i >= values.length - 2) {
+                cell.setHorizontalAlignment(SwingConstants.RIGHT);
+            } else {
+                cell.setHorizontalAlignment(SwingConstants.CENTER);
+            }
+            panel.add(cell, gbc);
+        }
+    }
+
+    private JPanel createInvoiceTotalsPanel(ThanhToan invoice) {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.setBorder(new EmptyBorder(8, 0, 0, 0));
+        wrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel grid = new JPanel(new GridBagLayout());
+        grid.setOpaque(false);
+        double tamTinh = invoice.getTienPhong() + invoice.getTienDichVu() + invoice.getPhuThu();
+        double daThanhToan = invoice.getTienCocTru() + invoice.getSoTienDaThanhToan();
+
+        addTotalGridRow(grid, 0, "Tạm tính", ThanhToan.formatMoney(tamTinh), TEXT_PRIMARY, false);
+        addTotalGridRow(grid, 1, "Giảm giá", ThanhToan.formatMoney(invoice.getGiamGia()), TEXT_PRIMARY, false);
+        addTotalGridRow(grid, 3, "Đã thanh toán", ThanhToan.formatMoney(daThanhToan), TEXT_PRIMARY, false);
+        addTotalGridRow(grid, 4, "Còn lại", ThanhToan.formatMoney(invoice.getConPhaiThu()), new Color(220, 38, 38), true);
+        wrapper.add(grid, BorderLayout.CENTER);
+        wrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
+        return wrapper;
+    }
+
+    private void addTotalGridRow(JPanel panel, int row, String label, String value, Color valueColor, boolean emphasized) {
+        Color border = new Color(191, 219, 254);
+
+        GridBagConstraints left = new GridBagConstraints();
+        left.gridx = 0;
+        left.gridy = row;
+        left.weightx = 1.2;
+        left.fill = GridBagConstraints.BOTH;
+
+        JLabel lblLeft = new JLabel(label);
+        lblLeft.setOpaque(true);
+        lblLeft.setBackground(Color.WHITE);
+        lblLeft.setFont(new Font("Segoe UI", emphasized ? Font.BOLD : Font.PLAIN, 13));
+        lblLeft.setForeground(TEXT_PRIMARY);
+        lblLeft.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 1, 1, 1, border),
+                new EmptyBorder(7, 8, 7, 8)
+        ));
+        panel.add(lblLeft, left);
+
+        GridBagConstraints right = new GridBagConstraints();
+        right.gridx = 1;
+        right.gridy = row;
+        right.weightx = 1.0;
+        right.fill = GridBagConstraints.BOTH;
+
+        JLabel lblRight = new JLabel(value, SwingConstants.RIGHT);
+        lblRight.setOpaque(true);
+        lblRight.setBackground(Color.WHITE);
+        lblRight.setFont(new Font("Segoe UI", Font.BOLD, emphasized ? 16 : 13));
+        lblRight.setForeground(valueColor);
+        lblRight.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 1, border),
+                new EmptyBorder(7, 8, 7, 8)
+        ));
+        panel.add(lblRight, right);
+    }
+
+    private JPanel createInvoiceFooterPanel(ThanhToan invoice) {
+        JPanel panel = new JPanel();
+        panel.setOpaque(false);
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        StringBuilder note = new StringBuilder("Ghi chú: ");
+        if (!isBlank(invoice.getGhiChu())) {
+            note.append(invoice.getGhiChu());
+        } else {
+            note.append("Quý khách vui lòng kiểm tra thông tin trước khi thanh toán.");
+        }
+        if (!isBlank(invoice.getThongTinThanhToanKetHop())) {
+            note.append(" ").append(invoice.getThongTinThanhToanKetHop());
+        }
+
+        JLabel noteLabel = new JLabel("<html><b>Ghi chú:</b> " + note.substring("Ghi chú: ".length()) + "</html>");
+        noteLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        noteLabel.setForeground(TEXT_PRIMARY);
+        panel.add(noteLabel);
+        panel.add(Box.createVerticalStrut(8));
+
+        JPanel signatures = new JPanel(new GridLayout(1, 2, 24, 0));
+        signatures.setOpaque(false);
+        signatures.add(createSignatureLabel("Khách hàng"));
+        signatures.add(createSignatureLabel("Lễ tân / Thu ngân"));
+        panel.add(signatures);
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        return panel;
+    }
+
+    private JPanel createSignatureLabel(String text) {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setOpaque(false);
+        JLabel lbl = new JLabel(text, SwingConstants.CENTER);
+        lbl.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        lbl.setForeground(TEXT_PRIMARY);
+        panel.add(lbl, BorderLayout.NORTH);
+        panel.add(Box.createVerticalStrut(48), BorderLayout.CENTER);
+        return panel;
+    }
+
+    private final class InvoicePrintPanel extends JPanel implements Scrollable {
+        private InvoicePrintPanel(ThanhToan invoice) {
+            setBackground(Color.WHITE);
+            setOpaque(true);
+            setBorder(new EmptyBorder(16, 18, 18, 18));
+            setLayout(new GridBagLayout());
+
+            JPanel header = createInvoiceHeaderPanel(invoice);
+            JPanel info = new JPanel(new GridLayout(1, 2, 0, 0));
+            info.setOpaque(false);
+            info.add(createInvoiceInfoSection("THÔNG TIN KHÁCH HÀNG", new String[][]{
+                    {"Khách hàng", safeValue(invoice.getKhachHang(), "-")},
+                    {"CCCD/Hộ chiếu", "-"},
+                    {"Điện thoại", safeValue(invoice.getSoDienThoai(), "-")},
+                    {"Email", "-"}
+            }));
+            info.add(createInvoiceInfoSection("THÔNG TIN LƯU TRÚ", new String[][]{
+                    {"Mã đặt phòng", safeValue(invoice.getMaHoSo(), isBlank(invoice.getMaDatPhong()) ? "-" : "DP-" + invoice.getMaDatPhong())},
+                    {"Phòng", safeValue(invoice.getSoPhong(), "-")},
+                    {"Check-in", "-"},
+                    {"Check-out", "-"},
+                    {"Số đêm", resolveStayNights(invoice)}
+            }));
+
+            info.removeAll();
+            info.add(createCompactCustomerInfoSection(invoice));
+            info.add(createCompactStayInfoSection(invoice));
+
+            JPanel detail = createInvoiceTablePanelWithoutPeriod(invoice);
+            JPanel totals = createInvoiceTotalsPanel(invoice);
+            JPanel footer = createInvoiceFooterPanel(invoice);
+
+            addInvoiceSection(this, header, 0, 0, 1.0, 0.0, new Insets(0, 0, 18, 0));
+            addInvoiceSection(this, info, 1, 0, 1.0, 0.0, new Insets(0, 0, 20, 0));
+            addInvoiceSection(this, detail, 2, 0, 1.0, 0.0, new Insets(0, 0, 18, 0));
+            addInvoiceSection(this, totals, 3, 0, 1.0, 0.0, new Insets(0, 0, 12, 0));
+            addInvoiceSection(this, footer, 4, 0, 1.0, 1.0, new Insets(0, 0, 0, 0));
+
+            int contentHeight = 0;
+            contentHeight += header.getPreferredSize().height;
+            contentHeight += 18;
+            contentHeight += info.getPreferredSize().height;
+            contentHeight += 20;
+            contentHeight += detail.getPreferredSize().height;
+            contentHeight += 18;
+            contentHeight += totals.getPreferredSize().height;
+            contentHeight += 12;
+            contentHeight += footer.getPreferredSize().height;
+            contentHeight += 34;
+
+            int preferredHeight = Math.max(1120, contentHeight);
+            setPreferredSize(new Dimension(820, preferredHeight));
+            revalidate();
+        }
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(java.awt.Rectangle visibleRect, int orientation, int direction) {
+            return 24;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(java.awt.Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(visibleRect.height - 48, 120);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+    }
+
+    private void addInvoiceSection(JPanel container, Component component, int gridy, int fill, double weightx, double weighty, Insets insets) {
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = gridy;
+        gbc.weightx = weightx;
+        gbc.weighty = weighty;
+        gbc.fill = fill == 0 ? GridBagConstraints.HORIZONTAL : fill;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.insets = insets;
+        container.add(component, gbc);
+    }
+
+    private static final class InvoiceLineView {
+        private final int index;
+        private final String description;
+        private final String period;
+        private final int quantity;
+        private final double unitPrice;
+        private final double total;
+
+        private InvoiceLineView(int index, String description, String period, int quantity, double unitPrice, double total) {
+            this.index = index;
+            this.description = description;
+            this.period = period;
+            this.quantity = quantity;
+            this.unitPrice = unitPrice;
+            this.total = total;
+        }
+    }
+
     private JTextArea createReadonlyArea(String text) {
         JTextArea area = createDialogTextArea(3);
         area.setEditable(false);
         area.setBackground(PANEL_SOFT);
         area.setText(text);
         return area;
+    }
+
+    private void styleInvoicePreviewScrollBar(JScrollBar scrollBar) {
+        if (scrollBar == null) {
+            return;
+        }
+        scrollBar.setPreferredSize(new Dimension(18, 0));
+        scrollBar.setBackground(new Color(235, 242, 251));
+        scrollBar.setOpaque(true);
+        scrollBar.setUI(new BasicScrollBarUI() {
+            @Override
+            protected void configureScrollBarColors() {
+                this.trackColor = new Color(226, 236, 248);
+                this.thumbColor = new Color(182, 205, 234);
+                this.thumbDarkShadowColor = new Color(150, 182, 220);
+                this.thumbHighlightColor = new Color(214, 228, 245);
+                this.thumbLightShadowColor = new Color(170, 196, 228);
+            }
+
+            @Override
+            protected JButton createDecreaseButton(int orientation) {
+                return createScrollButton();
+            }
+
+            @Override
+            protected JButton createIncreaseButton(int orientation) {
+                return createScrollButton();
+            }
+
+            @Override
+            protected void paintTrack(Graphics g, JComponent c, java.awt.Rectangle trackBounds) {
+                g.setColor(trackColor);
+                g.fillRect(trackBounds.x, trackBounds.y, trackBounds.width, trackBounds.height);
+                g.setColor(new Color(173, 196, 226));
+                g.drawRect(trackBounds.x, trackBounds.y, trackBounds.width - 1, trackBounds.height - 1);
+            }
+
+            @Override
+            protected void paintThumb(Graphics g, JComponent c, java.awt.Rectangle thumbBounds) {
+                if (thumbBounds.isEmpty() || !scrollbar.isEnabled()) {
+                    return;
+                }
+                Graphics2D g2 = (Graphics2D) g.create();
+                try {
+                    g2.setColor(new Color(188, 209, 236));
+                    g2.fillRect(thumbBounds.x, thumbBounds.y, thumbBounds.width - 1, thumbBounds.height - 1);
+                    g2.setColor(new Color(126, 160, 204));
+                    g2.drawRect(thumbBounds.x, thumbBounds.y, thumbBounds.width - 1, thumbBounds.height - 1);
+                    g2.setColor(Color.WHITE);
+                    int centerX = thumbBounds.x + (thumbBounds.width / 2);
+                    int centerY = thumbBounds.y + (thumbBounds.height / 2);
+                    g2.drawLine(centerX - 4, centerY - 2, centerX + 4, centerY - 2);
+                    g2.drawLine(centerX - 4, centerY, centerX + 4, centerY);
+                    g2.drawLine(centerX - 4, centerY + 2, centerX + 4, centerY + 2);
+                } finally {
+                    g2.dispose();
+                }
+            }
+
+            private JButton createScrollButton() {
+                JButton button = new JButton();
+                button.setBackground(new Color(224, 236, 250));
+                button.setBorder(BorderFactory.createLineBorder(new Color(173, 196, 226)));
+                button.setFocusPainted(false);
+                button.setPreferredSize(new Dimension(18, 18));
+                return button;
+            }
+        });
     }
 
     private String findEmployeeName() {

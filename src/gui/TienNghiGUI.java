@@ -246,9 +246,7 @@ public class TienNghiGUI extends JFrame {
         tblTienNghi.setGridColor(BORDER_SOFT);
         tblTienNghi.setShowGrid(true);
         tblTienNghi.setFillsViewportHeight(true);
-        tblTienNghi.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblTienNghi.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblTienNghi.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblTienNghi);
 
         tblTienNghi.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

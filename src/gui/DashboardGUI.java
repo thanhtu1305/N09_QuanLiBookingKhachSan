@@ -316,9 +316,7 @@ public class DashboardGUI extends JFrame {
         tblCongViec.setGridColor(BORDER_SOFT);
         tblCongViec.setShowGrid(true);
         tblCongViec.setFillsViewportHeight(true);
-        tblCongViec.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblCongViec.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblCongViec.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblCongViec);
 
         tblCongViec.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

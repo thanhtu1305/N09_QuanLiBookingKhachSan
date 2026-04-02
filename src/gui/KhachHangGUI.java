@@ -271,9 +271,7 @@ public class KhachHangGUI extends JFrame {
         tblKhachHang.setGridColor(BORDER_SOFT);
         tblKhachHang.setShowGrid(true);
         tblKhachHang.setFillsViewportHeight(true);
-        tblKhachHang.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblKhachHang.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblKhachHang.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblKhachHang);
 
         tblKhachHang.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

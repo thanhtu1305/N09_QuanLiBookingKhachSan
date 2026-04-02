@@ -288,9 +288,7 @@ public class DatPhongGUI extends JFrame {
         tblDatPhong.setGridColor(new Color(229, 231, 235));
         tblDatPhong.setShowGrid(true);
         tblDatPhong.setFillsViewportHeight(true);
-        tblDatPhong.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblDatPhong.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblDatPhong.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblDatPhong);
 
         tblDatPhong.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -401,7 +399,7 @@ public class DatPhongGUI extends JFrame {
         tblBookingDetails.setFont(BODY_FONT);
         tblBookingDetails.setRowHeight(28);
         tblBookingDetails.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        tblBookingDetails.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+        ScreenUIHelper.styleTableHeader(tblBookingDetails);
 
         JScrollPane scrollPane = new JScrollPane(tblBookingDetails);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
@@ -1476,7 +1474,7 @@ public class DatPhongGUI extends JFrame {
             tblBookingDetailDialog.setFont(BODY_FONT);
             tblBookingDetailDialog.setRowHeight(30);
             tblBookingDetailDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-            tblBookingDetailDialog.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 12));
+            ScreenUIHelper.styleTableHeader(tblBookingDetailDialog);
 
             JScrollPane scrollPane = new JScrollPane(tblBookingDetailDialog);
             scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));

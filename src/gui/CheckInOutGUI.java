@@ -303,9 +303,7 @@ public class CheckInOutGUI extends JFrame {
         tblLuuTru.setGridColor(BORDER_SOFT);
         tblLuuTru.setShowGrid(true);
         tblLuuTru.setFillsViewportHeight(true);
-        tblLuuTru.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblLuuTru.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblLuuTru.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblLuuTru);
 
         tblLuuTru.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

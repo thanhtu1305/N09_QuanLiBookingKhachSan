@@ -294,9 +294,7 @@ public class PhongGUI extends JFrame {
         tblPhong.setGridColor(BORDER_SOFT);
         tblPhong.setShowGrid(true);
         tblPhong.setFillsViewportHeight(true);
-        tblPhong.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblPhong.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblPhong.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblPhong);
 
         tblPhong.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

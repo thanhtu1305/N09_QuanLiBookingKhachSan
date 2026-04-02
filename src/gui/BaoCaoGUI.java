@@ -426,9 +426,7 @@ public class BaoCaoGUI extends JFrame {
         tblThongKe.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tblThongKe.setGridColor(BORDER_SOFT);
         tblThongKe.setFillsViewportHeight(true);
-        tblThongKe.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblThongKe.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblThongKe.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblThongKe);
         tblThongKe.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
@@ -1082,9 +1080,7 @@ public class BaoCaoGUI extends JFrame {
         JTable table = new JTable(model);
         table.setFont(BODY_FONT);
         table.setRowHeight(30);
-        table.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        table.getTableHeader().setBackground(new Color(243, 244, 246));
-        table.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(table);
         table.setGridColor(BORDER_SOFT);
         return table;
     }

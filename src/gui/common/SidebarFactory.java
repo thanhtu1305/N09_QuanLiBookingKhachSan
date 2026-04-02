@@ -117,8 +117,11 @@ public final class SidebarFactory {
 
     private static void addDirectItem(JPanel menuPanel, ScreenKey item, ScreenKey currentScreen,
                                       String username, String role, String iconPath) {
-        JButton button = createMenuButton(item, currentScreen, iconPath);
-        button.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
+        boolean allowed = AccountPermissionHelper.hasPermission(username, role, item);
+        JButton button = createMenuButton(item, currentScreen, iconPath, allowed);
+        if (allowed) {
+            button.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
+        }
         menuPanel.add(button);
         menuPanel.add(Box.createVerticalStrut(6));
     }
@@ -127,8 +130,15 @@ public final class SidebarFactory {
                                  String username, String role, String iconPath, ScreenKey... items) {
         List<ScreenKey> groupItems = Arrays.asList(items);
         boolean expanded = groupItems.contains(currentScreen);
+        boolean anyAllowed = false;
+        for (ScreenKey item : groupItems) {
+            if (AccountPermissionHelper.hasPermission(username, role, item)) {
+                anyAllowed = true;
+                break;
+            }
+        }
 
-        JButton header = createGroupHeader(title, expanded, groupItems.contains(currentScreen), iconPath);
+        JButton header = createGroupHeader(title, expanded, groupItems.contains(currentScreen), iconPath, anyAllowed);
         JPanel children = new JPanel();
         children.setOpaque(true);
         children.setBackground(SUBMENU_BG);
@@ -140,20 +150,25 @@ public final class SidebarFactory {
         children.setVisible(expanded);
 
         for (ScreenKey item : groupItems) {
-            JButton child = createSubMenuButton(item, currentScreen);
-            child.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
+            boolean allowed = AccountPermissionHelper.hasPermission(username, role, item);
+            JButton child = createSubMenuButton(item, currentScreen, allowed);
+            if (allowed) {
+                child.addActionListener(e -> NavigationUtil.navigate(null, currentScreen, item, username, role));
+            }
             children.add(child);
             children.add(Box.createVerticalStrut(4));
         }
 
-        header.addActionListener(e -> {
-            boolean visible = !children.isVisible();
-            children.setVisible(visible);
-            header.putClientProperty("expanded", visible);
-            children.revalidate();
-            children.repaint();
-            header.repaint();
-        });
+        if (anyAllowed) {
+            header.addActionListener(e -> {
+                boolean visible = !children.isVisible();
+                children.setVisible(visible);
+                header.putClientProperty("expanded", visible);
+                children.revalidate();
+                children.repaint();
+                header.repaint();
+            });
+        }
 
         menuPanel.add(header);
         menuPanel.add(Box.createVerticalStrut(4));
@@ -161,7 +176,7 @@ public final class SidebarFactory {
         menuPanel.add(Box.createVerticalStrut(10));
     }
 
-    private static JButton createGroupHeader(String title, boolean expanded, boolean activeGroup, String iconPath) {
+    private static JButton createGroupHeader(String title, boolean expanded, boolean activeGroup, String iconPath, boolean enabled) {
         JButton button = new JButton(title);
         button.putClientProperty("expanded", expanded);
         button.setHorizontalAlignment(SwingConstants.LEFT);
@@ -186,11 +201,12 @@ public final class SidebarFactory {
             button.setBackground(GROUP_BG);
             button.setForeground(TEXT_PRIMARY);
         }
+        applyMenuEnabledState(button, enabled, activeGroup ? ACTIVE_BG : GROUP_BG);
         installHover(button, activeGroup ? ACTIVE_BG : GROUP_BG, activeGroup ? ACTIVE_BG : GROUP_HOVER);
         return button;
     }
 
-    private static JButton createMenuButton(ScreenKey item, ScreenKey currentScreen, String iconPath) {
+    private static JButton createMenuButton(ScreenKey item, ScreenKey currentScreen, String iconPath, boolean enabled) {
         JButton button = new JButton(item.getLabel());
         button.setHorizontalAlignment(SwingConstants.LEFT);
         button.setHorizontalTextPosition(SwingConstants.RIGHT);
@@ -215,11 +231,12 @@ public final class SidebarFactory {
             button.setBackground(ITEM_BG);
             button.setForeground(TEXT_PRIMARY);
         }
+        applyMenuEnabledState(button, enabled, item == currentScreen ? ACTIVE_BG : ITEM_BG);
         installHover(button, item == currentScreen ? ACTIVE_BG : ITEM_BG, item == currentScreen ? ACTIVE_BG : ITEM_HOVER);
         return button;
     }
 
-    private static JButton createSubMenuButton(ScreenKey item, ScreenKey currentScreen) {
+    private static JButton createSubMenuButton(ScreenKey item, ScreenKey currentScreen, boolean enabled) {
         JButton button = new JButton(item.getLabel());
         button.setHorizontalAlignment(SwingConstants.LEFT);
         button.setHorizontalTextPosition(SwingConstants.RIGHT);
@@ -243,19 +260,39 @@ public final class SidebarFactory {
             button.setBackground(SUBMENU_BG);
             button.setForeground(TEXT_PRIMARY);
         }
+        applyMenuEnabledState(button, enabled, item == currentScreen ? ACTIVE_BG : SUBMENU_BG);
         installHover(button, item == currentScreen ? ACTIVE_BG : SUBMENU_BG, item == currentScreen ? ACTIVE_BG : ITEM_HOVER);
         return button;
+    }
+
+    private static void applyMenuEnabledState(JButton button, boolean enabled, Color normalBackground) {
+        button.setEnabled(enabled);
+        if (!enabled) {
+            button.setCursor(Cursor.getDefaultCursor());
+            button.setForeground(TEXT_MUTED);
+            button.setBackground(new Color(
+                    Math.min(255, normalBackground.getRed() + 6),
+                    Math.min(255, normalBackground.getGreen() + 6),
+                    Math.min(255, normalBackground.getBlue() + 6)
+            ));
+        }
     }
 
     private static void installHover(JButton button, Color normalBg, Color hoverBg) {
         button.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseEntered(java.awt.event.MouseEvent e) {
+                if (!button.isEnabled()) {
+                    return;
+                }
                 button.setBackground(hoverBg);
             }
 
             @Override
             public void mouseExited(java.awt.event.MouseEvent e) {
+                if (!button.isEnabled()) {
+                    return;
+                }
                 button.setBackground(normalBg);
             }
         });

@@ -55,7 +55,10 @@ public class ThanhToanDAO {
                     ") " +
                     "SELECT ranked.maHoaDon, ranked.maLuuTru, ranked.maDatPhong, ranked.maKhachHang, ranked.ngayLap, ranked.ngayThanhToan, " +
                     "ranked.tienPhong, ranked.tienDichVu, ranked.phuThu, ranked.giamGia, ranked.tienCocTru, ranked.trangThai, ranked.ghiChu, " +
-                    "kh.hoTen, kh.soDienThoai, ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
+                    "kh.hoTen, kh.soDienThoai, kh.email, kh.cccdPassport, " +
+                    "COALESCE(stayBounds.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS ngayNhanPhong, " +
+                    "COALESCE(stayBounds.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS ngayTraPhong, " +
+                    "ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
                     "FROM ranked " +
                     "LEFT JOIN DatPhong dp ON ranked.maDatPhong = dp.maDatPhong " +
                     "LEFT JOIN KhachHang kh ON ranked.maKhachHang = kh.maKhachHang " +
@@ -68,6 +71,10 @@ public class ThanhToanDAO {
                     "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong " +
                     "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong" +
                     ") roomSummary " +
+                    "OUTER APPLY (" +
+                    "   SELECT MIN(lt.checkIn) AS checkIn, MAX(lt.checkOut) AS checkOut " +
+                    "   FROM LuuTru lt WHERE lt.maDatPhong = ranked.maDatPhong" +
+                    ") stayBounds " +
                     "WHERE ranked.rn = 1 " +
                     "ORDER BY ranked.maHoaDon DESC";
 
@@ -103,7 +110,10 @@ public class ThanhToanDAO {
             String sql = "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
                     "hd.tienPhong, hd.tienDichVu, ISNULL(hd.phuThu,0) AS phuThu, ISNULL(hd.giamGia,0) AS giamGia, " +
                     "ISNULL(hd.tienCocTru,0) AS tienCocTru, ISNULL(hd.trangThai,N'Chờ thanh toán') AS trangThai, " +
-                    "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
+                    "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, kh.email, kh.cccdPassport, " +
+                    "COALESCE(stayBounds.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS ngayNhanPhong, " +
+                    "COALESCE(stayBounds.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS ngayTraPhong, " +
+                    "ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
                     "FROM HoaDon hd " +
                     "LEFT JOIN DatPhong dp ON hd.maDatPhong = dp.maDatPhong " +
                     "LEFT JOIN KhachHang kh ON hd.maKhachHang = kh.maKhachHang " +
@@ -116,6 +126,10 @@ public class ThanhToanDAO {
                     "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong " +
                     "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong" +
                     ") roomSummary " +
+                    "OUTER APPLY (" +
+                    "   SELECT MIN(lt.checkIn) AS checkIn, MAX(lt.checkOut) AS checkOut " +
+                    "   FROM LuuTru lt WHERE lt.maDatPhong = hd.maDatPhong" +
+                    ") stayBounds " +
                     "WHERE hd.maHoaDon = ?";
 
             try (PreparedStatement ps = con.prepareStatement(sql)) {
@@ -644,7 +658,10 @@ public class ThanhToanDAO {
         String sql = "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
                 "hd.tienPhong, hd.tienDichVu, ISNULL(hd.phuThu,0) AS phuThu, ISNULL(hd.giamGia,0) AS giamGia, " +
                 "ISNULL(hd.tienCocTru,0) AS tienCocTru, ISNULL(hd.trangThai,N'Chờ thanh toán') AS trangThai, " +
-                "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
+                "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, kh.email, kh.cccdPassport, " +
+                "COALESCE(stayBounds.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS ngayNhanPhong, " +
+                "COALESCE(stayBounds.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS ngayTraPhong, " +
+                "ISNULL(roomSummary.soPhong, N'-') AS soPhong, ISNULL(dp.tienCoc, 0) AS tienCocGoc " +
                 "FROM HoaDon hd " +
                 "LEFT JOIN DatPhong dp ON hd.maDatPhong = dp.maDatPhong " +
                 "LEFT JOIN KhachHang kh ON hd.maKhachHang = kh.maKhachHang " +
@@ -657,6 +674,10 @@ public class ThanhToanDAO {
                 "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong " +
                 "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong" +
                 ") roomSummary " +
+                "OUTER APPLY (" +
+                "   SELECT MIN(lt.checkIn) AS checkIn, MAX(lt.checkOut) AS checkOut " +
+                "   FROM LuuTru lt WHERE lt.maDatPhong = hd.maDatPhong" +
+                ") stayBounds " +
                 "WHERE hd.maHoaDon = ?";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, maHoaDon);
@@ -679,8 +700,12 @@ public class ThanhToanDAO {
         invoice.setKhachHang(safeTrim(rs.getString("hoTen")));
         invoice.setSoPhong(safeTrim(rs.getString("soPhong")));
         invoice.setSoDienThoai(safeTrim(rs.getString("soDienThoai")));
+        invoice.setEmail(safeTrim(rs.getString("email")));
+        invoice.setCccdPassport(safeTrim(rs.getString("cccdPassport")));
         invoice.setNgayLap(rs.getTimestamp("ngayLap"));
         invoice.setNgayThanhToan(rs.getTimestamp("ngayThanhToan"));
+        invoice.setNgayNhanPhong(rs.getTimestamp("ngayNhanPhong"));
+        invoice.setNgayTraPhong(rs.getTimestamp("ngayTraPhong"));
         invoice.setTienPhong(rs.getDouble("tienPhong"));
         invoice.setTienDichVu(rs.getDouble("tienDichVu"));
         invoice.setPhuThu(rs.getDouble("phuThu"));

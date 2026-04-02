@@ -20,6 +20,8 @@ public class ThanhToan implements Serializable {
     private String khachHang;
     private String soPhong;
     private String soDienThoai;
+    private String email;
+    private String cccdPassport;
     private String nguoiThu;
     private String phuongThuc;
     private String soThamChieu;
@@ -29,6 +31,8 @@ public class ThanhToan implements Serializable {
 
     private Timestamp ngayLap;
     private Timestamp ngayThanhToan;
+    private Timestamp ngayNhanPhong;
+    private Timestamp ngayTraPhong;
 
     private double tienPhong;
     private double tienDichVu;
@@ -131,6 +135,22 @@ public class ThanhToan implements Serializable {
         this.soDienThoai = soDienThoai;
     }
 
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getCccdPassport() {
+        return cccdPassport;
+    }
+
+    public void setCccdPassport(String cccdPassport) {
+        this.cccdPassport = cccdPassport;
+    }
+
     public String getNguoiThu() {
         return nguoiThu;
     }
@@ -193,6 +213,22 @@ public class ThanhToan implements Serializable {
 
     public void setNgayThanhToan(Timestamp ngayThanhToan) {
         this.ngayThanhToan = ngayThanhToan;
+    }
+
+    public Timestamp getNgayNhanPhong() {
+        return ngayNhanPhong;
+    }
+
+    public void setNgayNhanPhong(Timestamp ngayNhanPhong) {
+        this.ngayNhanPhong = ngayNhanPhong;
+    }
+
+    public Timestamp getNgayTraPhong() {
+        return ngayTraPhong;
+    }
+
+    public void setNgayTraPhong(Timestamp ngayTraPhong) {
+        this.ngayTraPhong = ngayTraPhong;
     }
 
     public double getTienPhong() {

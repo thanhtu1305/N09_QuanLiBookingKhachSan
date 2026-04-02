@@ -236,7 +236,10 @@ public class BangGiaGUI extends JFrame {
         tblBangGia.setFont(BODY_FONT);
         tblBangGia.setRowHeight(32);
         tblBangGia.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tblBangGia.setGridColor(BORDER_SOFT);
+        tblBangGia.setShowGrid(true);
         tblBangGia.setFillsViewportHeight(true);
+        ScreenUIHelper.styleTableHeader(tblBangGia);
         tblBangGia.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 showSelectedBangGia();
@@ -246,9 +249,14 @@ public class BangGiaGUI extends JFrame {
 
         JScrollPane scrollPane = new JScrollPane(tblBangGia);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+
+        JPanel content = new JPanel(new BorderLayout());
+        content.setOpaque(false);
+        content.add(scrollPane, BorderLayout.CENTER);
 
         JPanel wrapper = createCardPanel(new BorderLayout());
-        wrapper.add(scrollPane, BorderLayout.CENTER);
+        wrapper.add(content, BorderLayout.CENTER);
         return wrapper;
     }
 
@@ -294,10 +302,15 @@ public class BangGiaGUI extends JFrame {
         tblChiTietBangGia.setFont(BODY_FONT);
         tblChiTietBangGia.setRowHeight(28);
         tblChiTietBangGia.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tblChiTietBangGia.setGridColor(BORDER_SOFT);
+        tblChiTietBangGia.setShowGrid(true);
+        tblChiTietBangGia.setFillsViewportHeight(true);
+        ScreenUIHelper.styleTableHeader(tblChiTietBangGia);
 
         JScrollPane detailScroll = new JScrollPane(tblChiTietBangGia);
         detailScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
         detailScroll.setPreferredSize(new Dimension(0, 250));
+        detailScroll.getVerticalScrollBar().setUnitIncrement(18);
 
         JPanel action = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         action.setOpaque(false);
@@ -1118,6 +1131,10 @@ public class BangGiaGUI extends JFrame {
             JTable table = new JTable(model);
             table.setFont(BODY_FONT);
             table.setRowHeight(28);
+            table.setGridColor(BORDER_SOFT);
+            table.setShowGrid(true);
+            table.setFillsViewportHeight(true);
+            ScreenUIHelper.styleTableHeader(table);
             for (ChiTietBangGia chiTiet : chiTietBangGiaDAO.getByMaBangGia(bangGia.getMaBangGia())) {
                 model.addRow(new Object[]{
                         "CT" + chiTiet.getMaChiTietBangGia(), chiTiet.getLoaiNgay(), chiTiet.getKhungGio(),
@@ -1127,7 +1144,10 @@ public class BangGiaGUI extends JFrame {
                 });
             }
             JPanel detailCard = createCardPanel(new BorderLayout());
-            detailCard.add(new JScrollPane(table), BorderLayout.CENTER);
+            JScrollPane detailScroll = new JScrollPane(table);
+            detailScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+            detailScroll.getVerticalScrollBar().setUnitIncrement(18);
+            detailCard.add(detailScroll, BorderLayout.CENTER);
 
             body.add(headerCard, BorderLayout.NORTH);
             body.add(detailCard, BorderLayout.CENTER);

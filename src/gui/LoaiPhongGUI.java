@@ -297,9 +297,7 @@ public class LoaiPhongGUI extends JFrame {
         tblLoaiPhong.setGridColor(BORDER_SOFT);
         tblLoaiPhong.setShowGrid(true);
         tblLoaiPhong.setFillsViewportHeight(true);
-        tblLoaiPhong.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblLoaiPhong.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblLoaiPhong.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblLoaiPhong);
 
         tblLoaiPhong.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {

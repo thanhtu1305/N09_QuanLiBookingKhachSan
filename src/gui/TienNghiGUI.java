@@ -1,6 +1,7 @@
 package gui;
 
 import dao.TienNghiDAO;
+import db.ConnectDB;
 import entity.TienNghi;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
@@ -38,10 +39,14 @@ import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
-import java.util.Locale;
 import java.awt.Insets;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class TienNghiGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -161,7 +166,9 @@ public class TienNghiGUI extends JFrame {
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Thêm tiện nghi", new Color(22, 163, 74), Color.WHITE, e -> openCreateAmenityDialog()));
+        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateAmenityDialog()));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateAmenityDialog()));
+        card.add(createPrimaryButton("Xóa tiện nghi", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedAmenity()));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
@@ -177,7 +184,6 @@ public class TienNghiGUI extends JFrame {
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(290, 34));
         txtTuKhoa.setToolTipText("Mã tiện nghi / tên tiện nghi");
-        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
 
         left.add(createFieldGroup("Nhóm tiện nghi", cboNhomTienNghi));
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
@@ -195,6 +201,7 @@ public class TienNghiGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
+        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -223,7 +230,7 @@ public class TienNghiGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Double click để cập nhật tiện nghi.");
+        JLabel lblSub = new JLabel("Double click để xem chi tiết tiện nghi.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -245,7 +252,9 @@ public class TienNghiGUI extends JFrame {
         tblTienNghi.setGridColor(BORDER_SOFT);
         tblTienNghi.setShowGrid(true);
         tblTienNghi.setFillsViewportHeight(true);
-        ScreenUIHelper.styleTableHeader(tblTienNghi);
+        tblTienNghi.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tblTienNghi.getTableHeader().setBackground(new Color(243, 244, 246));
+        tblTienNghi.getTableHeader().setForeground(TEXT_PRIMARY);
 
         tblTienNghi.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -523,11 +532,10 @@ public class TienNghiGUI extends JFrame {
 
     private void applyFilters(boolean showMessage) {
         loadAmenities(
-                "",
+                txtTuKhoa.getText(),
                 normalizeFilterValue(valueOf(cboNhomTienNghi.getSelectedItem())),
                 normalizeFilterValue(valueOf(cboTrangThai.getSelectedItem()))
         );
-        filterAmenitiesByKeyword(txtTuKhoa.getText());
         refreshCurrentView();
         if (showMessage) {
             showSuccess("Đã lọc được " + filteredAmenities.size() + " tiện nghi phù hợp.");
@@ -549,7 +557,7 @@ public class TienNghiGUI extends JFrame {
                 );
             }
             for (TienNghi tienNghi : tienNghiList) {
-                AmenityRecord record = AmenityRecord.fromEntity(tienNghi);
+                AmenityRecord record = AmenityRecord.fromEntity(tienNghi, loadAmenityUsage(tienNghi.getMaTienNghi()));
                 allAmenities.add(record);
                 filteredAmenities.add(record);
             }
@@ -565,7 +573,7 @@ public class TienNghiGUI extends JFrame {
         tableModel.setRowCount(0);
         for (AmenityRecord amenity : filteredAmenities) {
             tableModel.addRow(new Object[]{
-                    formatAmenityCode(parseAmenityId(amenity.maTienNghi)),
+                    amenity.maTienNghi,
                     amenity.tenTienNghi,
                     amenity.nhomTienNghi,
                     amenity.uuTienHienThi,
@@ -582,36 +590,8 @@ public class TienNghiGUI extends JFrame {
         refreshCurrentView();
     }
 
-    private void filterAmenitiesByKeyword(String keyword) {
-        String tuKhoa = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
-        if (tuKhoa.isEmpty()) {
-            filteredAmenities.clear();
-            filteredAmenities.addAll(allAmenities);
-            refillTable();
-            return;
-        }
-
-        filteredAmenities.clear();
-        for (AmenityRecord amenity : allAmenities) {
-            if (buildAmenitySearchText(amenity).contains(tuKhoa)) {
-                filteredAmenities.add(amenity);
-            }
-        }
-        refillTable();
-    }
-
-    private String buildAmenitySearchText(AmenityRecord amenity) {
-        return (
-                formatAmenityCode(parseAmenityId(amenity.maTienNghi)) + " " +
-                amenity.tenTienNghi + " " +
-                amenity.nhomTienNghi + " " +
-                amenity.uuTienHienThi + " " +
-                amenity.trangThai
-        ).toLowerCase(Locale.ROOT);
-    }
-
     private void updateDetailPanel(AmenityRecord amenity) {
-        lblMaTienNghi.setText(formatAmenityCode(parseAmenityId(amenity.maTienNghi)));
+        lblMaTienNghi.setText(amenity.maTienNghi);
         setWrappedValue(lblTenTienNghi, amenity.tenTienNghi);
         lblNhomTienNghi.setText(amenity.nhomTienNghi);
         lblTrangThaiChiTiet.setText(amenity.trangThai);
@@ -663,6 +643,36 @@ public class TienNghiGUI extends JFrame {
         if (amenity != null) {
             new DeactivateAmenityDialog(this, amenity).setVisible(true);
         }
+    }
+
+    private void deleteSelectedAmenity() {
+        AmenityRecord amenity = getSelectedAmenity();
+        if (amenity == null) {
+            return;
+        }
+        if (amenity.isInUse()) {
+            showError("Không thể xóa tiện nghi vì đang được áp dụng cho loại phòng hoặc phòng.");
+            return;
+        }
+        if (!showConfirmDialog(
+                "Xác nhận xóa tiện nghi",
+                "Bạn có chắc muốn xóa tiện nghi này khỏi danh mục không?",
+                "Xóa",
+                new Color(220, 38, 38)
+        )) {
+            return;
+        }
+        try {
+            if (!tienNghiDAO.delete(parseAmenityId(amenity.maTienNghi))) {
+                showError("Không thể xóa tiện nghi.");
+                return;
+            }
+        } catch (RuntimeException ex) {
+            showError(ex.getMessage());
+            return;
+        }
+        reloadSampleData(false);
+        showSuccess("Xóa tiện nghi thành công.");
     }
 
     private void openAmenityDetailDialog() {
@@ -726,14 +736,18 @@ public class TienNghiGUI extends JFrame {
                 BORDER_SOFT,
                 TEXT_MUTED,
                 "F1 Thêm tiện nghi",
+                "F2 Cập nhật",
                 "F3 Ngừng áp dụng",
+                "F4 Xóa tiện nghi",
                 "Enter Xem chi tiết"
         );
     }
 
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "tiennghi-f1", this::openCreateAmenityDialog);
+        ScreenUIHelper.registerShortcut(this, "F2", "tiennghi-f2", this::openUpdateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "tiennghi-f3", this::openDeactivateAmenityDialog);
+        ScreenUIHelper.registerShortcut(this, "F4", "tiennghi-f4", this::deleteSelectedAmenity);
         ScreenUIHelper.registerShortcut(this, "ENTER", "tiennghi-enter", this::openAmenityDetailDialog);
     }
 
@@ -750,8 +764,8 @@ public class TienNghiGUI extends JFrame {
         return "Tất cả".equalsIgnoreCase(normalized) ? "" : normalized;
     }
 
-    private String formatAmenityCode(int id) {
-        return id <= 0 ? "" : "TN" + id;
+    private String formatAmenityCode(int maTienNghi) {
+        return maTienNghi <= 0 ? "" : "TN" + maTienNghi;
     }
 
     private int parseAmenityId(String value) {
@@ -767,6 +781,68 @@ public class TienNghiGUI extends JFrame {
         } catch (NumberFormatException ex) {
             return -1;
         }
+    }
+
+    private AmenityUsage loadAmenityUsage(int maTienNghi) {
+        Set<String> roomTypes = new LinkedHashSet<String>();
+        Set<String> rooms = new LinkedHashSet<String>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return new AmenityUsage("", "");
+        }
+        String sql =
+                "SELECT lp.tenLoaiPhong, p.soPhong " +
+                        "FROM LoaiPhongTienNghi lptn " +
+                        "INNER JOIN LoaiPhong lp ON lptn.maLoaiPhong = lp.maLoaiPhong " +
+                        "LEFT JOIN Phong p ON p.maLoaiPhong = lp.maLoaiPhong " +
+                        "WHERE lptn.maTienNghi = ? " +
+                        "ORDER BY lp.tenLoaiPhong, p.soPhong";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maTienNghi);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    String tenLoaiPhong = safeValue(rs.getString("tenLoaiPhong"), "");
+                    String soPhong = safeValue(rs.getString("soPhong"), "");
+                    if (!tenLoaiPhong.isEmpty()) {
+                        roomTypes.add(tenLoaiPhong);
+                    }
+                    if (!soPhong.isEmpty()) {
+                        rooms.add(soPhong);
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return new AmenityUsage(joinValues(roomTypes), joinValues(rooms));
+    }
+
+    private String joinValues(Set<String> values) {
+        StringBuilder sb = new StringBuilder();
+        for (String value : values) {
+            if (value == null || value.trim().isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(", ");
+            }
+            sb.append(value.trim());
+        }
+        return sb.toString();
+    }
+
+    private String mergeAmenityDescription(String moTa, String ghiChu) {
+        StringBuilder sb = new StringBuilder();
+        if (!isBlank(moTa)) {
+            sb.append(moTa.trim());
+        }
+        if (!isBlank(ghiChu)) {
+            if (sb.length() > 0) {
+                sb.append(System.lineSeparator());
+            }
+            sb.append(ghiChu.trim());
+        }
+        return sb.toString();
     }
 
     private boolean isBlank(String value) {
@@ -908,6 +984,7 @@ public class TienNghiGUI extends JFrame {
     private final class AmenityEditorDialog extends BaseAmenityDialog {
         private final AmenityRecord amenity;
 
+        private JTextField txtMaTienNghiDialog;
         private JTextField txtTenTienNghiDialog;
         private JComboBox<String> cboNhomTienNghiDialog;
         private JComboBox<String> cboTrangThaiDialog;
@@ -931,12 +1008,15 @@ public class TienNghiGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
+            txtMaTienNghiDialog = createInputField(amenity == null ? "" : amenity.maTienNghi);
             txtTenTienNghiDialog = createInputField(amenity == null ? "" : amenity.tenTienNghi);
             cboNhomTienNghiDialog = createComboBox(AMENITY_GROUP_OPTIONS);
             cboTrangThaiDialog = createComboBox(new String[]{"Đang áp dụng", "Ngừng áp dụng"});
             txtUuTien = createInputField(amenity == null ? "1" : String.valueOf(amenity.uuTienHienThi));
             txtMoTaDialog = createDialogTextArea(4);
             txtGhiChuDialog = createDialogTextArea(3);
+            txtMaTienNghiDialog.setEditable(false);
+
             if (amenity != null) {
                 cboNhomTienNghiDialog.setSelectedItem(amenity.nhomTienNghi);
                 cboTrangThaiDialog.setSelectedItem(amenity.trangThai);
@@ -944,12 +1024,13 @@ public class TienNghiGUI extends JFrame {
                 txtGhiChuDialog.setText(amenity.ghiChu);
             }
 
-            addFormRow(form, gbc, 0, "Tên tiện nghi", txtTenTienNghiDialog);
-            addFormRow(form, gbc, 1, "Nhóm tiện nghi", cboNhomTienNghiDialog);
-            addFormRow(form, gbc, 2, "Trạng thái", cboTrangThaiDialog);
-            addFormRow(form, gbc, 3, "Mức ưu tiên hiển thị", txtUuTien);
-            addFormRow(form, gbc, 4, "Mô tả", new JScrollPane(txtMoTaDialog));
-            addFormRow(form, gbc, 5, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+            addFormRow(form, gbc, 0, "Mã tiện nghi", txtMaTienNghiDialog);
+            addFormRow(form, gbc, 1, "Tên tiện nghi", txtTenTienNghiDialog);
+            addFormRow(form, gbc, 2, "Nhóm tiện nghi", cboNhomTienNghiDialog);
+            addFormRow(form, gbc, 3, "Trạng thái", cboTrangThaiDialog);
+            addFormRow(form, gbc, 4, "Mức ưu tiên hiển thị", txtUuTien);
+            addFormRow(form, gbc, 5, "Mô tả", new JScrollPane(txtMoTaDialog));
+            addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             JPanel card = createDialogCardPanel();
             card.add(form, BorderLayout.CENTER);
@@ -1037,11 +1118,12 @@ public class TienNghiGUI extends JFrame {
                 showError(ex.getMessage());
                 return;
             }
-            refreshAmenityViews(AmenityRecord.fromEntity(tienNghi), "Cập nhật tiện nghi thành công.");
+            refreshAmenityViews(AmenityRecord.fromEntity(tienNghi, loadAmenityUsage(tienNghi.getMaTienNghi())), "Cập nhật tiện nghi thành công.");
             dispose();
         }
 
         private void resetEditorForm() {
+            txtMaTienNghiDialog.setText("");
             txtTenTienNghiDialog.setText("");
             txtUuTien.setText("1");
             txtMoTaDialog.setText("");
@@ -1093,7 +1175,7 @@ public class TienNghiGUI extends JFrame {
             txtLyDo = createDialogTextArea(3);
             txtGhiChu = createDialogTextArea(3);
 
-            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(formatAmenityCode(parseAmenityId(amenity.maTienNghi))));
+            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(amenity.maTienNghi));
             addFormRow(form, gbc, 1, "Tên tiện nghi", createValueLabel(amenity.tenTienNghi));
             addFormRow(form, gbc, 2, "Trạng thái hiện tại", createValueLabel(amenity.trangThai));
             addFormRow(form, gbc, 3, "Từ ngày", txtTuNgay);
@@ -1115,29 +1197,49 @@ public class TienNghiGUI extends JFrame {
                 showError("Từ ngày không đúng định dạng dd/MM/yyyy.");
                 return;
             }
-            if (parseAmenityId(amenity.maTienNghi) <= 0) {
-                showError("Không xác định được tiện nghi cần xóa.");
+            int maTienNghi = parseAmenityId(amenity.maTienNghi);
+            if (maTienNghi <= 0) {
+                showError("Không xác định được tiện nghi cần ngừng áp dụng.");
                 return;
             }
             if (!showConfirmDialog(
-                    "Xác nhận xóa tiện nghi",
-                    "Tiện nghi này sẽ bị xóa khỏi danh mục. Bạn có muốn tiếp tục không?",
-                    "Xóa",
+                    "Xác nhận ngừng áp dụng tiện nghi",
+                    "Tiện nghi này sẽ được chuyển sang trạng thái Ngừng áp dụng. Bạn có muốn tiếp tục không?",
+                    "Ngừng áp dụng",
                     new Color(245, 158, 11)
             )) {
                 return;
             }
+            TienNghi tienNghi = new TienNghi(
+                    maTienNghi,
+                    amenity.tenTienNghi,
+                    amenity.nhomTienNghi,
+                    "Ngừng áp dụng",
+                    amenity.uuTienHienThi,
+                    mergeAmenityDescription(amenity.moTa, txtGhiChu.getText().trim())
+            );
             try {
-                if (!tienNghiDAO.delete(parseAmenityId(amenity.maTienNghi))) {
-                    showError("Không thể xóa tiện nghi.");
+                if (!tienNghiDAO.update(tienNghi)) {
+                    showError("Không thể cập nhật trạng thái tiện nghi.");
                     return;
                 }
             } catch (RuntimeException ex) {
                 showError(ex.getMessage());
                 return;
             }
-            reloadSampleData(false);
-            showSuccess("Xóa tiện nghi thành công.");
+            AmenityUsage usage = loadAmenityUsage(maTienNghi);
+            AmenityRecord updated = AmenityRecord.create(
+                    formatAmenityCode(maTienNghi),
+                    amenity.tenTienNghi,
+                    amenity.nhomTienNghi,
+                    "Ngừng áp dụng",
+                    amenity.uuTienHienThi,
+                    amenity.moTa,
+                    txtGhiChu.getText().trim(),
+                    usage.roomTypes,
+                    usage.rooms
+            );
+            refreshAmenityViews(updated, "Ngừng áp dụng tiện nghi thành công.");
             dispose();
         }
     }
@@ -1158,7 +1260,7 @@ public class TienNghiGUI extends JFrame {
             gbc.insets = new Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(formatAmenityCode(parseAmenityId(amenity.maTienNghi))));
+            addFormRow(form, gbc, 0, "Mã tiện nghi", createValueLabel(amenity.maTienNghi));
             addFormRow(form, gbc, 1, "Tên tiện nghi", createValueLabel(amenity.tenTienNghi));
             addFormRow(form, gbc, 2, "Nhóm tiện nghi", createValueLabel(amenity.nhomTienNghi));
             addFormRow(form, gbc, 3, "Trạng thái", createValueLabel(amenity.trangThai));
@@ -1218,6 +1320,16 @@ public class TienNghiGUI extends JFrame {
         }
     }
 
+    private static final class AmenityUsage {
+        private final String roomTypes;
+        private final String rooms;
+
+        private AmenityUsage(String roomTypes, String rooms) {
+            this.roomTypes = roomTypes;
+            this.rooms = rooms;
+        }
+    }
+
     private static final class AmenityRecord {
         private String maTienNghi;
         private String tenTienNghi;
@@ -1245,7 +1357,7 @@ public class TienNghiGUI extends JFrame {
             return record;
         }
 
-        private static AmenityRecord fromEntity(TienNghi tienNghi) {
+        private static AmenityRecord fromEntity(TienNghi tienNghi, AmenityUsage usage) {
             String combined = tienNghi.getMoTa() == null ? "" : tienNghi.getMoTa().trim();
             String moTa = combined;
             String ghiChu = "";
@@ -1263,8 +1375,8 @@ public class TienNghiGUI extends JFrame {
                     tienNghi.getUuTien(),
                     moTa,
                     ghiChu,
-                    "",
-                    ""
+                    usage == null ? "" : usage.roomTypes,
+                    usage == null ? "" : usage.rooms
             );
         }
 

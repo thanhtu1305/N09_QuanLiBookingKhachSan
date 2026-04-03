@@ -128,7 +128,7 @@ public final class SidebarFactory {
         menuScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         menuScrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-        JPanel bottomPanel = buildBottomPanel(username, role);
+        JPanel bottomPanel = buildBottomPanel(owner, username, role);
 
         sidebar.add(brand, BorderLayout.NORTH);
         sidebar.add(menuScrollPane, BorderLayout.CENTER);
@@ -136,7 +136,7 @@ public final class SidebarFactory {
         return sidebar;
     }
 
-    private static JPanel buildBottomPanel(String username, String role) {
+    private static JPanel buildBottomPanel(Object owner, String username, String role) {
         JPanel bottomPanel = new JPanel();
         bottomPanel.setOpaque(false);
         bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
@@ -146,17 +146,9 @@ public final class SidebarFactory {
         separator.setForeground(BORDER_SOFT);
         separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
 
-        JLabel lblUtility = new JLabel("Tiện ích người dùng");
-        lblUtility.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblUtility.setForeground(TEXT_MUTED);
-        lblUtility.setBorder(new EmptyBorder(10, 4, 8, 4));
-        lblUtility.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JButton btnProfile = createProfileButton(username, role);
-
         bottomPanel.add(separator);
-        bottomPanel.add(lblUtility);
-        bottomPanel.add(btnProfile);
+        bottomPanel.add(Box.createVerticalStrut(8));
+        bottomPanel.add(UserUtilityPanel.create(AppFrame.get(), username, role));
         return bottomPanel;
     }
 

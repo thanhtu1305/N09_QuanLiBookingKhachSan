@@ -1,5 +1,9 @@
 package gui.common;
 
+import dao.NhanVienDAO;
+import dao.TaiKhoanDAO;
+import entity.NhanVien;
+import entity.TaiKhoan;
 import utils.NavigationUtil;
 import utils.NavigationUtil.ScreenKey;
 
@@ -7,10 +11,12 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
@@ -19,9 +25,16 @@ import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.Frame;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Image;
+import java.awt.Insets;
 import java.net.URL;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.List;
 
@@ -39,8 +52,13 @@ public final class SidebarFactory {
     private static final Color SUBMENU_BG    = new Color(248, 250, 252);
     private static final Color ACTIVE_BG     = new Color(219, 234, 254);
     private static final Color ACTIVE_TEXT   = new Color(29, 78, 216);
+    private static final Color PROFILE_BG    = new Color(248, 250, 252);
+    private static final Color PROFILE_HOVER = new Color(239, 246, 255);
+    private static final Color PROFILE_CARD  = new Color(255, 255, 255);
     private static final int LOGO_W = 132, LOGO_H = 72;
     private static final int MENU_ICON_SIZE = 24;
+    private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("dd/MM/yyyy");
+    private static final SimpleDateFormat DATETIME_FORMAT = new SimpleDateFormat("dd/MM/yyyy HH:mm");
 
     private SidebarFactory() {}
 
@@ -110,9 +128,36 @@ public final class SidebarFactory {
         menuScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
         menuScrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
+        JPanel bottomPanel = buildBottomPanel(username, role);
+
         sidebar.add(brand, BorderLayout.NORTH);
         sidebar.add(menuScrollPane, BorderLayout.CENTER);
+        sidebar.add(bottomPanel, BorderLayout.SOUTH);
         return sidebar;
+    }
+
+    private static JPanel buildBottomPanel(String username, String role) {
+        JPanel bottomPanel = new JPanel();
+        bottomPanel.setOpaque(false);
+        bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.Y_AXIS));
+        bottomPanel.setBorder(new EmptyBorder(18, 2, 0, 2));
+
+        JSeparator separator = new JSeparator();
+        separator.setForeground(BORDER_SOFT);
+        separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+
+        JLabel lblUtility = new JLabel("Tiện ích người dùng");
+        lblUtility.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lblUtility.setForeground(TEXT_MUTED);
+        lblUtility.setBorder(new EmptyBorder(10, 4, 8, 4));
+        lblUtility.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JButton btnProfile = createProfileButton(username, role);
+
+        bottomPanel.add(separator);
+        bottomPanel.add(lblUtility);
+        bottomPanel.add(btnProfile);
+        return bottomPanel;
     }
 
     private static void addDirectItem(JPanel menuPanel, ScreenKey item, ScreenKey currentScreen,
@@ -265,6 +310,29 @@ public final class SidebarFactory {
         return button;
     }
 
+    private static JButton createProfileButton(String username, String role) {
+        String displayName = username == null || username.trim().isEmpty() ? "Người dùng" : username.trim();
+        JButton button = new JButton("<html><div style='line-height:1.4'><b>Thông tin cá nhân</b><br/><span style='font-size:10px;'>"
+                + displayName + " • " + safe(role, "Nhân viên") + "</span></div></html>");
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(191, 219, 254), 1, true),
+                new EmptyBorder(12, 14, 12, 14)
+        ));
+        button.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setBorderPainted(true);
+        button.setBackground(PROFILE_BG);
+        button.setForeground(TEXT_PRIMARY);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        installHover(button, PROFILE_BG, PROFILE_HOVER);
+        button.addActionListener(e -> showProfileDialog(username, role));
+        return button;
+    }
+
     private static void applyMenuEnabledState(JButton button, boolean enabled, Color normalBackground) {
         button.setEnabled(enabled);
         if (!enabled) {
@@ -309,5 +377,199 @@ public final class SidebarFactory {
 
         Image scaled = raw.getImage().getScaledInstance(w, h, Image.SCALE_SMOOTH);
         return new ImageIcon(scaled);
+    }
+
+    private static void showProfileDialog(String username, String role) {
+        TaiKhoanDAO taiKhoanDAO = new TaiKhoanDAO();
+        TaiKhoan taiKhoan = taiKhoanDAO.findByUsername(username);
+        NhanVien nhanVien = null;
+        if (taiKhoan != null && taiKhoan.getMaNhanVien() > 0) {
+            nhanVien = new NhanVienDAO().findById(taiKhoan.getMaNhanVien());
+        }
+
+        Frame owner = AppFrame.get();
+        JDialog dialog = new JDialog(owner, "Thông tin cá nhân", true);
+        dialog.getContentPane().setBackground(new Color(240, 244, 248));
+        dialog.setLayout(new BorderLayout(0, 16));
+
+        JPanel root = new JPanel(new BorderLayout(0, 16));
+        root.setOpaque(false);
+        root.setBorder(new EmptyBorder(18, 18, 18, 18));
+
+        root.add(buildProfileHeader(username, role, taiKhoan, nhanVien), BorderLayout.NORTH);
+        root.add(buildProfileContent(username, role, taiKhoan, nhanVien), BorderLayout.CENTER);
+
+        JButton btnClose = new JButton("Đóng");
+        btnClose.setFocusPainted(false);
+        btnClose.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        btnClose.setForeground(Color.WHITE);
+        btnClose.setBackground(BRAND_PRIMARY);
+        btnClose.setBorder(new EmptyBorder(10, 18, 10, 18));
+        btnClose.addActionListener(e -> dialog.dispose());
+
+        JPanel actionPanel = new JPanel(new BorderLayout());
+        actionPanel.setOpaque(false);
+        actionPanel.add(btnClose, BorderLayout.EAST);
+        root.add(actionPanel, BorderLayout.SOUTH);
+
+        dialog.add(root, BorderLayout.CENTER);
+        dialog.setSize(640, 520);
+        dialog.setMinimumSize(new Dimension(600, 480));
+        dialog.setLocationRelativeTo(owner);
+        dialog.setVisible(true);
+    }
+
+    private static JPanel buildProfileHeader(String username, String role, TaiKhoan taiKhoan, NhanVien nhanVien) {
+        JPanel header = new JPanel(new BorderLayout(16, 0));
+        header.setBackground(BRAND_PRIMARY);
+        header.setBorder(new EmptyBorder(18, 18, 18, 18));
+
+        JLabel avatar = new JLabel(buildInitials(nhanVien, username), SwingConstants.CENTER);
+        avatar.setPreferredSize(new Dimension(72, 72));
+        avatar.setOpaque(true);
+        avatar.setBackground(new Color(219, 234, 254));
+        avatar.setForeground(BRAND_PRIMARY);
+        avatar.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        avatar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(191, 219, 254), 1, true),
+                new EmptyBorder(8, 8, 8, 8)
+        ));
+
+        JPanel textPanel = new JPanel();
+        textPanel.setOpaque(false);
+        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+
+        JLabel lblTitle = new JLabel("Thông tin cá nhân");
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        lblTitle.setForeground(Color.WHITE);
+
+        JLabel lblName = new JLabel(safe(nhanVien == null ? null : nhanVien.getHoTen(), safe(username, "Người dùng")));
+        lblName.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        lblName.setForeground(new Color(219, 234, 254));
+
+        JLabel lblRole = new JLabel(safe(role, safe(taiKhoan == null ? null : taiKhoan.getVaiTro(), "Nhân viên")));
+        lblRole.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblRole.setForeground(new Color(219, 234, 254));
+
+        textPanel.add(lblTitle);
+        textPanel.add(Box.createVerticalStrut(8));
+        textPanel.add(lblName);
+        textPanel.add(Box.createVerticalStrut(4));
+        textPanel.add(lblRole);
+
+        header.add(avatar, BorderLayout.WEST);
+        header.add(textPanel, BorderLayout.CENTER);
+        return header;
+    }
+
+    private static JPanel buildProfileContent(String username, String role, TaiKhoan taiKhoan, NhanVien nhanVien) {
+        JPanel container = new JPanel(new BorderLayout(0, 14));
+        container.setOpaque(false);
+
+        JPanel infoCard = createProfileCard();
+        infoCard.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(8, 0, 8, 12);
+        gbc.anchor = GridBagConstraints.WEST;
+
+        addProfileRow(infoCard, gbc, 0, "Họ tên", safe(nhanVien == null ? null : nhanVien.getHoTen(), "Chưa cập nhật"));
+        addProfileRow(infoCard, gbc, 1, "Tên đăng nhập", safe(username, "Chưa cập nhật"));
+        addProfileRow(infoCard, gbc, 2, "Vai trò", safe(role, safe(taiKhoan == null ? null : taiKhoan.getVaiTro(), "Chưa cập nhật")));
+        addProfileRow(infoCard, gbc, 3, "Bộ phận", safe(nhanVien == null ? null : nhanVien.getBoPhan(), "Chưa cập nhật"));
+        addProfileRow(infoCard, gbc, 4, "Email", resolveEmail(taiKhoan, nhanVien));
+        addProfileRow(infoCard, gbc, 5, "Số điện thoại", safe(nhanVien == null ? null : nhanVien.getSoDienThoai(), "Chưa cập nhật"));
+        addProfileRow(infoCard, gbc, 6, "Trạng thái tài khoản", safe(taiKhoan == null ? null : taiKhoan.getTrangThai(), "Chưa cập nhật"));
+        addProfileRow(infoCard, gbc, 7, "Ngày vào làm", formatDate(nhanVien == null ? null : nhanVien.getNgayVaoLam()));
+
+        JPanel summaryCard = createProfileCard();
+        summaryCard.setLayout(new GridLayout(1, 2, 12, 0));
+        summaryCard.add(createMetricCard("Mã nhân viên", nhanVien == null || nhanVien.getMaNhanVien() <= 0 ? "Chưa có" : "NV" + nhanVien.getMaNhanVien()));
+        summaryCard.add(createMetricCard("Đăng nhập gần nhất", formatTimestamp(taiKhoan == null ? null : taiKhoan.getLanDangNhapCuoi())));
+
+        container.add(summaryCard, BorderLayout.NORTH);
+        container.add(infoCard, BorderLayout.CENTER);
+        return container;
+    }
+
+    private static JPanel createProfileCard() {
+        JPanel panel = new JPanel();
+        panel.setBackground(PROFILE_CARD);
+        panel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(226, 232, 240), 1, true),
+                new EmptyBorder(16, 18, 16, 18)
+        ));
+        return panel;
+    }
+
+    private static JPanel createMetricCard(String label, String value) {
+        JPanel panel = new JPanel();
+        panel.setOpaque(false);
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+
+        JLabel lblLabel = new JLabel(label);
+        lblLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lblLabel.setForeground(TEXT_MUTED);
+
+        JLabel lblValue = new JLabel(safe(value, "Chưa cập nhật"));
+        lblValue.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        lblValue.setForeground(TEXT_PRIMARY);
+
+        panel.add(lblLabel);
+        panel.add(Box.createVerticalStrut(8));
+        panel.add(lblValue);
+        return panel;
+    }
+
+    private static void addProfileRow(JPanel panel, GridBagConstraints gbc, int row, String label, String value) {
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+
+        JLabel lblLabel = new JLabel(label);
+        lblLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        lblLabel.setForeground(TEXT_MUTED);
+        panel.add(lblLabel, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel lblValue = new JLabel(safe(value, "Chưa cập nhật"));
+        lblValue.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        lblValue.setForeground(TEXT_PRIMARY);
+        panel.add(lblValue, gbc);
+    }
+
+    private static String buildInitials(NhanVien nhanVien, String username) {
+        String source = nhanVien != null && nhanVien.getHoTen() != null && !nhanVien.getHoTen().trim().isEmpty()
+                ? nhanVien.getHoTen().trim()
+                : safe(username, "ND");
+        String[] parts = source.split("\\s+");
+        if (parts.length == 1) {
+            return parts[0].substring(0, Math.min(2, parts[0].length())).toUpperCase();
+        }
+        String first = parts[0].substring(0, 1);
+        String last = parts[parts.length - 1].substring(0, 1);
+        return (first + last).toUpperCase();
+    }
+
+    private static String resolveEmail(TaiKhoan taiKhoan, NhanVien nhanVien) {
+        if (nhanVien != null && nhanVien.getEmail() != null && !nhanVien.getEmail().trim().isEmpty()) {
+            return nhanVien.getEmail().trim();
+        }
+        return safe(taiKhoan == null ? null : taiKhoan.getEmailKhoiPhuc(), "Chưa cập nhật");
+    }
+
+    private static String formatDate(Date date) {
+        return date == null ? "Chưa cập nhật" : DATE_FORMAT.format(date);
+    }
+
+    private static String formatTimestamp(Timestamp timestamp) {
+        return timestamp == null ? "Chưa cập nhật" : DATETIME_FORMAT.format(timestamp);
+    }
+
+    private static String safe(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 }

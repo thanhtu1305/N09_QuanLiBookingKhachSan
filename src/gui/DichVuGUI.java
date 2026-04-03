@@ -122,7 +122,7 @@ public class DichVuGUI extends JFrame {
 
         main.add(top, BorderLayout.NORTH);
         main.add(buildCenter(), BorderLayout.CENTER);
-        main.add(ScreenUIHelper.createShortcutBar(CARD_BG, BORDER_SOFT, TEXT_MUTED, "F1 Thêm", "F2 Cập nhật", "F3 Xóa", "F4 Sử dụng"), BorderLayout.SOUTH);
+        main.add(ScreenUIHelper.createShortcutBar(CARD_BG, BORDER_SOFT, TEXT_MUTED, "F1 Thêm", "F3 Xóa", "F4 Sử dụng"), BorderLayout.SOUTH);
         return main;
     }
 
@@ -158,7 +158,6 @@ public class DichVuGUI extends JFrame {
     private JPanel buildActions() {
         JPanel card = compactCard();
         card.add(primary("Thêm dịch vụ", new Color(22, 163, 74), e -> openServiceDialog(null)));
-        card.add(primary("Cập nhật", new Color(37, 99, 235), e -> openServiceDialog(getSelectedService(true))));
         card.add(primary("Xóa dịch vụ", new Color(220, 38, 38), e -> deleteSelectedService()));
         card.add(primary("Sử dụng dịch vụ", new Color(99, 102, 241), e -> openUsageDialog(getSelectedService(false))));
         card.add(primary("Tìm kiếm", new Color(15, 118, 110), e -> applyFilters(true)));
@@ -226,7 +225,7 @@ public class DichVuGUI extends JFrame {
         JLabel t1 = new JLabel("Danh sách dịch vụ");
         t1.setFont(SECTION_FONT);
         t1.setForeground(TEXT_PRIMARY);
-        JLabel t2 = new JLabel("Chọn một dòng để xem chi tiết.");
+        JLabel t2 = new JLabel("Double click vào một dòng để cập nhật dịch vụ.");
         t2.setFont(BODY_FONT);
         t2.setForeground(TEXT_MUTED);
         title.add(t1, BorderLayout.WEST);
@@ -344,9 +343,9 @@ public class DichVuGUI extends JFrame {
     private String buildServiceSearchText(DichVu dichVu) {
         return (
                 formatServiceCode(dichVu.getMaDichVu()) + " " +
-                safe(dichVu.getTenDichVu()) + " " +
-                money(dichVu.getDonGia()) + " " +
-                safe(dichVu.getDonVi())
+                        safe(dichVu.getTenDichVu()) + " " +
+                        money(dichVu.getDonGia()) + " " +
+                        safe(dichVu.getDonVi())
         ).toLowerCase(Locale.ROOT);
     }
 
@@ -429,7 +428,6 @@ public class DichVuGUI extends JFrame {
 
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "dichvu-f1", () -> openServiceDialog(null));
-        ScreenUIHelper.registerShortcut(this, "F2", "dichvu-f2", () -> openServiceDialog(getSelectedService(true)));
         ScreenUIHelper.registerShortcut(this, "F3", "dichvu-f3", this::deleteSelectedService);
         ScreenUIHelper.registerShortcut(this, "F4", "dichvu-f4", () -> openUsageDialog(getSelectedService(false)));
     }

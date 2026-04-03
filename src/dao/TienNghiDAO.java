@@ -91,6 +91,59 @@ public class TienNghiDAO {
         return dsTienNghi;
     }
 
+    public List<String> getDistinctNhomTienNghi() {
+        List<String> dsNhom = new ArrayList<String>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return dsNhom;
+        }
+
+        String sql = "SELECT DISTINCT nhomTienNghi FROM TienNghi "
+                + "WHERE nhomTienNghi IS NOT NULL AND LTRIM(RTRIM(nhomTienNghi)) <> '' "
+                + "ORDER BY nhomTienNghi";
+        try (PreparedStatement stmt = con.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                dsNhom.add(rs.getString("nhomTienNghi"));
+            }
+        } catch (SQLException e) {
+            System.out.println("Loi truy van nhom tien nghi.");
+            e.printStackTrace();
+        }
+        return dsNhom;
+    }
+
+    public List<TienNghi> getByNhomTienNghi(String nhomTienNghi) {
+        List<TienNghi> dsTienNghi = new ArrayList<TienNghi>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return dsTienNghi;
+        }
+
+        String nhom = nhomTienNghi == null ? "" : nhomTienNghi.trim();
+        String sql;
+        if (nhom.isEmpty()) {
+            sql = SELECT_BASE + " ORDER BY nhomTienNghi, uuTien, maTienNghi";
+        } else {
+            sql = SELECT_BASE + " WHERE nhomTienNghi = ? ORDER BY uuTien, maTienNghi";
+        }
+
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            if (!nhom.isEmpty()) {
+                stmt.setString(1, nhom);
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    dsTienNghi.add(mapTienNghi(rs));
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Loi truy van tien nghi theo nhom.");
+            e.printStackTrace();
+        }
+        return dsTienNghi;
+    }
+
     public boolean insert(TienNghi tienNghi) {
         Connection con = ConnectDB.getConnection();
         if (con == null) {

@@ -22,11 +22,11 @@ import javax.swing.border.EmptyBorder;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
 import java.awt.Insets;
-import java.awt.Font;
 
 public class DangNhapGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -48,7 +48,7 @@ public class DangNhapGUI extends JFrame {
         setTitle("Đăng nhập - " + AppBranding.APP_DISPLAY_NAME);
         setLocationRelativeTo(null);
         setSize(1000, 650);
-        setMinimumSize(new java.awt.Dimension(800, 600));
+        setMinimumSize(new Dimension(800, 600));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         initUI();
         setExtendedState(getExtendedState() | JFrame.MAXIMIZED_BOTH);
@@ -170,29 +170,18 @@ public class DangNhapGUI extends JFrame {
     }
 
     private JPanel buildButtonPanel() {
-        JPanel panel = new JPanel(new GridLayout(2, 2, 10, 10));
+        JPanel panel = new JPanel(new GridLayout(1, 2, 12, 0));
         panel.setOpaque(false);
 
         btnLogin = createActionButton("Đăng nhập", new Color(22, 163, 74));
-        JButton btnClear = createActionButton("Xóa trắng", new Color(37, 99, 235));
-        JButton btnForgot = createActionButton("Quên mật khẩu", new Color(245, 158, 11));
         JButton btnExit = createActionButton("Thoát", new Color(220, 38, 38));
 
         txtUsername.addActionListener(e -> txtPassword.requestFocusInWindow());
         txtPassword.addActionListener(e -> onLogin());
         btnLogin.addActionListener(e -> onLogin());
-        btnClear.addActionListener(e -> onClear());
-        btnForgot.addActionListener(e -> JOptionPane.showMessageDialog(
-                this,
-                "Chức năng quên mật khẩu sẽ làm sau.",
-                "Thông báo",
-                JOptionPane.INFORMATION_MESSAGE
-        ));
         btnExit.addActionListener(e -> System.exit(0));
 
         panel.add(btnLogin);
-        panel.add(btnClear);
-        panel.add(btnForgot);
         panel.add(btnExit);
 
         return panel;
@@ -274,14 +263,10 @@ public class DangNhapGUI extends JFrame {
         this.setVisible(false);
     }
 
-    private void onClear() {
-        txtUsername.setText("");
-        txtPassword.setText("");
-        txtUsername.requestFocusInWindow();
-    }
-
     public JPanel buildPanel() {
-        if (rootPanel == null) initUI();
+        if (rootPanel == null) {
+            initUI();
+        }
         return rootPanel;
     }
 }

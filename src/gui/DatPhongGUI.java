@@ -46,6 +46,7 @@ import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -858,14 +859,37 @@ public class DatPhongGUI extends JFrame {
     }
 
     private LocalDate parseDate(String value) {
-        if (value == null || value.trim().isEmpty()) {
+        String normalized = normalizeDateInput(value);
+        if (normalized == null) {
             return null;
         }
         try {
-            return LocalDate.parse(value.trim(), DATE_FORMAT);
+            return LocalDate.parse(normalized, DATE_FORMAT.withResolverStyle(ResolverStyle.STRICT));
         } catch (DateTimeParseException ex) {
             return null;
         }
+    }
+
+    private String normalizeDateInput(String input) {
+        return AppDatePickerField.normalizeFlexibleDateInput(input);
+    }
+
+    private LocalDate normalizeDateFieldValue(AppDatePickerField field, String errorMessage) {
+        if (field == null) {
+            return null;
+        }
+        String rawValue = field.getText();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            field.setText("");
+            return null;
+        }
+        String normalized = normalizeDateInput(rawValue);
+        if (normalized == null) {
+            showError(errorMessage);
+            return null;
+        }
+        field.setText(normalized);
+        return LocalDate.parse(normalized, DATE_FORMAT.withResolverStyle(ResolverStyle.STRICT));
     }
 
     private LocalDate toLocalDate(java.util.Date date) {
@@ -1395,6 +1419,8 @@ public class DatPhongGUI extends JFrame {
             txtSdt = createInputField(editing ? safeValue(existingCustomer == null ? editingBooking.soDienThoai : existingCustomer.soDienThoai, "") : "");
             LocalDate customerBirthDate = editing ? (existingCustomer == null ? null : existingCustomer.ngaySinh) : null;
             txtNgaySinhKhach = new AppDatePickerField(customerBirthDate == null ? "" : customerBirthDate.format(DATE_FORMAT), false);
+            txtNgayDatDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
+            txtNgaySinhKhach.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
             txtEmailKhach = createInputField(editing && existingCustomer != null ? existingCustomer.email : "");
             txtDiaChiKhach = createDialogTextArea(3);
             if (editing && existingCustomer != null) {
@@ -1558,14 +1584,14 @@ public class DatPhongGUI extends JFrame {
                 showError("Booking phải có họ tên và số điện thoại khách hàng.");
                 return;
             }
-            LocalDate ngayDat = requireDate(txtNgayDatDialog.getText().trim(), "Ngày đặt không hợp lệ.");
+            LocalDate ngayDat = normalizeDateFieldValue(txtNgayDatDialog, "Ngày đặt không hợp lệ.");
             if (ngayDat == null) {
                 return;
             }
             String ngaySinhText = txtNgaySinhKhach.getText() == null ? "" : txtNgaySinhKhach.getText().trim();
             LocalDate ngaySinhKhach = null;
             if (!ngaySinhText.isEmpty()) {
-                ngaySinhKhach = requireDate(ngaySinhText, "Ngày sinh không hợp lệ.");
+                ngaySinhKhach = normalizeDateFieldValue(txtNgaySinhKhach, "Ngày sinh không hợp lệ.");
                 if (ngaySinhKhach == null) {
                     return;
                 }
@@ -1778,6 +1804,8 @@ public class DatPhongGUI extends JFrame {
                 txtLoaiPhongDialog.setEditable(false);
                 txtCheckInDialog = new AppDatePickerField(detail == null ? LocalDate.now().format(DATE_FORMAT) : detail.formatCheckIn(), true);
                 txtCheckOutDialog = new AppDatePickerField(detail == null ? LocalDate.now().plusDays(1).format(DATE_FORMAT) : detail.formatCheckOut(), true);
+                txtCheckInDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
+                txtCheckOutDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 4/3/26");
                 txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
                 txtDatCocDialog = createInputField(detail == null ? "0" : formatMoney(detail.tienDatCocChiTiet));
                 txtGhiChuChiTietDialog = createDialogTextArea(2);
@@ -1835,8 +1863,8 @@ public class DatPhongGUI extends JFrame {
                         return;
                     }
                 }
-                LocalDate checkIn = requireDate(txtCheckInDialog.getText().trim(), "Check-in dự kiến không hợp lệ.");
-                LocalDate checkOut = requireDate(txtCheckOutDialog.getText().trim(), "Check-out dự kiến không hợp lệ.");
+                LocalDate checkIn = normalizeDateFieldValue(txtCheckInDialog, "Check-in dự kiến không hợp lệ.");
+                LocalDate checkOut = normalizeDateFieldValue(txtCheckOutDialog, "Check-out dự kiến không hợp lệ.");
                 if (checkIn == null || checkOut == null) {
                     return;
                 }

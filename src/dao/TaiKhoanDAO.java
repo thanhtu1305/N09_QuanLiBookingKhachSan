@@ -63,6 +63,28 @@ public class TaiKhoanDAO {
         return null;
     }
 
+    public TaiKhoan findByUsername(String tenDangNhap) {
+        String sql = "SELECT * FROM TaiKhoan WHERE tenDangNhap = ?";
+
+        try {
+            Connection con = ConnectDB.getConnection();
+            if (con == null) {
+                return null;
+            }
+            PreparedStatement ps = con.prepareStatement(sql);
+            ps.setString(1, tenDangNhap);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return mapResultSet(rs);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return null;
+    }
+
     public boolean insert(TaiKhoan taiKhoan) {
         String sql = "INSERT INTO TaiKhoan(maNhanVien, tenDangNhap, matKhau, vaiTro, trangThai, lanDangNhapCuoi, emailKhoiPhuc) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?)";

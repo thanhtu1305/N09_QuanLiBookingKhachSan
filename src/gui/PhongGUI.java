@@ -124,7 +124,6 @@ public class PhongGUI extends JFrame {
             }
         });
     }
-
     private void initUI() {
         JPanel root = new JPanel(new BorderLayout(16, 0));
         root.setBackground(APP_BG);
@@ -190,14 +189,12 @@ public class PhongGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
 
         JButton btnThemPhong = createPrimaryButton("Thêm phòng", new Color(22, 163, 74), Color.WHITE, e -> openCreateRoomDialog());
-        JButton btnCapNhatPhong = createPrimaryButton("Cập nhật phòng", new Color(37, 99, 235), Color.WHITE, e -> openUpdateStatusDialog());
         JButton btnDoiTrangThai = createPrimaryButton("Đổi trạng thái", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomDialog());
         JButton btnXoaPhong = createPrimaryButton("Xóa phòng", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedRoom());
         JButton btnGanLoaiPhong = createPrimaryButton("Gán loại phòng", new Color(99, 102, 241), Color.WHITE, e -> openAssignRoomTypeDialog());
         JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
 
         card.add(btnThemPhong);
-        card.add(btnCapNhatPhong);
         card.add(btnDoiTrangThai);
         card.add(btnXoaPhong);
         card.add(btnGanLoaiPhong);
@@ -1015,7 +1012,6 @@ public class PhongGUI extends JFrame {
                 BORDER_SOFT,
                 TEXT_MUTED,
                 "F1 Thêm phòng",
-                "F2 Cập nhật phòng",
                 "F3 Đổi trạng thái",
                 "F4 Xóa phòng",
                 "F5 Gán loại phòng",
@@ -1025,7 +1021,6 @@ public class PhongGUI extends JFrame {
 
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "phong-f1", this::openCreateRoomDialog);
-        ScreenUIHelper.registerShortcut(this, "F2", "phong-f2", this::openUpdateStatusDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "phong-f3", this::openDeactivateRoomDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "phong-f4", this::deleteSelectedRoom);
         ScreenUIHelper.registerShortcut(this, "F5", "phong-f5", this::openAssignRoomTypeDialog);

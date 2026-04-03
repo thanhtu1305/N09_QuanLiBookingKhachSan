@@ -17,8 +17,8 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.DateTimeException;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 
 public class AppDatePickerField extends JPanel {
     private static final Color TEXT_PRIMARY = new Color(31, 41, 55);
@@ -67,6 +67,14 @@ public class AppDatePickerField extends JPanel {
         return txtDisplay.getText().trim();
     }
 
+    @Override
+    public void setToolTipText(String text) {
+        super.setToolTipText(text);
+        if (txtDisplay != null) {
+            txtDisplay.setToolTipText(text);
+        }
+    }
+
     public void setText(String value) {
         LocalDate parsed = parseDate(value);
         if (parsed != null) {
@@ -110,9 +118,10 @@ public class AppDatePickerField extends JPanel {
     }
 
     private void normalizeTypedValue() {
-        LocalDate parsed = parseDate(txtDisplay.getText());
-        if (parsed != null) {
-            txtDisplay.setText(parsed.format(DATE_FORMATTER));
+        String normalized = normalizeFlexibleDateInput(txtDisplay.getText());
+        if (normalized != null) {
+            LocalDate parsed = parseDate(normalized);
+            txtDisplay.setText(normalized);
             calendarPanel.setSelectedDate(parsed);
         } else if (txtDisplay.getText().trim().isEmpty()) {
             calendarPanel.setSelectedDate(resolveInitialDate(""));
@@ -128,14 +137,66 @@ public class AppDatePickerField extends JPanel {
     }
 
     private LocalDate parseDate(String value) {
-        if (value == null || value.trim().isEmpty()) {
+        String normalized = normalizeFlexibleDateInput(value);
+        if (normalized == null) {
             return null;
         }
         try {
-            return LocalDate.parse(value.trim(), DATE_FORMATTER);
-        } catch (DateTimeParseException ex) {
+            return LocalDate.parse(normalized, DATE_FORMATTER);
+        } catch (Exception ignored) {
             return null;
         }
+    }
+
+    public static String normalizeFlexibleDateInput(String value) {
+        if (value == null) {
+            return null;
+        }
+        String input = value.trim();
+        if (input.isEmpty()) {
+            return null;
+        }
+
+        String[] parts = input.split("/");
+        if (parts.length != 3) {
+            return null;
+        }
+
+        String dayPart = parts[0].trim();
+        String monthPart = parts[1].trim();
+        String yearPart = parts[2].trim();
+        if (!isNumeric(dayPart) || !isNumeric(monthPart) || !isNumeric(yearPart)) {
+            return null;
+        }
+        if (dayPart.length() < 1 || dayPart.length() > 2
+                || monthPart.length() < 1 || monthPart.length() > 2
+                || (yearPart.length() != 2 && yearPart.length() != 4)) {
+            return null;
+        }
+
+        try {
+            int day = Integer.parseInt(dayPart);
+            int month = Integer.parseInt(monthPart);
+            int year = Integer.parseInt(yearPart);
+            if (yearPart.length() == 2) {
+                year += 2000;
+            }
+            return LocalDate.of(year, month, day).format(DATE_FORMATTER);
+        } catch (DateTimeException | NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static boolean isNumeric(String value) {
+        if (value == null || value.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < value.length(); i++) {
+            if (!Character.isDigit(value.charAt(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private JButton createTriggerButton() {

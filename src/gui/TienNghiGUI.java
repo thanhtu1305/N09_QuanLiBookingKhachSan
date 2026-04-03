@@ -161,7 +161,6 @@ public class TienNghiGUI extends JFrame {
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Thêm tiện nghi", new Color(22, 163, 74), Color.WHITE, e -> openCreateAmenityDialog()));
-        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateAmenityDialog()));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateAmenityDialog()));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
@@ -224,7 +223,7 @@ public class TienNghiGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Double click để xem chi tiết tiện nghi.");
+        JLabel lblSub = new JLabel("Double click để cập nhật tiện nghi.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -727,7 +726,6 @@ public class TienNghiGUI extends JFrame {
                 BORDER_SOFT,
                 TEXT_MUTED,
                 "F1 Thêm tiện nghi",
-                "F2 Cập nhật",
                 "F3 Ngừng áp dụng",
                 "Enter Xem chi tiết"
         );
@@ -735,7 +733,6 @@ public class TienNghiGUI extends JFrame {
 
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "tiennghi-f1", this::openCreateAmenityDialog);
-        ScreenUIHelper.registerShortcut(this, "F2", "tiennghi-f2", this::openUpdateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "tiennghi-f3", this::openDeactivateAmenityDialog);
         ScreenUIHelper.registerShortcut(this, "ENTER", "tiennghi-enter", this::openAmenityDetailDialog);
     }

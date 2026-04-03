@@ -68,6 +68,7 @@ public class LoaiPhongGUI extends JFrame {
     private static final boolean[] DEFAULT_SUITE_AMENITIES = {true, true, true, true, true, true, true, true, true, true, true, true};
     private static final boolean[] DEFAULT_FAMILY_AMENITIES = {true, true, true, true, true, true, false, true, true, true, true, true};
     private static final String FILTER_ALL = "\u0054\u1ea5t c\u1ea3";
+    private static final String AMENITY_GROUP_ALL = "Tất cả";
     private static final String STATUS_ACTIVE = "\u0110ang \u00e1p d\u1ee5ng";
     private static final String STATUS_INACTIVE = "Ng\u1eebng \u00e1p d\u1ee5ng";
     private static final String AUTO_CODE_TEXT = "T\u1ef1 \u0111\u1ed9ng";
@@ -182,7 +183,6 @@ public class LoaiPhongGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
 
         JButton btnThemLoaiPhong = createPrimaryButton("Thêm loại phòng", new Color(22, 163, 74), Color.WHITE, e -> openCreateRoomTypeDialog());
-        JButton btnCapNhat = createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateRoomTypeDialog());
         JButton btnNgungApDung = createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomTypeDialog());
         JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
         JButton btnXoaLoaiPhong = createPrimaryButton("Xóa loại phòng", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedRoomType());
@@ -191,7 +191,6 @@ public class LoaiPhongGUI extends JFrame {
         btnTienNghiMacDinh.setToolTipText("Thiết lập bộ tiện nghi mặc định áp dụng chung cho mọi phòng thuộc loại này.");
 
         card.add(btnThemLoaiPhong);
-        card.add(btnCapNhat);
         card.add(btnNgungApDung);
         card.add(btnTienNghiMacDinh);
         card.add(btnXoaLoaiPhong);
@@ -252,7 +251,6 @@ public class LoaiPhongGUI extends JFrame {
                 BORDER_SOFT,
                 TEXT_MUTED,
                 "F1 Thêm loại phòng",
-                "F2 Cập nhật",
                 "F3 Ngừng áp dụng",
                 "F4 Tiện nghi mặc định",
                 "F5 Xóa loại phòng",
@@ -268,7 +266,7 @@ public class LoaiPhongGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Chọn một dòng để xem chi tiết loại phòng.");
+        JLabel lblSub = new JLabel("Double click vào một dòng để cập nhật loại phòng.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -686,10 +684,10 @@ public class LoaiPhongGUI extends JFrame {
     private String buildRoomTypeSearchText(RoomTypeRecord type) {
         return (
                 type.maLoai + " " +
-                type.tenLoaiPhong + " " +
-                type.getKhachToiDaLabel() + " " +
-                type.getDienTichLabel() + " " +
-                type.trangThai
+                        type.tenLoaiPhong + " " +
+                        type.getKhachToiDaLabel() + " " +
+                        type.getDienTichLabel() + " " +
+                        type.trangThai
         ).toLowerCase(Locale.ROOT);
     }
 
@@ -772,6 +770,8 @@ public class LoaiPhongGUI extends JFrame {
     private void openDefaultAmenitiesDialog() {
         RoomTypeRecord type = getSelectedRoomType();
         if (type != null) {
+            loadAmenityCatalog();
+            type.setAmenityIds(loaiPhongDAO.getTienNghiIdsByLoaiPhong(type.maLoaiPhong), amenityById);
             new DefaultAmenitiesDialog(this, type).setVisible(true);
         }
     }
@@ -815,7 +815,6 @@ public class LoaiPhongGUI extends JFrame {
 
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "loaiphong-f1", this::openCreateRoomTypeDialog);
-        ScreenUIHelper.registerShortcut(this, "F2", "loaiphong-f2", this::openUpdateRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "loaiphong-f3", this::openDeactivateRoomTypeDialog);
         ScreenUIHelper.registerShortcut(this, "F4", "loaiphong-f4", this::openDefaultAmenitiesDialog);
         ScreenUIHelper.registerShortcut(this, "F5", "loaiphong-f5", this::deleteSelectedRoomType);
@@ -1056,7 +1055,7 @@ public class LoaiPhongGUI extends JFrame {
             if (dienTich == null) {
                 return;
             }
-            Double giaThamChieu = parseNonNegativeDouble(txtGiaThamChieuDialog.getText().trim(), "Gi\u00e1 tham chi\u1ebfu ph\u1ea3i l\u00e0 s\u1ed1 h\u1ee3p l\u1ec7 >= 0.");
+            Double giaThamChieu = parseMoneyInput(txtGiaThamChieuDialog.getText(), "Giá tham chiếu");
             if (giaThamChieu == null) {
                 return;
             }
@@ -1177,7 +1176,7 @@ public class LoaiPhongGUI extends JFrame {
             if (dienTich == null) {
                 return;
             }
-            Double giaThamChieu = parseNonNegativeDouble(txtGiaThamChieuDialog.getText().trim(), "Giá tham chiếu phải là số hợp lệ >= 0.");
+            Double giaThamChieu = parseMoneyInput(txtGiaThamChieuDialog.getText(), "Giá tham chiếu");
             if (giaThamChieu == null) {
                 return;
             }
@@ -1294,29 +1293,22 @@ public class LoaiPhongGUI extends JFrame {
 
     private final class DefaultAmenitiesDialog extends BaseRoomTypeDialog {
         private final RoomTypeRecord type;
-        private final JCheckBox chkDieuHoa;
-        private final JCheckBox chkTv;
-        private final JCheckBox chkWifi;
-        private final JCheckBox chkNuocNong;
-        private final JCheckBox chkBonTam;
-        private final JCheckBox chkBanLamViec;
-        private final JCheckBox chkMinibar;
-        private final JCheckBox chkMaySayToc;
-        private final JCheckBox chkKhoaTu;
-        private final JCheckBox chkSofa;
-        private final JCheckBox chkBanTra;
-        private final JCheckBox chkTuQuanAoLon;
-        private final JTextArea txtGhiChuDialog;
+        private final JComboBox<String> cboNhomTienNghi;
+        private final JPanel pnlTienNghi;
+        private final Set<Integer> selectedAmenityIds = new LinkedHashSet<Integer>();
+        private final Set<Integer> originalAmenityIds = new LinkedHashSet<Integer>();
 
         private DefaultAmenitiesDialog(Frame owner, RoomTypeRecord type) {
             super(owner, "TIỆN NGHI MẶC ĐỊNH CỦA LOẠI PHÒNG", 720, 560);
             this.type = type;
+            selectedAmenityIds.addAll(type.amenityIds);
+            originalAmenityIds.addAll(type.amenityIds);
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
             content.add(buildDialogHeader(
                     "TIỆN NGHI MẶC ĐỊNH CỦA LOẠI PHÒNG",
-                    "Các tiện nghi dưới đây là cấu hình mặc định áp dụng cho tất cả các phòng thuộc loại phòng này."
+                    "Chọn nhóm tiện nghi để lọc và tick các tiện nghi mặc định áp dụng cho loại phòng đang chọn."
             ), BorderLayout.NORTH);
 
             JPanel card = createDialogCardPanel();
@@ -1331,42 +1323,25 @@ public class LoaiPhongGUI extends JFrame {
             addFormRow(infoForm, gbc, 0, "Mã loại phòng", createValueTag(type.maLoai));
             addFormRow(infoForm, gbc, 1, "Tên loại phòng", createValueTag(type.tenLoaiPhong));
 
-            JPanel checks = new JPanel(new GridLayout(6, 2, 10, 8));
-            checks.setOpaque(false);
+            cboNhomTienNghi = createComboBox(new String[]{AMENITY_GROUP_ALL});
+            addFormRow(infoForm, gbc, 2, "Nhóm tiện nghi", cboNhomTienNghi);
 
-            chkDieuHoa = createAmenityCheckBox("Điều hòa");
-            chkTv = createAmenityCheckBox("TV");
-            chkWifi = createAmenityCheckBox("Wifi");
-            chkNuocNong = createAmenityCheckBox("Nước nóng");
-            chkBonTam = createAmenityCheckBox("Bồn tắm");
-            chkBanLamViec = createAmenityCheckBox("Bàn làm việc");
-            chkMinibar = createAmenityCheckBox("Minibar");
-            chkMaySayToc = createAmenityCheckBox("Máy sấy tóc");
-            chkKhoaTu = createAmenityCheckBox("Khóa từ");
-            chkSofa = createAmenityCheckBox("Sofa");
-            chkBanTra = createAmenityCheckBox("Bàn trà");
-            chkTuQuanAoLon = createAmenityCheckBox("Tủ quần áo lớn");
+            pnlTienNghi = new JPanel(new GridLayout(0, 2, 10, 8));
+            pnlTienNghi.setOpaque(false);
 
-            applyAmenitiesToChecks(type);
+            JScrollPane scrollPane = new JScrollPane(pnlTienNghi);
+            scrollPane.setBorder(BorderFactory.createTitledBorder(
+                    BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
+                    "Danh sách tiện nghi"
+            ));
+            scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-            checks.add(chkDieuHoa);
-            checks.add(chkTv);
-            checks.add(chkWifi);
-            checks.add(chkNuocNong);
-            checks.add(chkBonTam);
-            checks.add(chkBanLamViec);
-            checks.add(chkMinibar);
-            checks.add(chkMaySayToc);
-            checks.add(chkKhoaTu);
-            checks.add(chkSofa);
-            checks.add(chkBanTra);
-            checks.add(chkTuQuanAoLon);
-
-            txtGhiChuDialog = createDialogTextArea(4);
+            loadAmenityGroups();
+            cboNhomTienNghi.addActionListener(e -> reloadAmenityCheckboxes());
+            reloadAmenityCheckboxes();
 
             wrapper.add(infoForm, BorderLayout.NORTH);
-            wrapper.add(checks, BorderLayout.CENTER);
-            wrapper.add(createAreaCard("Ghi chú", txtGhiChuDialog), BorderLayout.SOUTH);
+            wrapper.add(scrollPane, BorderLayout.CENTER);
             card.add(wrapper, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
 
@@ -1377,50 +1352,62 @@ public class LoaiPhongGUI extends JFrame {
             add(content, BorderLayout.CENTER);
         }
 
-        private void applyAmenitiesToChecks(RoomTypeRecord source) {
-            chkDieuHoa.setSelected(source.dieuHoa);
-            chkTv.setSelected(source.tv);
-            chkWifi.setSelected(source.wifi);
-            chkNuocNong.setSelected(source.nuocNong);
-            chkBonTam.setSelected(source.bonTam);
-            chkBanLamViec.setSelected(source.banLamViec);
-            chkMinibar.setSelected(source.minibar);
-            chkMaySayToc.setSelected(source.maySayToc);
-            chkKhoaTu.setSelected(source.khoaTu);
-            chkSofa.setSelected(source.sofa);
-            chkBanTra.setSelected(source.banTra);
-            chkTuQuanAoLon.setSelected(source.tuQuanAoLon);
+        private void loadAmenityGroups() {
+            cboNhomTienNghi.removeAllItems();
+            cboNhomTienNghi.addItem(AMENITY_GROUP_ALL);
+            for (String nhom : tienNghiDAO.getDistinctNhomTienNghi()) {
+                if (nhom != null && !nhom.trim().isEmpty()) {
+                    cboNhomTienNghi.addItem(nhom.trim());
+                }
+            }
+            cboNhomTienNghi.setSelectedItem(AMENITY_GROUP_ALL);
         }
 
         private void restoreDefaults() {
-            applyAmenitiesToChecks(type);
+            selectedAmenityIds.clear();
+            selectedAmenityIds.addAll(originalAmenityIds);
+            reloadAmenityCheckboxes();
+        }
+
+        private void reloadAmenityCheckboxes() {
+            pnlTienNghi.removeAll();
+
+            String nhomDangChon = valueOf(cboNhomTienNghi.getSelectedItem()).trim();
+            List<TienNghi> dsTienNghi = isAllFilterValue(nhomDangChon)
+                    ? tienNghiDAO.getByNhomTienNghi("")
+                    : tienNghiDAO.getByNhomTienNghi(nhomDangChon);
+
+            if (dsTienNghi.isEmpty()) {
+                JLabel lblEmpty = new JLabel("Không có tiện nghi trong nhóm này.");
+                lblEmpty.setFont(BODY_FONT);
+                lblEmpty.setForeground(TEXT_MUTED);
+                pnlTienNghi.add(lblEmpty);
+            } else {
+                for (TienNghi tienNghi : dsTienNghi) {
+                    final int maTienNghi = tienNghi.getMaTienNghi();
+                    JCheckBox checkBox = createAmenityCheckBox(tienNghi.getTenTienNghi());
+                    checkBox.setSelected(selectedAmenityIds.contains(maTienNghi));
+                    String nhom = tienNghi.getNhomTienNghi() == null ? "" : tienNghi.getNhomTienNghi().trim();
+                    if (!nhom.isEmpty()) {
+                        checkBox.setToolTipText("Nhóm: " + nhom);
+                    }
+                    checkBox.addActionListener(e -> {
+                        if (checkBox.isSelected()) {
+                            selectedAmenityIds.add(maTienNghi);
+                        } else {
+                            selectedAmenityIds.remove(maTienNghi);
+                        }
+                    });
+                    pnlTienNghi.add(checkBox);
+                }
+            }
+
+            pnlTienNghi.revalidate();
+            pnlTienNghi.repaint();
         }
 
         private List<Integer> buildSelectedAmenityIds() {
-            List<Integer> selectedIds = new ArrayList<Integer>(type.unmappedAmenityIds);
-            addAmenityIfSelected(selectedIds, chkDieuHoa);
-            addAmenityIfSelected(selectedIds, chkTv);
-            addAmenityIfSelected(selectedIds, chkWifi);
-            addAmenityIfSelected(selectedIds, chkNuocNong);
-            addAmenityIfSelected(selectedIds, chkBonTam);
-            addAmenityIfSelected(selectedIds, chkBanLamViec);
-            addAmenityIfSelected(selectedIds, chkMinibar);
-            addAmenityIfSelected(selectedIds, chkMaySayToc);
-            addAmenityIfSelected(selectedIds, chkKhoaTu);
-            addAmenityIfSelected(selectedIds, chkSofa);
-            addAmenityIfSelected(selectedIds, chkBanTra);
-            addAmenityIfSelected(selectedIds, chkTuQuanAoLon);
-            return new ArrayList<Integer>(new LinkedHashSet<Integer>(selectedIds));
-        }
-
-        private void addAmenityIfSelected(List<Integer> selectedIds, JCheckBox checkBox) {
-            if (!checkBox.isSelected()) {
-                return;
-            }
-            int maTienNghi = findAmenityIdByLabel(checkBox.getText());
-            if (maTienNghi > 0) {
-                selectedIds.add(maTienNghi);
-            }
+            return new ArrayList<Integer>(selectedAmenityIds);
         }
 
         private void submit() {
@@ -1512,6 +1499,64 @@ public class LoaiPhongGUI extends JFrame {
             showValidationMessage(errorMessage);
             return null;
         }
+    }
+
+    private Double parseMoneyInput(String value, String fieldLabel) {
+        String rawValue = value == null ? "" : value.trim();
+        if (rawValue.isEmpty()) {
+            showValidationMessage(fieldLabel + " không được để trống.");
+            return null;
+        }
+
+        String normalizedValue = normalizeMoneyInput(rawValue);
+        if (normalizedValue == null) {
+            showValidationMessage(fieldLabel + " phải là số hợp lệ >= 0.");
+            return null;
+        }
+
+        try {
+            double parsed = Double.parseDouble(normalizedValue);
+            if (parsed < 0) {
+                showValidationMessage(fieldLabel + " phải >= 0.");
+                return null;
+            }
+            return parsed;
+        } catch (NumberFormatException ex) {
+            showValidationMessage(fieldLabel + " phải là số hợp lệ >= 0.");
+            return null;
+        }
+    }
+
+    private String normalizeMoneyInput(String value) {
+        String normalized = value == null ? "" : value.trim().replaceAll("\\s+", "");
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        if (normalized.matches("-?\\d{1,3}([.,]\\d{3})+")) {
+            return normalized.replace(".", "").replace(",", "");
+        }
+
+        if (normalized.contains(".") && normalized.contains(",")) {
+            return null;
+        }
+
+        if (normalized.contains(",")) {
+            int commaCount = normalized.length() - normalized.replace(",", "").length();
+            if (commaCount > 1) {
+                return null;
+            }
+            return normalized.replace(',', '.');
+        }
+
+        if (normalized.contains(".")) {
+            int dotCount = normalized.length() - normalized.replace(".", "").length();
+            if (dotCount > 1) {
+                return null;
+            }
+        }
+
+        return normalized;
     }
 
     private int findAmenityIdByLabel(String label) {

@@ -73,7 +73,7 @@ public class DatPhongGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
-    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.forLanguageTag("vi-VN"));
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.forLanguageTag("vi-VN")).withResolverStyle(ResolverStyle.STRICT);
 
     private static final List<DatPhongGUI> OPEN_INSTANCES = new ArrayList<DatPhongGUI>();
 
@@ -876,7 +876,7 @@ public class DatPhongGUI extends JFrame {
             return null;
         }
         try {
-            return LocalDate.parse(normalized, DATE_FORMAT.withResolverStyle(ResolverStyle.STRICT));
+            return LocalDate.parse(normalized, DATE_FORMAT);
         } catch (DateTimeParseException ex) {
             return null;
         }
@@ -901,7 +901,7 @@ public class DatPhongGUI extends JFrame {
             return null;
         }
         field.setText(normalized);
-        return LocalDate.parse(normalized, DATE_FORMAT.withResolverStyle(ResolverStyle.STRICT));
+        return LocalDate.parse(normalized, DATE_FORMAT);
     }
 
     private LocalDate toLocalDate(java.util.Date date) {
@@ -2266,9 +2266,7 @@ public class DatPhongGUI extends JFrame {
                         checkOut,
                         editing ? Integer.valueOf(editingBooking.maDatPhong) : null
                 );
-                target.trangThaiChiTiet = "Đã đặt";
-                target.trangThaiChiTiet = target.conflictInfo != null ? "Xung dot lich" : "ÄĂ£ Ä‘áº·t";
-                target.trangThaiChiTiet = target.conflictInfo != null ? "Xung dot lich" : "Da dat";
+                target.trangThaiChiTiet = target.conflictInfo != null ? "Xung dot lich" : "Đã đặt";
                 target.ghiChu = txtGhiChuChiTietDialog.getText().trim();
                 if (editingDetail == null) {
                     detailRows.add(target);

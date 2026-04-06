@@ -2,6 +2,8 @@ package dao;
 
 import db.ConnectDB;
 import entity.BangGia;
+import entity.BangGiaConflictInfo;
+import entity.ChiTietBangGia;
 import entity.LoaiPhong;
 
 import java.sql.Connection;
@@ -199,6 +201,139 @@ public class BangGiaDAO {
         }
     }
 
+    public BangGiaConflictInfo findDateConflict(int maLoaiPhong, Date ngayBatDau, Date ngayKetThuc, Integer excludeMaBangGia) {
+        clearLastError();
+        if (maLoaiPhong <= 0 || ngayBatDau == null || ngayKetThuc == null) {
+            return null;
+        }
+
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
+            return null;
+        }
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT TOP 1 bg.maBangGia, bg.tenBangGia, bg.maLoaiPhong, lp.tenLoaiPhong, ")
+                .append("bg.ngayBatDau, bg.ngayKetThuc, bg.trangThai ")
+                .append("FROM BangGia bg ")
+                .append("LEFT JOIN LoaiPhong lp ON bg.maLoaiPhong = lp.maLoaiPhong ")
+                .append("WHERE bg.maLoaiPhong = ? ")
+                .append("AND bg.ngayBatDau <= ? ")
+                .append("AND bg.ngayKetThuc >= ? ");
+        if (excludeMaBangGia != null && excludeMaBangGia.intValue() > 0) {
+            sql.append("AND bg.maBangGia <> ? ");
+        }
+        sql.append("ORDER BY CASE WHEN bg.trangThai = N'Đang áp dụng' THEN 0 ELSE 1 END, ")
+                .append("bg.ngayBatDau DESC, bg.maBangGia DESC");
+
+        try (PreparedStatement stmt = con.prepareStatement(sql.toString())) {
+            int index = 1;
+            stmt.setInt(index++, maLoaiPhong);
+            stmt.setDate(index++, ngayKetThuc);
+            stmt.setDate(index++, ngayBatDau);
+            if (excludeMaBangGia != null && excludeMaBangGia.intValue() > 0) {
+                stmt.setInt(index, excludeMaBangGia.intValue());
+            }
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new BangGiaConflictInfo(
+                            rs.getInt("maBangGia"),
+                            rs.getString("tenBangGia"),
+                            rs.getInt("maLoaiPhong"),
+                            rs.getString("tenLoaiPhong"),
+                            rs.getDate("ngayBatDau"),
+                            rs.getDate("ngayKetThuc"),
+                            rs.getString("trangThai")
+                    );
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Loi kiem tra trung thoi gian bang gia.");
+            e.printStackTrace();
+            setLastError(e.getMessage());
+        }
+        return null;
+    }
+
+    public boolean saveWithDetails(BangGia bangGia, String loaiNgay, List<ChiTietBangGia> chiTietBangGiaList) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        if (con == null || bangGia == null) {
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
+            return false;
+        }
+        if (!validateBangGia(bangGia, loaiNgay, bangGia.getMaBangGia() > 0)) {
+            return false;
+        }
+        if (!validateChiTietList(chiTietBangGiaList)) {
+            return false;
+        }
+
+        BangGiaConflictInfo conflictInfo = findDateConflict(
+                bangGia.getMaLoaiPhong(),
+                bangGia.getTuNgay(),
+                bangGia.getDenNgay(),
+                bangGia.getMaBangGia() > 0 ? Integer.valueOf(bangGia.getMaBangGia()) : null
+        );
+        if (conflictInfo != null) {
+            setLastError(buildConflictErrorMessage(conflictInfo));
+            return false;
+        }
+
+        boolean previousAutoCommit = true;
+        try {
+            previousAutoCommit = con.getAutoCommit();
+            con.setAutoCommit(false);
+
+            if (bangGia.getMaBangGia() > 0) {
+                if (!updateBangGiaTransaction(con, bangGia, loaiNgay)) {
+                    con.rollback();
+                    return false;
+                }
+                if (!deleteChiTietByMaBangGia(con, bangGia.getMaBangGia())) {
+                    con.rollback();
+                    return false;
+                }
+            } else {
+                if (!insertBangGiaTransaction(con, bangGia, loaiNgay)) {
+                    con.rollback();
+                    return false;
+                }
+            }
+
+            for (ChiTietBangGia chiTietBangGia : chiTietBangGiaList) {
+                ChiTietBangGia detailToSave = copyChiTietBangGia(chiTietBangGia);
+                detailToSave.setMaBangGia(bangGia.getMaBangGia());
+                if (!insertChiTietBangGia(con, detailToSave)) {
+                    con.rollback();
+                    return false;
+                }
+            }
+
+            con.commit();
+            loaiNgayCache.put(bangGia.getMaBangGia(), loaiNgay);
+            return true;
+        } catch (SQLException e) {
+            try {
+                con.rollback();
+            } catch (SQLException rollbackException) {
+                rollbackException.printStackTrace();
+            }
+            System.out.println("Loi luu bang gia kem chi tiet.");
+            e.printStackTrace();
+            setLastError(e.getMessage());
+            return false;
+        } finally {
+            try {
+                con.setAutoCommit(previousAutoCommit);
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     public boolean delete(int maBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -315,6 +450,156 @@ public class BangGiaDAO {
         return true;
     }
 
+    private boolean validateChiTietList(List<ChiTietBangGia> chiTietBangGiaList) {
+        if (chiTietBangGiaList == null || chiTietBangGiaList.isEmpty()) {
+            setLastError("Bảng giá phải có ít nhất 1 dòng chi tiết.");
+            return false;
+        }
+
+        for (int i = 0; i < chiTietBangGiaList.size(); i++) {
+            ChiTietBangGia chiTietBangGia = chiTietBangGiaList.get(i);
+            String prefix = "Dòng chi tiết " + (i + 1) + ": ";
+            if (chiTietBangGia == null) {
+                setLastError(prefix + "Dữ liệu không hợp lệ.");
+                return false;
+            }
+            if (chiTietBangGia.getLoaiNgay() == null || chiTietBangGia.getLoaiNgay().trim().isEmpty()) {
+                setLastError(prefix + "Loại ngày không được rỗng.");
+                return false;
+            }
+            if (chiTietBangGia.getKhungGio() == null || chiTietBangGia.getKhungGio().trim().isEmpty()) {
+                setLastError(prefix + "Khung giờ không được rỗng.");
+                return false;
+            }
+            if (!isNonNegative(chiTietBangGia.getGiaTheoGio())
+                    || !isNonNegative(chiTietBangGia.getGiaQuaDem())
+                    || !isNonNegative(chiTietBangGia.getGiaTheoNgay())
+                    || !isNonNegative(chiTietBangGia.getGiaCuoiTuan())
+                    || !isNonNegative(chiTietBangGia.getGiaLe())
+                    || !isNonNegative(chiTietBangGia.getPhuThu())) {
+                setLastError(prefix + "Giá và phụ thu phải lớn hơn hoặc bằng 0.");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean insertBangGiaTransaction(Connection con, BangGia bangGia, String loaiNgay) {
+        String sql = "INSERT INTO BangGia(tenBangGia, maLoaiPhong, ngayBatDau, ngayKetThuc, loaiNgay, trangThai) "
+                + "VALUES (?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement stmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            stmt.setString(1, bangGia.getTenBangGia());
+            stmt.setInt(2, bangGia.getMaLoaiPhong());
+            stmt.setDate(3, bangGia.getTuNgay());
+            stmt.setDate(4, bangGia.getDenNgay());
+            stmt.setString(5, loaiNgay);
+            stmt.setString(6, bangGia.getTrangThai());
+            if (stmt.executeUpdate() <= 0) {
+                setLastError("Không thể thêm bảng giá.");
+                return false;
+            }
+            try (ResultSet rs = stmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    bangGia.setMaBangGia(rs.getInt(1));
+                    return true;
+                }
+            }
+            setLastError("Không lấy được mã bảng giá vừa tạo.");
+            return false;
+        } catch (SQLException e) {
+            System.out.println("Loi them bang gia theo giao dich.");
+            e.printStackTrace();
+            setLastError(e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean updateBangGiaTransaction(Connection con, BangGia bangGia, String loaiNgay) {
+        String sql = "UPDATE BangGia SET tenBangGia = ?, maLoaiPhong = ?, ngayBatDau = ?, ngayKetThuc = ?, "
+                + "loaiNgay = ?, trangThai = ? WHERE maBangGia = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setString(1, bangGia.getTenBangGia());
+            stmt.setInt(2, bangGia.getMaLoaiPhong());
+            stmt.setDate(3, bangGia.getTuNgay());
+            stmt.setDate(4, bangGia.getDenNgay());
+            stmt.setString(5, loaiNgay);
+            stmt.setString(6, bangGia.getTrangThai());
+            stmt.setInt(7, bangGia.getMaBangGia());
+            if (stmt.executeUpdate() <= 0) {
+                setLastError("Không thể cập nhật bảng giá.");
+                return false;
+            }
+            return true;
+        } catch (SQLException e) {
+            System.out.println("Loi cap nhat bang gia theo giao dich.");
+            e.printStackTrace();
+            setLastError(e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean deleteChiTietByMaBangGia(Connection con, int maBangGia) {
+        String sql = "DELETE FROM ChiTietBangGia WHERE maBangGia = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maBangGia);
+            stmt.executeUpdate();
+            return true;
+        } catch (SQLException e) {
+            System.out.println("Loi xoa chi tiet bang gia theo ma bang gia.");
+            e.printStackTrace();
+            setLastError(e.getMessage());
+            return false;
+        }
+    }
+
+    private boolean insertChiTietBangGia(Connection con, ChiTietBangGia chiTietBangGia) {
+        String sql = "INSERT INTO ChiTietBangGia(maBangGia, loaiNgay, khungGio, giaTheoGio, giaQuaDem, giaTheoNgay, giaCuoiTuan, giaLe, phuThu) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, chiTietBangGia.getMaBangGia());
+            stmt.setString(2, chiTietBangGia.getLoaiNgay());
+            stmt.setString(3, chiTietBangGia.getKhungGio());
+            stmt.setDouble(4, chiTietBangGia.getGiaTheoGio());
+            stmt.setDouble(5, chiTietBangGia.getGiaQuaDem());
+            stmt.setDouble(6, chiTietBangGia.getGiaTheoNgay());
+            stmt.setDouble(7, chiTietBangGia.getGiaCuoiTuan());
+            stmt.setDouble(8, chiTietBangGia.getGiaLe());
+            stmt.setDouble(9, chiTietBangGia.getPhuThu());
+            return stmt.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Loi them chi tiet bang gia theo giao dich.");
+            e.printStackTrace();
+            setLastError(e.getMessage());
+            return false;
+        }
+    }
+
+    private ChiTietBangGia copyChiTietBangGia(ChiTietBangGia source) {
+        ChiTietBangGia copy = new ChiTietBangGia();
+        copy.setMaChiTietBangGia(source.getMaChiTietBangGia());
+        copy.setMaBangGia(source.getMaBangGia());
+        copy.setLoaiNgay(source.getLoaiNgay());
+        copy.setKhungGio(source.getKhungGio());
+        copy.setGiaTheoGio(source.getGiaTheoGio());
+        copy.setGiaQuaDem(source.getGiaQuaDem());
+        copy.setGiaTheoNgay(source.getGiaTheoNgay());
+        copy.setGiaCuoiTuan(source.getGiaCuoiTuan());
+        copy.setGiaLe(source.getGiaLe());
+        copy.setPhuThu(source.getPhuThu());
+        return copy;
+    }
+
+    private String buildConflictErrorMessage(BangGiaConflictInfo conflictInfo) {
+        if (conflictInfo == null) {
+            return "Khoảng thời gian áp dụng đang bị trùng.";
+        }
+        return "Loại phòng " + safeValue(conflictInfo.getTenLoaiPhong(), String.valueOf(conflictInfo.getMaLoaiPhong()))
+                + " đã có bảng giá " + safeValue(conflictInfo.getTenBangGia(), "BG" + conflictInfo.getMaBangGia())
+                + " áp dụng từ " + formatDate(conflictInfo.getNgayBatDau())
+                + " đến " + formatDate(conflictInfo.getNgayKetThuc())
+                + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
+    }
+
     private boolean isLoaiPhongExists(int maLoaiPhong) {
         Connection con = ConnectDB.getConnection();
         if (con == null) {
@@ -334,6 +619,18 @@ public class BangGiaDAO {
             setLastError(e.getMessage());
             return false;
         }
+    }
+
+    private boolean isNonNegative(double value) {
+        return value >= 0;
+    }
+
+    private String formatDate(Date date) {
+        return date == null ? "" : date.toLocalDate().toString();
+    }
+
+    private String safeValue(String value, String fallback) {
+        return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
     private void clearLastError() {

@@ -1,6 +1,8 @@
 package gui;
 
+import dao.DatPhongDAO;
 import db.ConnectDB;
+import entity.DatPhongConflictInfo;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
@@ -21,10 +23,15 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
+import javax.swing.JComponent;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -58,6 +65,10 @@ public class DatPhongGUI extends JFrame {
     private static final Color TEXT_MUTED = new Color(107, 114, 128);
     private static final Color BORDER_SOFT = new Color(229, 231, 235);
     private static final Color PANEL_SOFT = new Color(249, 250, 251);
+    private static final Color CONFLICT_BG = new Color(254, 242, 242);
+    private static final Color CONFLICT_BORDER = new Color(239, 68, 68);
+    private static final Color CONFLICT_TEXT = new Color(185, 28, 28);
+    private static final Color CONFLICT_ROW_BG = new Color(254, 226, 226);
     private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
@@ -66,6 +77,7 @@ public class DatPhongGUI extends JFrame {
 
     private static final List<DatPhongGUI> OPEN_INSTANCES = new ArrayList<DatPhongGUI>();
 
+    private final DatPhongDAO datPhongDAO = new DatPhongDAO();
     private final String username;
     private final String role;
     private JPanel rootPanel;
@@ -902,6 +914,44 @@ public class DatPhongGUI extends JFrame {
         return new java.sql.Date(date.getTime()).toLocalDate();
     }
 
+    private void installDateFieldChangeListener(AppDatePickerField field, Runnable action) {
+        JTextField editor = findNestedTextField(field);
+        if (editor == null || action == null) {
+            return;
+        }
+        editor.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                action.run();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                action.run();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                action.run();
+            }
+        });
+    }
+
+    private JTextField findNestedTextField(Component component) {
+        if (component instanceof JTextField) {
+            return (JTextField) component;
+        }
+        if (component instanceof java.awt.Container) {
+            for (Component child : ((java.awt.Container) component).getComponents()) {
+                JTextField found = findNestedTextField(child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
@@ -974,6 +1024,18 @@ public class DatPhongGUI extends JFrame {
 
     private String formatMoney(double value) {
         return String.format(Locale.US, "%,.0f", value).replace(',', '.');
+    }
+
+    private int parsePositiveIntOrZero(String value) {
+        try {
+            return Integer.parseInt(value == null ? "" : value.trim());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private String formatDate(LocalDate value) {
+        return value == null ? "-" : value.format(DATE_FORMAT);
     }
 
     private LocalDate requireDate(String value, String errorMessage) {
@@ -1162,7 +1224,7 @@ public class DatPhongGUI extends JFrame {
         if (con == null) {
             return options;
         }
-        String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
+        String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
                 "FROM Phong p JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "WHERE p.trangThai = N'Hoạt động' OR p.maPhong = ? " +
                 "ORDER BY TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
@@ -1177,6 +1239,7 @@ public class DatPhongGUI extends JFrame {
                     option.trangThai = safeValue(rs.getString("trangThai"), "Hoạt động");
                     option.maLoaiPhong = rs.getInt("maLoaiPhong");
                     option.tenLoaiPhong = safeValue(rs.getString("tenLoaiPhong"), "-");
+                    option.sucChuaToiDa = rs.getInt("sucChuaToiDa");
                     option.giaMacDinh = rs.getDouble("giaThamChieu");
                     options.add(option);
                 }
@@ -1354,6 +1417,12 @@ public class DatPhongGUI extends JFrame {
         private JTable tblBookingDetailDialog;
         private DefaultTableModel bookingDetailDialogModel;
         private JLabel lblDetailSummary;
+        private JScrollPane bookingDetailScrollPane;
+        private JPanel pnlConflictWarning;
+        private JLabel lblConflictWarning;
+        private final List<JButton> submitButtons = new ArrayList<JButton>();
+        private Border defaultDetailTableBorder;
+        private BookingDetailRecord highlightedConflictRow;
 
         private BookingEditorDialog(Window owner, BookingRecord booking) {
             super(owner, booking == null ? "Tạo booking" : "Cập nhật booking", 980, 760);
@@ -1388,13 +1457,17 @@ public class DatPhongGUI extends JFrame {
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             if (editing) {
                 JButton btnUpdate = createPrimaryButton("Lưu cập nhật", new Color(37, 99, 235), Color.WHITE, e -> submit("update"));
+                submitButtons.add(btnUpdate);
                 content.add(buildDialogButtons(btnCancel, btnUpdate), BorderLayout.SOUTH);
             } else {
                 JButton btnSaveConfirm = createOutlineButton("Lưu và xác nhận", new Color(59, 130, 246), e -> submit("confirm"));
                 JButton btnSaveCheckIn = createPrimaryButton("Lưu và check-in", new Color(245, 158, 11), TEXT_PRIMARY, e -> submit("checkin"));
+                submitButtons.add(btnSaveConfirm);
+                submitButtons.add(btnSaveCheckIn);
                 content.add(buildDialogButtons(btnCancel, btnSaveConfirm, btnSaveCheckIn), BorderLayout.SOUTH);
             }
             add(content, BorderLayout.CENTER);
+            reevaluateDetailValidationState(false);
         }
 
         private JPanel buildHeaderSection() {
@@ -1501,10 +1574,32 @@ public class DatPhongGUI extends JFrame {
             tblBookingDetailDialog.setRowHeight(30);
             tblBookingDetailDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             ScreenUIHelper.styleTableHeader(tblBookingDetailDialog);
+            tblBookingDetailDialog.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+                @Override
+                public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                    Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                    component.setFont(BODY_FONT);
+                    if (component instanceof JComponent) {
+                        ((JComponent) component).setBorder(new EmptyBorder(0, 8, 0, 8));
+                    }
+                    if (isSelected) {
+                        component.setBackground(new Color(219, 234, 254));
+                        component.setForeground(TEXT_PRIMARY);
+                    } else if (isConflictDetailRow(row)) {
+                        component.setBackground(CONFLICT_ROW_BG);
+                        component.setForeground(TEXT_PRIMARY);
+                    } else {
+                        component.setBackground(Color.WHITE);
+                        component.setForeground(TEXT_PRIMARY);
+                    }
+                    return component;
+                }
+            });
 
-            JScrollPane scrollPane = new JScrollPane(tblBookingDetailDialog);
-            scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-            scrollPane.setPreferredSize(new Dimension(0, 360));
+            bookingDetailScrollPane = new JScrollPane(tblBookingDetailDialog);
+            bookingDetailScrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+            bookingDetailScrollPane.setPreferredSize(new Dimension(0, 360));
+            defaultDetailTableBorder = bookingDetailScrollPane.getBorder();
 
             JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             actions.setOpaque(false);
@@ -1516,14 +1611,27 @@ public class DatPhongGUI extends JFrame {
             lblDetailSummary.setFont(BODY_FONT);
             lblDetailSummary.setForeground(TEXT_MUTED);
 
+            pnlConflictWarning = new JPanel(new BorderLayout());
+            pnlConflictWarning.setBackground(CONFLICT_BG);
+            pnlConflictWarning.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true),
+                    new EmptyBorder(8, 10, 8, 10)
+            ));
+            lblConflictWarning = new JLabel();
+            lblConflictWarning.setFont(BODY_FONT);
+            lblConflictWarning.setForeground(CONFLICT_TEXT);
+            pnlConflictWarning.add(lblConflictWarning, BorderLayout.CENTER);
+            pnlConflictWarning.setVisible(false);
+
             JPanel center = new JPanel(new BorderLayout(0, 10));
             center.setOpaque(false);
             center.add(actions, BorderLayout.NORTH);
-            center.add(scrollPane, BorderLayout.CENTER);
+            center.add(bookingDetailScrollPane, BorderLayout.CENTER);
             center.add(lblDetailSummary, BorderLayout.SOUTH);
 
             wrapper.add(lblSection, BorderLayout.NORTH);
             wrapper.add(center, BorderLayout.CENTER);
+            wrapper.add(pnlConflictWarning, BorderLayout.SOUTH);
             card.add(wrapper, BorderLayout.CENTER);
             refillBookingDetailDialogTable();
             return card;
@@ -1541,10 +1649,27 @@ public class DatPhongGUI extends JFrame {
                         detail.formatCheckOut(),
                         detail.soNguoi,
                         formatMoney(detail.tienDatCocChiTiet),
-                        detail.trangThaiChiTiet
+                        getDetailStatusDisplay(detail)
                 });
             }
             refreshDepositSummary();
+            reevaluateDetailValidationState(false);
+        }
+
+        private String getDetailStatusDisplay(BookingDetailRecord detail) {
+            if (detail == null) {
+                return "-";
+            }
+            if (detail.duplicateInBooking) {
+                return "Trung phong";
+            }
+            if (detail.capacityExceeded) {
+                return "Vuot suc chua";
+            }
+            if (detail.conflictInfo != null) {
+                return "Xung dot lich";
+            }
+            return safeValue(detail.trangThaiChiTiet, "Da dat");
         }
 
         private void refreshDepositSummary() {
@@ -1554,6 +1679,131 @@ public class DatPhongGUI extends JFrame {
             }
             txtTongDatCocDialog.setText(formatMoney(totalDeposit));
             lblDetailSummary.setText("Tổng số dòng: " + detailRows.size() + " | Tổng tiền cọc: " + formatMoney(totalDeposit));
+        }
+
+        private boolean isConflictDetailRow(int row) {
+            if (row < 0 || row >= detailRows.size()) {
+                return false;
+            }
+            BookingDetailRecord detail = detailRows.get(row);
+            return detail != null && (detail.conflictInfo != null || detail.duplicateInBooking || detail.capacityExceeded);
+        }
+
+        private void reevaluateDetailValidationState(boolean focusConflictRow) {
+            DatPhongConflictInfo firstConflict = null;
+            highlightedConflictRow = null;
+
+            for (int i = 0; i < detailRows.size(); i++) {
+                BookingDetailRecord current = detailRows.get(i);
+                current.duplicateInBooking = false;
+                current.capacityExceeded = current.sucChuaToiDa > 0 && current.soNguoi > current.sucChuaToiDa;
+                current.conflictInfo = findRoomConflict(current);
+            }
+
+            for (int i = 0; i < detailRows.size(); i++) {
+                BookingDetailRecord current = detailRows.get(i);
+                for (int j = i + 1; j < detailRows.size(); j++) {
+                    BookingDetailRecord other = detailRows.get(j);
+                    if (current.maPhongId > 0 && current.maPhongId == other.maPhongId) {
+                        current.duplicateInBooking = true;
+                        other.duplicateInBooking = true;
+                    }
+                }
+                if (highlightedConflictRow == null && (current.duplicateInBooking || current.capacityExceeded || current.conflictInfo != null)) {
+                    highlightedConflictRow = current;
+                    firstConflict = current.conflictInfo;
+                }
+            }
+
+            String warningMessage = null;
+            if (detailRows.isEmpty()) {
+                warningMessage = "Phieu dat phong phai co it nhat 1 phong.";
+            } else if (highlightedConflictRow != null) {
+                if (highlightedConflictRow.duplicateInBooking) {
+                    warningMessage = "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
+                            + " dang bi chon trung trong cung phieu dat phong.";
+                } else if (highlightedConflictRow.capacityExceeded) {
+                    warningMessage = "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
+                            + " chi nhan toi da " + highlightedConflictRow.sucChuaToiDa
+                            + " khach, hien dang nhap " + highlightedConflictRow.soNguoi + ".";
+                } else if (firstConflict != null) {
+                    warningMessage = buildConflictMessage(firstConflict);
+                }
+            }
+
+            applyDetailWarningState(warningMessage, focusConflictRow);
+        }
+
+        private void applyDetailWarningState(String warningMessage, boolean focusConflictRow) {
+            boolean hasWarning = warningMessage != null && !warningMessage.trim().isEmpty();
+            lblConflictWarning.setText(hasWarning
+                    ? "<html>" + warningMessage + "<br/>Vui long chon phong khac hoac doi ngay nhan/tra phong.</html>"
+                    : "");
+            pnlConflictWarning.setVisible(hasWarning);
+            bookingDetailScrollPane.setBorder(hasWarning
+                    ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true)
+                    : defaultDetailTableBorder);
+            updateSubmitButtonsState(!hasWarning);
+            tblBookingDetailDialog.repaint();
+            if (hasWarning && focusConflictRow && highlightedConflictRow != null) {
+                focusDetailRow(highlightedConflictRow);
+            }
+        }
+
+        private void updateSubmitButtonsState(boolean enabled) {
+            for (JButton button : submitButtons) {
+                button.setEnabled(enabled);
+            }
+        }
+
+        private void focusDetailRow(BookingDetailRecord detail) {
+            int rowIndex = detailRows.indexOf(detail);
+            if (rowIndex >= 0 && rowIndex < tblBookingDetailDialog.getRowCount()) {
+                tblBookingDetailDialog.setRowSelectionInterval(rowIndex, rowIndex);
+                tblBookingDetailDialog.scrollRectToVisible(tblBookingDetailDialog.getCellRect(rowIndex, 0, true));
+                tblBookingDetailDialog.requestFocusInWindow();
+            }
+        }
+
+        private DatPhongConflictInfo findRoomConflict(BookingDetailRecord detail) {
+            if (detail == null || detail.maPhongId <= 0 || detail.checkInDuKien == null || detail.checkOutDuKien == null
+                    || !detail.checkOutDuKien.isAfter(detail.checkInDuKien)) {
+                return null;
+            }
+            Integer excludeBookingId = editing ? Integer.valueOf(editingBooking.maDatPhong) : null;
+            return datPhongDAO.findRoomConflict(detail.maPhongId, detail.checkInDuKien, detail.checkOutDuKien, excludeBookingId);
+        }
+
+        private String buildConflictMessage(DatPhongConflictInfo conflictInfo) {
+            return "Phong " + safeValue(conflictInfo.getSoPhong(), "-")
+                    + " dang trung voi phieu dat phong DP" + conflictInfo.getMaDatPhong()
+                    + " cua khach " + safeValue(conflictInfo.getTenKhachHang(), "Khach chua xac dinh")
+                    + ", tu " + formatDate(conflictInfo.getNgayNhanPhong())
+                    + " den " + formatDate(conflictInfo.getNgayTraPhong())
+                    + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
+        }
+
+        private String validateDetailRowsBeforeSave() {
+            if (detailRows.isEmpty()) {
+                reevaluateDetailValidationState(true);
+                return "Phieu dat phong phai co it nhat 1 phong.";
+            }
+            reevaluateDetailValidationState(true);
+            if (highlightedConflictRow != null) {
+                if (highlightedConflictRow.duplicateInBooking) {
+                    return "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
+                            + " dang bi chon trung trong cung phieu dat phong.";
+                }
+                if (highlightedConflictRow.capacityExceeded) {
+                    return "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
+                            + " chi nhan toi da " + highlightedConflictRow.sucChuaToiDa
+                            + " khach, hien dang nhap " + highlightedConflictRow.soNguoi + ".";
+                }
+                if (highlightedConflictRow.conflictInfo != null) {
+                    return buildConflictMessage(highlightedConflictRow.conflictInfo);
+                }
+            }
+            return null;
         }
 
         private void openBookingDetailDialog(BookingDetailRecord detail) {
@@ -1605,6 +1855,11 @@ public class DatPhongGUI extends JFrame {
                     showError("Mỗi dòng chi tiết phải chọn một phòng cụ thể.");
                     return;
                 }
+            }
+            String detailValidationMessage = validateDetailRowsBeforeSave();
+            if (detailValidationMessage != null) {
+                showError(detailValidationMessage);
+                return;
             }
             int maLoaiPhong = detailRows.get(0).maLoaiPhong;
 
@@ -1780,6 +2035,15 @@ public class DatPhongGUI extends JFrame {
             private final JTextField txtSoNguoiDialog;
             private final JTextField txtDatCocDialog;
             private final JTextArea txtGhiChuChiTietDialog;
+            private final JPanel pnlInlineWarning;
+            private final JLabel lblInlineWarning;
+            private final JButton btnPrimary;
+            private final Border defaultRoomBorder;
+            private final Border defaultCheckInBorder;
+            private final Border defaultCheckOutBorder;
+            private final Color defaultRoomBackground;
+            private final Color defaultCheckInBackground;
+            private final Color defaultCheckOutBackground;
 
             private BookingDetailEditorDialog(Dialog owner, BookingDetailRecord detail) {
                 super(owner, detail == null ? "Thêm dòng chi tiết" : "Cập nhật dòng chi tiết", 700, 520);
@@ -1809,10 +2073,19 @@ public class DatPhongGUI extends JFrame {
                 txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
                 txtDatCocDialog = createInputField(detail == null ? "0" : formatMoney(detail.tienDatCocChiTiet));
                 txtGhiChuChiTietDialog = createDialogTextArea(2);
+                defaultRoomBorder = cboPhongDialog.getBorder();
+                defaultCheckInBorder = txtCheckInDialog.getBorder();
+                defaultCheckOutBorder = txtCheckOutDialog.getBorder();
+                defaultRoomBackground = cboPhongDialog.getBackground();
+                defaultCheckInBackground = resolveDateFieldBackground(txtCheckInDialog);
+                defaultCheckOutBackground = resolveDateFieldBackground(txtCheckOutDialog);
                 if (detail != null) {
                     txtGhiChuChiTietDialog.setText(detail.ghiChu);
                 }
                 cboPhongDialog.addActionListener(e -> syncSelectedRoomInfo());
+                cboPhongDialog.addActionListener(e -> reevaluateCurrentSelectionState());
+                installDateFieldChangeListener(txtCheckInDialog, this::reevaluateCurrentSelectionState);
+                installDateFieldChangeListener(txtCheckOutDialog, this::reevaluateCurrentSelectionState);
                 if (detail != null) {
                     for (int i = 0; i < cboPhongDialog.getItemCount(); i++) {
                         RoomOption option = cboPhongDialog.getItemAt(i);
@@ -1832,14 +2105,29 @@ public class DatPhongGUI extends JFrame {
                 addFormRow(form, gbc, 5, "Thu tiền cọc", txtDatCocDialog);
                 addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(txtGhiChuChiTietDialog));
 
+                pnlInlineWarning = new JPanel(new BorderLayout());
+                pnlInlineWarning.setBackground(CONFLICT_BG);
+                pnlInlineWarning.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true),
+                        new EmptyBorder(8, 10, 8, 10)
+                ));
+                lblInlineWarning = new JLabel();
+                lblInlineWarning.setFont(BODY_FONT);
+                lblInlineWarning.setForeground(CONFLICT_TEXT);
+                pnlInlineWarning.add(lblInlineWarning, BorderLayout.CENTER);
+                pnlInlineWarning.setVisible(false);
+
                 JPanel card = createDialogCardPanel();
                 card.add(form, BorderLayout.CENTER);
+                card.add(pnlInlineWarning, BorderLayout.SOUTH);
                 content.add(card, BorderLayout.CENTER);
 
                 JButton btnPrimary = createPrimaryButton(detail == null ? "Lưu dòng" : "Lưu cập nhật", new Color(37, 99, 235), Color.WHITE, e -> submit());
                 JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
+                this.btnPrimary = btnPrimary;
                 content.add(buildDialogButtons(btnCancel, btnPrimary), BorderLayout.SOUTH);
                 add(content, BorderLayout.CENTER);
+                reevaluateCurrentSelectionState();
             }
 
             private void syncSelectedRoomInfo() {
@@ -1849,6 +2137,76 @@ public class DatPhongGUI extends JFrame {
                     return;
                 }
                 txtLoaiPhongDialog.setText(option.tenLoaiPhong);
+            }
+
+            private void reevaluateCurrentSelectionState() {
+                RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
+                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
+                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                int soNguoi = parsePositiveIntOrZero(txtSoNguoiDialog.getText().trim());
+
+                String warningMessage = null;
+                boolean hasIssue = false;
+                if (option == null) {
+                    warningMessage = "Vui long chon phong truoc khi luu.";
+                    hasIssue = true;
+                } else if (isDuplicateRoomSelection(option.maPhongId)) {
+                    warningMessage = "Phong " + option.soPhong + " da duoc chon trong phieu dat phong nay.";
+                    hasIssue = true;
+                } else if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
+                    warningMessage = "Ngay tra phong phai lon hon ngay nhan phong.";
+                    hasIssue = true;
+                } else if (option != null && option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa) {
+                    warningMessage = "Phong " + option.soPhong + " chi nhan toi da " + option.sucChuaToiDa + " khach.";
+                    hasIssue = true;
+                } else if (option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                    DatPhongConflictInfo conflictInfo = datPhongDAO.findRoomConflict(
+                            option.maPhongId,
+                            checkIn,
+                            checkOut,
+                            editing ? Integer.valueOf(editingBooking.maDatPhong) : null
+                    );
+                    if (conflictInfo != null) {
+                        warningMessage = buildConflictMessage(conflictInfo);
+                        hasIssue = true;
+                    }
+                }
+
+                applyInlineWarningState(warningMessage, hasIssue);
+            }
+
+            private void applyInlineWarningState(String warningMessage, boolean hasIssue) {
+                lblInlineWarning.setText(hasIssue
+                        ? "<html>" + warningMessage + "<br/>Vui long chon phong khac hoac doi ngay nhan/tra phong.</html>"
+                        : "");
+                pnlInlineWarning.setVisible(hasIssue);
+                cboPhongDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultRoomBorder);
+                cboPhongDialog.setBackground(hasIssue ? CONFLICT_BG : defaultRoomBackground);
+                txtCheckInDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultCheckInBorder);
+                txtCheckOutDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultCheckOutBorder);
+                setDateFieldBackground(txtCheckInDialog, hasIssue ? CONFLICT_BG : defaultCheckInBackground);
+                setDateFieldBackground(txtCheckOutDialog, hasIssue ? CONFLICT_BG : defaultCheckOutBackground);
+            }
+
+            private Color resolveDateFieldBackground(AppDatePickerField field) {
+                JTextField editor = findNestedTextField(field);
+                return editor == null ? Color.WHITE : editor.getBackground();
+            }
+
+            private void setDateFieldBackground(AppDatePickerField field, Color color) {
+                JTextField editor = findNestedTextField(field);
+                if (editor != null) {
+                    editor.setBackground(color);
+                }
+            }
+
+            private boolean isDuplicateRoomSelection(int maPhongId) {
+                for (BookingDetailRecord row : detailRows) {
+                    if (row != editingDetail && row.maPhongId == maPhongId) {
+                        return true;
+                    }
+                }
+                return false;
             }
 
             private void submit() {
@@ -1897,9 +2255,20 @@ public class DatPhongGUI extends JFrame {
                 target.checkInDuKien = checkIn;
                 target.checkOutDuKien = checkOut;
                 target.soNguoi = soNguoi;
+                target.sucChuaToiDa = option.sucChuaToiDa;
                 target.giaApDung = option.giaMacDinh > 0 ? option.giaMacDinh : (editingDetail == null ? 0d : editingDetail.giaApDung);
                 target.tienDatCocChiTiet = tienCoc;
+                target.duplicateInBooking = isDuplicateRoomSelection(option.maPhongId);
+                target.capacityExceeded = option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa;
+                target.conflictInfo = datPhongDAO.findRoomConflict(
+                        option.maPhongId,
+                        checkIn,
+                        checkOut,
+                        editing ? Integer.valueOf(editingBooking.maDatPhong) : null
+                );
                 target.trangThaiChiTiet = "Đã đặt";
+                target.trangThaiChiTiet = target.conflictInfo != null ? "Xung dot lich" : "ÄĂ£ Ä‘áº·t";
+                target.trangThaiChiTiet = target.conflictInfo != null ? "Xung dot lich" : "Da dat";
                 target.ghiChu = txtGhiChuChiTietDialog.getText().trim();
                 if (editingDetail == null) {
                     detailRows.add(target);
@@ -2180,6 +2549,7 @@ public class DatPhongGUI extends JFrame {
         private String tang;
         private String trangThai;
         private String tenLoaiPhong;
+        private int sucChuaToiDa;
         private double giaMacDinh;
 
         @Override
@@ -2279,11 +2649,15 @@ public class DatPhongGUI extends JFrame {
         private LocalDate checkInDuKien;
         private LocalDate checkOutDuKien;
         private int soNguoi;
+        private int sucChuaToiDa;
         private double giaApDung;
         private double tienDatCocChiTiet;
         private String trangThaiChiTiet;
         private String ghiChu;
         private double thanhTien;
+        private boolean duplicateInBooking;
+        private boolean capacityExceeded;
+        private DatPhongConflictInfo conflictInfo;
 
         private BookingDetailRecord copy() {
             BookingDetailRecord detail = new BookingDetailRecord();
@@ -2295,11 +2669,15 @@ public class DatPhongGUI extends JFrame {
             detail.checkInDuKien = checkInDuKien;
             detail.checkOutDuKien = checkOutDuKien;
             detail.soNguoi = soNguoi;
+            detail.sucChuaToiDa = sucChuaToiDa;
             detail.giaApDung = giaApDung;
             detail.tienDatCocChiTiet = tienDatCocChiTiet;
             detail.trangThaiChiTiet = trangThaiChiTiet;
             detail.ghiChu = ghiChu;
             detail.thanhTien = thanhTien;
+            detail.duplicateInBooking = duplicateInBooking;
+            detail.capacityExceeded = capacityExceeded;
+            detail.conflictInfo = conflictInfo;
             return detail;
         }
 

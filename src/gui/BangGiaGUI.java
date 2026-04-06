@@ -4,6 +4,7 @@ import dao.BangGiaDAO;
 import dao.ChiTietBangGiaDAO;
 import dao.LoaiPhongDAO;
 import entity.BangGia;
+import entity.BangGiaConflictInfo;
 import entity.ChiTietBangGia;
 import entity.LoaiPhong;
 import gui.common.AppBranding;
@@ -27,10 +28,15 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
+import javax.swing.JComponent;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingUtilities;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -58,14 +64,18 @@ public class BangGiaGUI extends JFrame {
     private static final Color TEXT_PRIMARY = new Color(31, 41, 55);
     private static final Color TEXT_MUTED = new Color(107, 114, 128);
     private static final Color BORDER_SOFT = new Color(229, 231, 235);
+    private static final Color CONFLICT_BG = new Color(254, 242, 242);
+    private static final Color CONFLICT_BORDER = new Color(239, 68, 68);
+    private static final Color CONFLICT_TEXT = new Color(185, 28, 28);
+    private static final Color CONFLICT_ROW_BG = new Color(254, 226, 226);
     private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final Date INVALID_DATE = Date.valueOf("0001-01-01");
-    private static final String[] TRANG_THAI_OPTIONS = {"Đang áp dụng", "Ngừng áp dụng"};
-    private static final String[] LOAI_NGAY_OPTIONS = {"Ngày thường", "Cuối tuần", "Ngày lễ"};
+    private static final String[] TRANG_THAI_OPTIONS = {"Äang Ă¡p dá»¥ng", "Ngá»«ng Ă¡p dá»¥ng"};
+    private static final String[] LOAI_NGAY_OPTIONS = {"NgĂ y thÆ°á»ng", "Cuá»‘i tuáº§n", "NgĂ y lá»…"};
 
     private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
     private final ChiTietBangGiaDAO chiTietBangGiaDAO = new ChiTietBangGiaDAO();
@@ -99,15 +109,16 @@ public class BangGiaGUI extends JFrame {
     private JLabel lblGiaLe;
     private JLabel lblPhuThu;
     private JLabel lblTrangThaiChiTiet;
+    private Integer highlightedConflictBangGiaId;
 
     public BangGiaGUI() {
-        this("guest", "Lễ tân");
+        this("guest", "Lá»… tĂ¢n");
     }
 
     public BangGiaGUI(String username, String role) {
         this.username = safeValue(username, "guest");
-        this.role = safeValue(role, "Lễ tân");
-        setTitle("Quản lý bảng giá - Hotel PMS");
+        this.role = safeValue(role, "Lá»… tĂ¢n");
+        setTitle("Quáº£n lĂ½ báº£ng giĂ¡ - Hotel PMS");
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         initUI();
         loadLoaiPhongOptions();
@@ -147,13 +158,13 @@ public class BangGiaGUI extends JFrame {
         JPanel left = new JPanel();
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("QUẢN LÝ BẢNG GIÁ"));
+        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("QUáº¢N LĂ Báº¢NG GIĂ"));
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
-        JLabel lblSub = new JLabel("Quản lý bảng giá và chi tiết bảng giá từ dữ liệu SQL Server.");
+        JLabel lblSub = new JLabel("Quáº£n lĂ½ báº£ng giĂ¡ vĂ  chi tiáº¿t báº£ng giĂ¡ tá»« dá»¯ liá»‡u SQL Server.");
         lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSub.setForeground(TEXT_MUTED);
-        JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
+        JLabel lblMeta = new JLabel("NgÆ°á»i dĂ¹ng: " + username + " | Vai trĂ²: " + role);
         lblMeta.setFont(BODY_FONT);
         lblMeta.setForeground(TEXT_MUTED);
         left.add(lblTitle);
@@ -162,16 +173,16 @@ public class BangGiaGUI extends JFrame {
         left.add(Box.createVerticalStrut(6));
         left.add(lblMeta);
         card.add(left, BorderLayout.WEST);
-        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "màn hình Bảng giá"), BorderLayout.EAST);
+        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "mĂ n hĂ¬nh Báº£ng giĂ¡"), BorderLayout.EAST);
         return card;
     }
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Thêm bảng giá", new Color(22, 163, 74), Color.WHITE, e -> openBangGiaDialog(null)));
-        card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> updateSelectedStatus()));
-        card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedBangGia()));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
+        card.add(createPrimaryButton("ThĂªm báº£ng giĂ¡", new Color(22, 163, 74), Color.WHITE, e -> openBangGiaDialog(null)));
+        card.add(createPrimaryButton("Ngá»«ng Ă¡p dá»¥ng", new Color(245, 158, 11), TEXT_PRIMARY, e -> updateSelectedStatus()));
+        card.add(createPrimaryButton("Xem chi tiáº¿t", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedBangGia()));
+        card.add(createPrimaryButton("TĂ¬m kiáº¿m", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -179,21 +190,21 @@ public class BangGiaGUI extends JFrame {
         JPanel card = createCardPanel(new BorderLayout(12, 10));
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
-        cboLoaiPhong = createComboBox(new String[]{"Tất cả"});
-        cboLoaiNgay = createComboBox(new String[]{"Tất cả", "Ngày thường", "Cuối tuần", "Ngày lễ"});
-        cboTrangThai = createComboBox(new String[]{"Tất cả", "Đang áp dụng", "Ngừng áp dụng"});
+        cboLoaiPhong = createComboBox(new String[]{"Táº¥t cáº£"});
+        cboLoaiNgay = createComboBox(new String[]{"Táº¥t cáº£", "NgĂ y thÆ°á»ng", "Cuá»‘i tuáº§n", "NgĂ y lá»…"});
+        cboTrangThai = createComboBox(new String[]{"Táº¥t cáº£", "Äang Ă¡p dá»¥ng", "Ngá»«ng Ă¡p dá»¥ng"});
         txtNgayBatDauFilter = new AppDatePickerField("", false);
         txtNgayKetThucFilter = new AppDatePickerField("", false);
-        left.add(createFieldGroup("Loại phòng", cboLoaiPhong));
-        left.add(createFieldGroup("Loại ngày", cboLoaiNgay));
-        left.add(createFieldGroup("Trạng thái", cboTrangThai));
-        left.add(createFieldGroup("Ngày bắt đầu", txtNgayBatDauFilter));
-        left.add(createFieldGroup("Ngày kết thúc", txtNgayKetThucFilter));
+        left.add(createFieldGroup("Loáº¡i phĂ²ng", cboLoaiPhong));
+        left.add(createFieldGroup("Loáº¡i ngĂ y", cboLoaiNgay));
+        left.add(createFieldGroup("Tráº¡ng thĂ¡i", cboTrangThai));
+        left.add(createFieldGroup("NgĂ y báº¯t Ä‘áº§u", txtNgayBatDauFilter));
+        left.add(createFieldGroup("NgĂ y káº¿t thĂºc", txtNgayKetThucFilter));
 
         JPanel right = new JPanel();
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-        JLabel lblSearch = new JLabel("Tìm kiếm");
+        JLabel lblSearch = new JLabel("TĂ¬m kiáº¿m");
         lblSearch.setFont(LABEL_FONT);
         lblSearch.setForeground(TEXT_MUTED);
         right.add(lblSearch);
@@ -223,7 +234,7 @@ public class BangGiaGUI extends JFrame {
 
     private JPanel buildTableCard() {
         bangGiaModel = new DefaultTableModel(new String[]{
-                "Mã bảng giá", "Tên bảng giá", "Loại phòng", "Ngày bắt đầu", "Ngày kết thúc", "Loại ngày", "Trạng thái"
+                "MĂ£ báº£ng giĂ¡", "TĂªn báº£ng giĂ¡", "Loáº¡i phĂ²ng", "NgĂ y báº¯t Ä‘áº§u", "NgĂ y káº¿t thĂºc", "Loáº¡i ngĂ y", "Tráº¡ng thĂ¡i"
         }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -239,6 +250,27 @@ public class BangGiaGUI extends JFrame {
         tblBangGia.setShowGrid(true);
         tblBangGia.setFillsViewportHeight(true);
         ScreenUIHelper.styleTableHeader(tblBangGia);
+        tblBangGia.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                component.setFont(BODY_FONT);
+                if (component instanceof JComponent) {
+                    ((JComponent) component).setBorder(new EmptyBorder(0, 8, 0, 8));
+                }
+                if (isSelected) {
+                    component.setBackground(new Color(219, 234, 254));
+                    component.setForeground(TEXT_PRIMARY);
+                } else if (isConflictBangGiaRow(row)) {
+                    component.setBackground(CONFLICT_ROW_BG);
+                    component.setForeground(TEXT_PRIMARY);
+                } else {
+                    component.setBackground(Color.WHITE);
+                    component.setForeground(TEXT_PRIMARY);
+                }
+                return component;
+            }
+        });
         tblBangGia.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 showSelectedBangGia();
@@ -277,19 +309,19 @@ public class BangGiaGUI extends JFrame {
         lblPhuThu = createValueLabel();
         lblTrangThaiChiTiet = createValueLabel();
 
-        addDetailRow(body, "Mã bảng giá", lblMaBangGia);
-        addDetailRow(body, "Tên bảng giá", lblTenBangGia);
-        addDetailRow(body, "Loại phòng", lblLoaiPhongChiTiet);
-        addDetailRow(body, "Loại ngày", lblLoaiNgayChiTiet);
-        addDetailRow(body, "Giá theo giờ", lblGiaTheoGio);
-        addDetailRow(body, "Giá theo ngày", lblGiaTheoNgay);
-        addDetailRow(body, "Giá cuối tuần", lblGiaCuoiTuan);
-        addDetailRow(body, "Giá lễ", lblGiaLe);
-        addDetailRow(body, "Phụ thu", lblPhuThu);
-        addDetailRow(body, "Trạng thái", lblTrangThaiChiTiet);
+        addDetailRow(body, "MĂ£ báº£ng giĂ¡", lblMaBangGia);
+        addDetailRow(body, "TĂªn báº£ng giĂ¡", lblTenBangGia);
+        addDetailRow(body, "Loáº¡i phĂ²ng", lblLoaiPhongChiTiet);
+        addDetailRow(body, "Loáº¡i ngĂ y", lblLoaiNgayChiTiet);
+        addDetailRow(body, "GiĂ¡ theo giá»", lblGiaTheoGio);
+        addDetailRow(body, "GiĂ¡ theo ngĂ y", lblGiaTheoNgay);
+        addDetailRow(body, "GiĂ¡ cuá»‘i tuáº§n", lblGiaCuoiTuan);
+        addDetailRow(body, "GiĂ¡ lá»…", lblGiaLe);
+        addDetailRow(body, "Phá»¥ thu", lblPhuThu);
+        addDetailRow(body, "Tráº¡ng thĂ¡i", lblTrangThaiChiTiet);
 
         chiTietModel = new DefaultTableModel(new String[]{
-                "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+                "MĂ£ CT", "Loáº¡i ngĂ y", "Khung giá»", "GiĂ¡ giá»", "GiĂ¡ qua Ä‘Ăªm", "GiĂ¡ ngĂ y", "GiĂ¡ cuá»‘i tuáº§n", "GiĂ¡ lá»…", "Phá»¥ thu"
         }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -313,16 +345,16 @@ public class BangGiaGUI extends JFrame {
 
         JPanel action = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         action.setOpaque(false);
-        action.add(createPrimaryButton("Thêm CT", new Color(59, 130, 246), Color.WHITE, e -> openChiTietDialog(null)));
-        action.add(createOutlineButton("Sửa CT", new Color(245, 158, 11), e -> openEditSelectedChiTiet()));
-        action.add(createOutlineButton("Xóa CT", new Color(220, 38, 38), e -> deleteSelectedChiTiet()));
+        action.add(createPrimaryButton("ThĂªm CT", new Color(59, 130, 246), Color.WHITE, e -> openChiTietDialog(null)));
+        action.add(createOutlineButton("Sá»­a CT", new Color(245, 158, 11), e -> openEditSelectedChiTiet()));
+        action.add(createOutlineButton("XĂ³a CT", new Color(220, 38, 38), e -> deleteSelectedChiTiet()));
 
         JPanel south = new JPanel(new BorderLayout(0, 6));
         south.setOpaque(false);
         south.add(action, BorderLayout.NORTH);
         south.add(detailScroll, BorderLayout.CENTER);
 
-        card.add(new JLabel("Chi tiết bảng giá"), BorderLayout.NORTH);
+        card.add(new JLabel("Chi tiáº¿t báº£ng giĂ¡"), BorderLayout.NORTH);
         card.add(body, BorderLayout.CENTER);
         card.add(south, BorderLayout.SOUTH);
         return card;
@@ -331,7 +363,7 @@ public class BangGiaGUI extends JFrame {
     private JPanel buildFooter() {
         return ScreenUIHelper.createShortcutBar(
                 CARD_BG, BORDER_SOFT, TEXT_MUTED,
-                "F1 Thêm bảng giá", "F3 Ngừng áp dụng", "F4 Xem chi tiết"
+                "F1 ThĂªm báº£ng giĂ¡", "F3 Ngá»«ng Ă¡p dá»¥ng", "F4 Xem chi tiáº¿t"
         );
     }
 
@@ -346,7 +378,7 @@ public class BangGiaGUI extends JFrame {
         allLoaiPhong.addAll(loaiPhongDAO.getAll());
         String selected = valueOf(cboLoaiPhong.getSelectedItem());
         cboLoaiPhong.removeAllItems();
-        cboLoaiPhong.addItem("Tất cả");
+        cboLoaiPhong.addItem("Táº¥t cáº£");
         for (LoaiPhong loaiPhong : allLoaiPhong) {
             cboLoaiPhong.addItem(loaiPhong.getTenLoaiPhong());
         }
@@ -367,33 +399,33 @@ public class BangGiaGUI extends JFrame {
         applyFilters(false);
         refreshCurrentView();
         if (showMessage) {
-            JOptionPane.showMessageDialog(this, "Đã làm mới dữ liệu bảng giá.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "ÄĂ£ lĂ m má»›i dá»¯ liá»‡u báº£ng giĂ¡.", "ThĂ´ng bĂ¡o", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
     private void applyFilters(boolean showMessage) {
-        Date from = parseOptionalDate(txtNgayBatDauFilter.getText().trim(), "Ngày bắt đầu không đúng định dạng dd/MM/yyyy.");
+        Date from = parseOptionalDate(txtNgayBatDauFilter.getText().trim(), "NgĂ y báº¯t Ä‘áº§u khĂ´ng Ä‘Ăºng Ä‘á»‹nh dáº¡ng dd/MM/yyyy.");
         if (isInvalidDateMarker(from)) {
             return;
         }
-        Date to = parseOptionalDate(txtNgayKetThucFilter.getText().trim(), "Ngày kết thúc không đúng định dạng dd/MM/yyyy.");
+        Date to = parseOptionalDate(txtNgayKetThucFilter.getText().trim(), "NgĂ y káº¿t thĂºc khĂ´ng Ä‘Ăºng Ä‘á»‹nh dáº¡ng dd/MM/yyyy.");
         if (isInvalidDateMarker(to)) {
             return;
         }
         if (from != null && to != null && from.after(to)) {
-            JOptionPane.showMessageDialog(this, "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "NgĂ y báº¯t Ä‘áº§u pháº£i nhá» hÆ¡n hoáº·c báº±ng ngĂ y káº¿t thĂºc.", "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
         LoaiPhong loaiPhong = findLoaiPhongByTen(valueOf(cboLoaiPhong.getSelectedItem()));
         String maLoaiPhong = loaiPhong == null ? "" : String.valueOf(loaiPhong.getMaLoaiPhong());
-        String loaiNgay = "Tất cả".equals(valueOf(cboLoaiNgay.getSelectedItem())) ? "" : valueOf(cboLoaiNgay.getSelectedItem());
+        String loaiNgay = "Táº¥t cáº£".equals(valueOf(cboLoaiNgay.getSelectedItem())) ? "" : valueOf(cboLoaiNgay.getSelectedItem());
         String trangThai = valueOf(cboTrangThai.getSelectedItem());
 
         String tuKhoa = safeValue(txtTuKhoa.getText(), "").trim().toLowerCase(Locale.ROOT);
         displayedBangGia.clear();
         for (BangGia bangGia : bangGiaDAO.search("", maLoaiPhong, from, to, loaiNgay)) {
-            if (!"Tất cả".equals(trangThai) && !safeValue(bangGia.getTrangThai(), "").equals(trangThai)) {
+            if (!"Táº¥t cáº£".equals(trangThai) && !safeValue(bangGia.getTrangThai(), "").equals(trangThai)) {
                 continue;
             }
             if (!tuKhoa.isEmpty() && !buildBangGiaSearchText(bangGia).contains(tuKhoa)) {
@@ -405,7 +437,7 @@ public class BangGiaGUI extends JFrame {
         refillBangGiaTable();
         refreshCurrentView();
         if (showMessage) {
-            JOptionPane.showMessageDialog(this, "Đã lọc được " + displayedBangGia.size() + " bảng giá phù hợp.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "ÄĂ£ lá»c Ä‘Æ°á»£c " + displayedBangGia.size() + " báº£ng giĂ¡ phĂ¹ há»£p.", "ThĂ´ng bĂ¡o", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -504,7 +536,7 @@ public class BangGiaGUI extends JFrame {
         int row = tblBangGia.getSelectedRow();
         if (row < 0 || row >= displayedBangGia.size()) {
             if (showMessage) {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một bảng giá.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Vui lĂ²ng chá»n má»™t báº£ng giĂ¡.", "ThĂ´ng bĂ¡o", JOptionPane.WARNING_MESSAGE);
             }
             return null;
         }
@@ -515,7 +547,7 @@ public class BangGiaGUI extends JFrame {
         int row = tblChiTietBangGia.getSelectedRow();
         if (row < 0 || row >= displayedChiTiet.size()) {
             if (showMessage) {
-                JOptionPane.showMessageDialog(this, "Vui lòng chọn một chi tiết bảng giá.", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Vui lĂ²ng chá»n má»™t chi tiáº¿t báº£ng giĂ¡.", "ThĂ´ng bĂ¡o", JOptionPane.WARNING_MESSAGE);
             }
             return null;
         }
@@ -526,6 +558,7 @@ public class BangGiaGUI extends JFrame {
         for (int i = 0; i < displayedBangGia.size(); i++) {
             if (displayedBangGia.get(i).getMaBangGia() == maBangGia) {
                 tblBangGia.setRowSelectionInterval(i, i);
+                scrollBangGiaRowToVisible(i);
                 showSelectedBangGia();
                 refreshCurrentView();
                 return;
@@ -548,6 +581,46 @@ public class BangGiaGUI extends JFrame {
             tblChiTietBangGia.revalidate();
             tblChiTietBangGia.repaint();
         }
+    }
+
+    private boolean isConflictBangGiaRow(int row) {
+        if (highlightedConflictBangGiaId == null || row < 0 || row >= displayedBangGia.size()) {
+            return false;
+        }
+        return displayedBangGia.get(row).getMaBangGia() == highlightedConflictBangGiaId.intValue();
+    }
+
+    private void highlightConflictBangGia(Integer maBangGia) {
+        highlightedConflictBangGiaId = maBangGia;
+        if (maBangGia != null) {
+            int rowIndex = findBangGiaRowIndex(maBangGia.intValue());
+            if (rowIndex >= 0) {
+                tblBangGia.setRowSelectionInterval(rowIndex, rowIndex);
+                scrollBangGiaRowToVisible(rowIndex);
+            }
+        }
+        refreshCurrentView();
+    }
+
+    private void clearConflictBangGiaHighlight() {
+        highlightedConflictBangGiaId = null;
+        refreshCurrentView();
+    }
+
+    private int findBangGiaRowIndex(int maBangGia) {
+        for (int i = 0; i < displayedBangGia.size(); i++) {
+            if (displayedBangGia.get(i).getMaBangGia() == maBangGia) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void scrollBangGiaRowToVisible(int rowIndex) {
+        if (tblBangGia == null || rowIndex < 0 || rowIndex >= tblBangGia.getRowCount()) {
+            return;
+        }
+        tblBangGia.scrollRectToVisible(tblBangGia.getCellRect(rowIndex, 0, true));
     }
 
     private void openBangGiaDialog(BangGia bangGia) {
@@ -573,18 +646,18 @@ public class BangGiaGUI extends JFrame {
         if (bangGia == null) {
             return;
         }
-        int confirm = JOptionPane.showConfirmDialog(this, "Chuyển trạng thái bảng giá này sang \"Ngừng áp dụng\"?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+        int confirm = JOptionPane.showConfirmDialog(this, "Chuyá»ƒn tráº¡ng thĂ¡i báº£ng giĂ¡ nĂ y sang \"Ngá»«ng Ă¡p dá»¥ng\"?", "XĂ¡c nháº­n", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         String loaiNgay = bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia());
-        bangGia.setTrangThai("Ngừng áp dụng");
+        bangGia.setTrangThai("Ngá»«ng Ă¡p dá»¥ng");
         if (bangGiaDAO.update(bangGia, loaiNgay)) {
             reloadBangGiaData(false, false);
             selectBangGia(bangGia.getMaBangGia());
-            JOptionPane.showMessageDialog(this, "Đã cập nhật trạng thái bảng giá.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "ÄĂ£ cáº­p nháº­t tráº¡ng thĂ¡i báº£ng giĂ¡.", "ThĂ´ng bĂ¡o", JOptionPane.INFORMATION_MESSAGE);
         } else {
-            JOptionPane.showMessageDialog(this, "Không thể cập nhật trạng thái bảng giá.\nChi tiết: " + safeValue(bangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "KhĂ´ng thá»ƒ cáº­p nháº­t tráº¡ng thĂ¡i báº£ng giĂ¡.\nChi tiáº¿t: " + safeValue(bangGiaDAO.getLastErrorMessage(), "KhĂ´ng xĂ¡c Ä‘á»‹nh."), "Lá»—i", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -607,16 +680,16 @@ public class BangGiaGUI extends JFrame {
         if (chiTiet == null) {
             return;
         }
-        int confirm = JOptionPane.showConfirmDialog(this, "Xóa chi tiết bảng giá đang chọn?", "Xác nhận", JOptionPane.YES_NO_OPTION);
+        int confirm = JOptionPane.showConfirmDialog(this, "XĂ³a chi tiáº¿t báº£ng giĂ¡ Ä‘ang chá»n?", "XĂ¡c nháº­n", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         if (chiTietBangGiaDAO.delete(chiTiet.getMaChiTietBangGia())) {
             reloadBangGiaData(false, false);
             selectBangGia(chiTiet.getMaBangGia());
-            JOptionPane.showMessageDialog(this, "Đã xóa chi tiết bảng giá.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, "ÄĂ£ xĂ³a chi tiáº¿t báº£ng giĂ¡.", "ThĂ´ng bĂ¡o", JOptionPane.INFORMATION_MESSAGE);
         } else {
-            JOptionPane.showMessageDialog(this, "Không thể xóa chi tiết bảng giá.\nChi tiết: " + safeValue(chiTietBangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "KhĂ´ng thá»ƒ xĂ³a chi tiáº¿t báº£ng giĂ¡.\nChi tiáº¿t: " + safeValue(chiTietBangGiaDAO.getLastErrorMessage(), "KhĂ´ng xĂ¡c Ä‘á»‹nh."), "Lá»—i", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -651,13 +724,13 @@ public class BangGiaGUI extends JFrame {
 
     private Date parseRequiredDate(String value, String message) {
         if (value == null || value.trim().isEmpty()) {
-            JOptionPane.showMessageDialog(this, message, "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, message, "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
             return INVALID_DATE;
         }
         try {
             return Date.valueOf(LocalDate.parse(value.trim(), DATE_FORMATTER));
         } catch (DateTimeParseException ex) {
-            JOptionPane.showMessageDialog(this, message, "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, message, "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
             return INVALID_DATE;
         }
     }
@@ -669,13 +742,24 @@ public class BangGiaGUI extends JFrame {
         try {
             return Date.valueOf(LocalDate.parse(value.trim(), DATE_FORMATTER));
         } catch (DateTimeParseException ex) {
-            JOptionPane.showMessageDialog(this, message, "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, message, "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
             return INVALID_DATE;
         }
     }
 
     private boolean isInvalidDateMarker(Date date) {
         return date != null && INVALID_DATE.equals(date);
+    }
+
+    private Date parseDateSilently(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Date.valueOf(LocalDate.parse(value.trim(), DATE_FORMATTER));
+        } catch (DateTimeParseException ex) {
+            return null;
+        }
     }
 
     private double parseMoney(String value, String fieldName) {
@@ -689,7 +773,7 @@ public class BangGiaGUI extends JFrame {
             }
             return parsed;
         } catch (NumberFormatException ex) {
-            JOptionPane.showMessageDialog(this, fieldName + " phải là số lớn hơn hoặc bằng 0.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, fieldName + " pháº£i lĂ  sá»‘ lá»›n hÆ¡n hoáº·c báº±ng 0.", "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
             return -1;
         }
     }
@@ -710,6 +794,45 @@ public class BangGiaGUI extends JFrame {
         for (LoaiPhong loaiPhong : allLoaiPhong) {
             if (safeValue(loaiPhong.getTenLoaiPhong(), "").equals(tenLoaiPhong)) {
                 return loaiPhong;
+            }
+        }
+        return null;
+    }
+
+    private void installDateFieldChangeListener(AppDatePickerField field, Runnable action) {
+        JTextField editor = findNestedTextField(field);
+        if (editor == null || action == null) {
+            return;
+        }
+        editor.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                action.run();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                action.run();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                action.run();
+            }
+        });
+    }
+
+    private JTextField findNestedTextField(Component component) {
+        if (component instanceof JTextField) {
+            return (JTextField) component;
+        }
+        if (component instanceof java.awt.Container) {
+            Component[] children = ((java.awt.Container) component).getComponents();
+            for (Component child : children) {
+                JTextField found = findNestedTextField(child);
+                if (found != null) {
+                    return found;
+                }
             }
         }
         return null;
@@ -890,17 +1013,35 @@ public class BangGiaGUI extends JFrame {
         private final AppDatePickerField txtNgayKetThuc;
         private final JComboBox<String> cboLoaiNgayDialog;
         private final JComboBox<String> cboTrangThaiDialog;
+        private final List<ChiTietBangGia> draftChiTietList = new ArrayList<ChiTietBangGia>();
+        private final DefaultTableModel draftChiTietModel;
+        private final JTable tblDraftChiTiet;
+        private final JScrollPane draftChiTietScroll;
+        private final JPanel pnlConflictWarning;
+        private final JLabel lblConflictWarning;
+        private final JButton btnSave;
+        private final Border defaultLoaiPhongBorder;
+        private final Border defaultNgayBatDauBorder;
+        private final Border defaultNgayKetThucBorder;
+        private final Border defaultDraftDetailBorder;
+        private final Color defaultLoaiPhongBackground;
+        private final Color defaultNgayBatDauBackground;
+        private final Color defaultNgayKetThucBackground;
+        private BangGiaConflictInfo currentConflict;
 
         private BangGiaFormDialog(Frame owner, BangGia bangGia) {
-            super(owner, bangGia == null ? "Thêm bảng giá" : "Cập nhật bảng giá", 620, 460);
+            super(owner, bangGia == null ? "Them bang gia" : "Cap nhat bang gia", 940, 720);
             this.editingBangGia = bangGia;
 
             add(buildHeader(
-                    bangGia == null ? "THÊM BẢNG GIÁ" : "CẬP NHẬT BẢNG GIÁ",
-                    "Lưu thông tin bảng giá theo đúng cột hiện tại của database."
+                    bangGia == null ? "THEM BANG GIA" : "CAP NHAT BANG GIA",
+                    "Luu header va chi tiet trong cung mot lan thao tac de tranh thieu du lieu."
             ), BorderLayout.NORTH);
 
-            JPanel card = createCardPanel(new BorderLayout());
+            JPanel body = new JPanel(new BorderLayout(0, 12));
+            body.setOpaque(false);
+
+            JPanel card = createCardPanel(new BorderLayout(0, 10));
             JPanel form = createFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new Insets(6, 0, 6, 12);
@@ -925,51 +1066,141 @@ public class BangGiaGUI extends JFrame {
                 cboTrangThaiDialog.setSelectedItem(bangGia.getTrangThai());
             }
 
-            addFormRow(form, gbc, 0, "Tên bảng giá", txtTenBangGia);
-            addFormRow(form, gbc, 1, "Loại phòng", cboLoaiPhongDialog);
-            addFormRow(form, gbc, 2, "Ngày bắt đầu", txtNgayBatDau);
-            addFormRow(form, gbc, 3, "Ngày kết thúc", txtNgayKetThuc);
-            addFormRow(form, gbc, 4, "Loại ngày", cboLoaiNgayDialog);
-            addFormRow(form, gbc, 5, "Trạng thái", cboTrangThaiDialog);
+            defaultLoaiPhongBorder = cboLoaiPhongDialog.getBorder();
+            defaultLoaiPhongBackground = cboLoaiPhongDialog.getBackground();
+            defaultNgayBatDauBorder = txtNgayBatDau.getBorder();
+            defaultNgayKetThucBorder = txtNgayKetThuc.getBorder();
+            defaultNgayBatDauBackground = resolveDateFieldBackground(txtNgayBatDau);
+            defaultNgayKetThucBackground = resolveDateFieldBackground(txtNgayKetThuc);
+
+            addFormRow(form, gbc, 0, "Ten bang gia", txtTenBangGia);
+            addFormRow(form, gbc, 1, "Loai phong", cboLoaiPhongDialog);
+            addFormRow(form, gbc, 2, "Ngay bat dau", txtNgayBatDau);
+            addFormRow(form, gbc, 3, "Ngay ket thuc", txtNgayKetThuc);
+            addFormRow(form, gbc, 4, "Loai ngay", cboLoaiNgayDialog);
+            addFormRow(form, gbc, 5, "Trang thai", cboTrangThaiDialog);
+
+            pnlConflictWarning = new JPanel(new BorderLayout());
+            pnlConflictWarning.setBackground(CONFLICT_BG);
+            pnlConflictWarning.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true),
+                    new EmptyBorder(8, 10, 8, 10)
+            ));
+            lblConflictWarning = new JLabel();
+            lblConflictWarning.setFont(BODY_FONT);
+            lblConflictWarning.setForeground(CONFLICT_TEXT);
+            pnlConflictWarning.add(lblConflictWarning, BorderLayout.CENTER);
+            pnlConflictWarning.setVisible(false);
 
             card.add(form, BorderLayout.CENTER);
-            add(card, BorderLayout.CENTER);
+            card.add(pnlConflictWarning, BorderLayout.SOUTH);
+
+            JPanel detailCard = createCardPanel(new BorderLayout(0, 10));
+            JLabel lblDetailTitle = new JLabel("Chi tiet bang gia");
+            lblDetailTitle.setFont(SECTION_FONT);
+            lblDetailTitle.setForeground(TEXT_PRIMARY);
+            detailCard.add(lblDetailTitle, BorderLayout.NORTH);
+
+            draftChiTietModel = new DefaultTableModel(new String[]{
+                    "Ma CT", "Loai ngay", "Khung gio", "Gia gio", "Gia qua dem", "Gia ngay", "Gia cuoi tuan", "Gia le", "Phu thu"
+            }, 0) {
+                @Override
+                public boolean isCellEditable(int row, int column) {
+                    return false;
+                }
+            };
+            tblDraftChiTiet = new JTable(draftChiTietModel);
+            tblDraftChiTiet.setFont(BODY_FONT);
+            tblDraftChiTiet.setRowHeight(28);
+            tblDraftChiTiet.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            tblDraftChiTiet.setGridColor(BORDER_SOFT);
+            tblDraftChiTiet.setShowGrid(true);
+            tblDraftChiTiet.setFillsViewportHeight(true);
+            ScreenUIHelper.styleTableHeader(tblDraftChiTiet);
+            draftChiTietScroll = new JScrollPane(tblDraftChiTiet);
+            draftChiTietScroll.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+            draftChiTietScroll.getVerticalScrollBar().setUnitIncrement(18);
+            draftChiTietScroll.setPreferredSize(new Dimension(0, 240));
+            defaultDraftDetailBorder = draftChiTietScroll.getBorder();
+
+            JPanel detailAction = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            detailAction.setOpaque(false);
+            detailAction.add(createPrimaryButton("Them CT", new Color(59, 130, 246), Color.WHITE, e -> openDraftChiTietDialog(null, -1)));
+            detailAction.add(createOutlineButton("Sua CT", new Color(245, 158, 11), e -> openEditDraftChiTiet()));
+            detailAction.add(createOutlineButton("Xoa CT", new Color(220, 38, 38), e -> deleteSelectedDraftChiTiet()));
+
+            detailCard.add(detailAction, BorderLayout.CENTER);
+            detailCard.add(draftChiTietScroll, BorderLayout.SOUTH);
+
+            body.add(card, BorderLayout.NORTH);
+            body.add(detailCard, BorderLayout.CENTER);
+            add(body, BorderLayout.CENTER);
+
+            btnSave = createPrimaryButton("Luu", new Color(22, 163, 74), Color.WHITE, e -> saveBangGia());
             add(buildButtons(
-                    createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose()),
-                    createPrimaryButton("Lưu", new Color(22, 163, 74), Color.WHITE, e -> saveBangGia())
+                    createOutlineButton("Huy", new Color(107, 114, 128), e -> dispose()),
+                    btnSave
             ), BorderLayout.SOUTH);
+
+            if (bangGia != null) {
+                for (ChiTietBangGia chiTietBangGia : chiTietBangGiaDAO.getByMaBangGia(bangGia.getMaBangGia())) {
+                    draftChiTietList.add(copyChiTietBangGia(chiTietBangGia));
+                }
+            }
+            refillDraftChiTietTable();
+            registerConflictListeners();
+            validateConflictSilently();
         }
 
         private void saveBangGia() {
+            clearDetailErrorState();
             if (txtTenBangGia.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Tên bảng giá không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Ten bang gia khong duoc rong.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             LoaiPhong loaiPhong = findLoaiPhongByTen(valueOf(cboLoaiPhongDialog.getSelectedItem()));
             if (loaiPhong == null) {
-                JOptionPane.showMessageDialog(this, "Loại phòng không hợp lệ.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Loai phong khong hop le.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            Date ngayBatDau = parseRequiredDate(txtNgayBatDau.getText().trim(), "Ngày bắt đầu không đúng định dạng dd/MM/yyyy.");
+            Date ngayBatDau = parseRequiredDate(txtNgayBatDau.getText().trim(), "Ngay bat dau khong dung dinh dang dd/MM/yyyy.");
             if (isInvalidDateMarker(ngayBatDau)) {
                 return;
             }
-            Date ngayKetThuc = parseRequiredDate(txtNgayKetThuc.getText().trim(), "Ngày kết thúc không đúng định dạng dd/MM/yyyy.");
+            Date ngayKetThuc = parseRequiredDate(txtNgayKetThuc.getText().trim(), "Ngay ket thuc khong dung dinh dang dd/MM/yyyy.");
             if (isInvalidDateMarker(ngayKetThuc)) {
                 return;
             }
             if (ngayBatDau.after(ngayKetThuc)) {
-                JOptionPane.showMessageDialog(this, "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Ngay bat dau phai nho hon hoac bang ngay ket thuc.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             String loaiNgay = valueOf(cboLoaiNgayDialog.getSelectedItem());
             if (loaiNgay.trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Loại ngày không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Loai ngay khong duoc rong.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
             if (trangThai.trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Trạng thái không được rỗng.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Trang thai khong duoc rong.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            BangGiaConflictInfo conflictInfo = bangGiaDAO.findDateConflict(
+                    loaiPhong.getMaLoaiPhong(),
+                    ngayBatDau,
+                    ngayKetThuc,
+                    editingBangGia == null ? null : Integer.valueOf(editingBangGia.getMaBangGia())
+            );
+            if (conflictInfo != null) {
+                applyConflictState(conflictInfo);
+                JOptionPane.showMessageDialog(this, buildConflictPopupMessage(conflictInfo), "Bang gia bi chong thoi gian", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            String detailErrorMessage = validateDraftChiTietBeforeSave();
+            if (detailErrorMessage != null) {
+                JOptionPane.showMessageDialog(this, detailErrorMessage, "Chi tiet bang gia chua hop le", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
@@ -981,22 +1212,232 @@ public class BangGiaGUI extends JFrame {
             bangGia.setDenNgay(ngayKetThuc);
             bangGia.setTrangThai(trangThai);
 
-            boolean success = editingBangGia == null ? bangGiaDAO.insert(bangGia, loaiNgay) : bangGiaDAO.update(bangGia, loaiNgay);
+            boolean success = bangGiaDAO.saveWithDetails(bangGia, loaiNgay, draftChiTietList);
             if (!success) {
-                JOptionPane.showMessageDialog(this, "Không thể lưu bảng giá.\nChi tiết: " + safeValue(bangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Khong the luu bang gia.\nChi tiet: " + safeValue(bangGiaDAO.getLastErrorMessage(), "Khong xac dinh."), "Loi", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             reloadBangGiaData(false, false);
             selectBangGia(bangGia.getMaBangGia());
-            JOptionPane.showMessageDialog(this, editingBangGia == null ? "Thêm bảng giá thành công." : "Cập nhật bảng giá thành công.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            clearConflictBangGiaHighlight();
+            JOptionPane.showMessageDialog(this, editingBangGia == null ? "Them bang gia thanh cong." : "Cap nhat bang gia thanh cong.", "Thong bao", JOptionPane.INFORMATION_MESSAGE);
             dispose();
+        }
+
+        @Override
+        public void dispose() {
+            clearConflictBangGiaHighlight();
+            if (editingBangGia != null && editingBangGia.getMaBangGia() > 0) {
+                selectBangGia(editingBangGia.getMaBangGia());
+            }
+            super.dispose();
+        }
+
+        private void registerConflictListeners() {
+            cboLoaiPhongDialog.addActionListener(e -> validateConflictSilently());
+            installDateFieldChangeListener(txtNgayBatDau, this::validateConflictSilently);
+            installDateFieldChangeListener(txtNgayKetThuc, this::validateConflictSilently);
+        }
+
+        private void validateConflictSilently() {
+            LoaiPhong loaiPhong = findLoaiPhongByTen(valueOf(cboLoaiPhongDialog.getSelectedItem()));
+            Date ngayBatDau = parseDateSilently(txtNgayBatDau.getText().trim());
+            Date ngayKetThuc = parseDateSilently(txtNgayKetThuc.getText().trim());
+            if (loaiPhong == null || ngayBatDau == null || ngayKetThuc == null || ngayBatDau.after(ngayKetThuc)) {
+                clearConflictState();
+                return;
+            }
+
+            BangGiaConflictInfo conflictInfo = bangGiaDAO.findDateConflict(
+                    loaiPhong.getMaLoaiPhong(),
+                    ngayBatDau,
+                    ngayKetThuc,
+                    editingBangGia == null ? null : Integer.valueOf(editingBangGia.getMaBangGia())
+            );
+            if (conflictInfo != null) {
+                applyConflictState(conflictInfo);
+            } else {
+                clearConflictState();
+            }
+        }
+
+        private void applyConflictState(BangGiaConflictInfo conflictInfo) {
+            currentConflict = conflictInfo;
+            lblConflictWarning.setText("<html><b>Dang bi chong thoi gian.</b> " + buildConflictHtml(conflictInfo)
+                    + "<br/>Vui long doi ngay bat dau, ngay ket thuc hoac chon loai phong khac.</html>");
+            pnlConflictWarning.setVisible(true);
+            setHeaderConflictState(true);
+            highlightConflictBangGia(Integer.valueOf(conflictInfo.getMaBangGia()));
+            updateSaveButtonState();
+        }
+
+        private void clearConflictState() {
+            currentConflict = null;
+            lblConflictWarning.setText("");
+            pnlConflictWarning.setVisible(false);
+            setHeaderConflictState(false);
+            clearConflictBangGiaHighlight();
+            updateSaveButtonState();
+        }
+
+        private void updateSaveButtonState() {
+            btnSave.setEnabled(currentConflict == null);
+        }
+
+        private void setHeaderConflictState(boolean conflict) {
+            cboLoaiPhongDialog.setBorder(conflict ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultLoaiPhongBorder);
+            cboLoaiPhongDialog.setBackground(conflict ? CONFLICT_BG : defaultLoaiPhongBackground);
+            txtNgayBatDau.setBorder(conflict ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultNgayBatDauBorder);
+            txtNgayKetThuc.setBorder(conflict ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultNgayKetThucBorder);
+            setDateFieldBackground(txtNgayBatDau, conflict ? CONFLICT_BG : defaultNgayBatDauBackground);
+            setDateFieldBackground(txtNgayKetThuc, conflict ? CONFLICT_BG : defaultNgayKetThucBackground);
+        }
+
+        private Color resolveDateFieldBackground(AppDatePickerField field) {
+            JTextField editor = findNestedTextField(field);
+            return editor == null ? Color.WHITE : editor.getBackground();
+        }
+
+        private void setDateFieldBackground(AppDatePickerField field, Color color) {
+            JTextField editor = findNestedTextField(field);
+            if (editor != null) {
+                editor.setBackground(color);
+            }
+        }
+
+        private void openDraftChiTietDialog(ChiTietBangGia chiTietBangGia, int rowIndex) {
+            new DraftChiTietBangGiaFormDialog(BangGiaGUI.this, this, chiTietBangGia, rowIndex).setVisible(true);
+        }
+
+        private void openEditDraftChiTiet() {
+            int rowIndex = getSelectedDraftChiTietRow(true);
+            if (rowIndex >= 0) {
+                openDraftChiTietDialog(draftChiTietList.get(rowIndex), rowIndex);
+            }
+        }
+
+        private void deleteSelectedDraftChiTiet() {
+            int rowIndex = getSelectedDraftChiTietRow(true);
+            if (rowIndex < 0) {
+                return;
+            }
+            int confirm = JOptionPane.showConfirmDialog(this, "Xoa dong chi tiet bang gia dang chon?", "Xac nhan", JOptionPane.YES_NO_OPTION);
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
+            draftChiTietList.remove(rowIndex);
+            refillDraftChiTietTable();
+            clearDetailErrorState();
+        }
+
+        private int getSelectedDraftChiTietRow(boolean showMessage) {
+            int row = tblDraftChiTiet.getSelectedRow();
+            if (row < 0 || row >= draftChiTietList.size()) {
+                if (showMessage) {
+                    JOptionPane.showMessageDialog(this, "Vui long chon mot dong chi tiet bang gia.", "Thong bao", JOptionPane.WARNING_MESSAGE);
+                }
+                return -1;
+            }
+            return row;
+        }
+
+        private void refillDraftChiTietTable() {
+            draftChiTietModel.setRowCount(0);
+            for (ChiTietBangGia chiTietBangGia : draftChiTietList) {
+                draftChiTietModel.addRow(new Object[]{
+                        chiTietBangGia.getMaChiTietBangGia() > 0 ? "CT" + chiTietBangGia.getMaChiTietBangGia() : "Moi",
+                        chiTietBangGia.getLoaiNgay(),
+                        chiTietBangGia.getKhungGio(),
+                        formatCurrency(chiTietBangGia.getGiaTheoGio()),
+                        formatCurrency(chiTietBangGia.getGiaQuaDem()),
+                        formatCurrency(chiTietBangGia.getGiaTheoNgay()),
+                        formatCurrency(chiTietBangGia.getGiaCuoiTuan()),
+                        formatCurrency(chiTietBangGia.getGiaLe()),
+                        formatCurrency(chiTietBangGia.getPhuThu())
+                });
+            }
+        }
+
+        private String validateDraftChiTietBeforeSave() {
+            if (draftChiTietList.isEmpty()) {
+                showDetailErrorState(-1);
+                return "Bang gia phai co it nhat 1 dong chi tiet.";
+            }
+            for (int i = 0; i < draftChiTietList.size(); i++) {
+                ChiTietBangGia chiTietBangGia = draftChiTietList.get(i);
+                if (chiTietBangGia == null) {
+                    showDetailErrorState(i);
+                    return "Dong chi tiet " + (i + 1) + " khong hop le.";
+                }
+                if (safeValue(chiTietBangGia.getLoaiNgay(), "").isEmpty()) {
+                    showDetailErrorState(i);
+                    return "Dong chi tiet " + (i + 1) + " dang thieu loai ngay.";
+                }
+                if (safeValue(chiTietBangGia.getKhungGio(), "").isEmpty()) {
+                    showDetailErrorState(i);
+                    return "Dong chi tiet " + (i + 1) + " dang thieu khung gio.";
+                }
+                if (chiTietBangGia.getGiaTheoGio() < 0 || chiTietBangGia.getGiaQuaDem() < 0 || chiTietBangGia.getGiaTheoNgay() < 0
+                        || chiTietBangGia.getGiaCuoiTuan() < 0 || chiTietBangGia.getGiaLe() < 0 || chiTietBangGia.getPhuThu() < 0) {
+                    showDetailErrorState(i);
+                    return "Dong chi tiet " + (i + 1) + " co gia tri tien khong hop le.";
+                }
+            }
+            clearDetailErrorState();
+            return null;
+        }
+
+        private void showDetailErrorState(int rowIndex) {
+            draftChiTietScroll.setBorder(BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true));
+            if (rowIndex >= 0 && rowIndex < tblDraftChiTiet.getRowCount()) {
+                tblDraftChiTiet.setRowSelectionInterval(rowIndex, rowIndex);
+                tblDraftChiTiet.scrollRectToVisible(tblDraftChiTiet.getCellRect(rowIndex, 0, true));
+            }
+            tblDraftChiTiet.requestFocusInWindow();
+        }
+
+        private void clearDetailErrorState() {
+            draftChiTietScroll.setBorder(defaultDraftDetailBorder);
+        }
+
+        private String buildConflictHtml(BangGiaConflictInfo conflictInfo) {
+            return "Loai phong <b>" + safeValue(conflictInfo.getTenLoaiPhong(), "-") + "</b> da co bang gia <b>"
+                    + safeValue(conflictInfo.getTenBangGia(), formatBangGiaCode(conflictInfo.getMaBangGia())) + "</b> ("
+                    + formatBangGiaCode(conflictInfo.getMaBangGia()) + ") ap dung tu <b>"
+                    + formatDate(conflictInfo.getNgayBatDau()) + "</b> den <b>"
+                    + formatDate(conflictInfo.getNgayKetThuc()) + "</b>, trang thai <b>"
+                    + safeValue(conflictInfo.getTrangThai(), "-") + "</b>.";
+        }
+
+        private String buildConflictPopupMessage(BangGiaConflictInfo conflictInfo) {
+            return "Loai phong " + safeValue(conflictInfo.getTenLoaiPhong(), "-")
+                    + " da co bang gia " + safeValue(conflictInfo.getTenBangGia(), formatBangGiaCode(conflictInfo.getMaBangGia()))
+                    + " (" + formatBangGiaCode(conflictInfo.getMaBangGia()) + ") ap dung tu "
+                    + formatDate(conflictInfo.getNgayBatDau()) + " den " + formatDate(conflictInfo.getNgayKetThuc())
+                    + ". Khoang thoi gian ban chon dang bi chong.";
+        }
+
+        private ChiTietBangGia copyChiTietBangGia(ChiTietBangGia source) {
+            ChiTietBangGia copy = new ChiTietBangGia();
+            copy.setMaChiTietBangGia(source.getMaChiTietBangGia());
+            copy.setMaBangGia(source.getMaBangGia());
+            copy.setLoaiNgay(source.getLoaiNgay());
+            copy.setKhungGio(source.getKhungGio());
+            copy.setGiaTheoGio(source.getGiaTheoGio());
+            copy.setGiaQuaDem(source.getGiaQuaDem());
+            copy.setGiaTheoNgay(source.getGiaTheoNgay());
+            copy.setGiaCuoiTuan(source.getGiaCuoiTuan());
+            copy.setGiaLe(source.getGiaLe());
+            copy.setPhuThu(source.getPhuThu());
+            return copy;
         }
     }
 
-    private final class ChiTietBangGiaFormDialog extends BaseDialog {
-        private final BangGia bangGia;
+    private final class DraftChiTietBangGiaFormDialog extends BaseDialog {
+        private final BangGiaFormDialog parentDialog;
         private final ChiTietBangGia editingChiTiet;
+        private final int editingRowIndex;
         private final JComboBox<String> cboLoaiNgayDialog;
         private final AppTimePickerField txtKhungGio;
         private final JTextField txtGiaTheoGio;
@@ -1006,14 +1447,15 @@ public class BangGiaGUI extends JFrame {
         private final JTextField txtGiaLe;
         private final JTextField txtPhuThu;
 
-        private ChiTietBangGiaFormDialog(Frame owner, BangGia bangGia, ChiTietBangGia chiTiet) {
-            super(owner, chiTiet == null ? "Thêm chi tiết bảng giá" : "Cập nhật chi tiết bảng giá", 620, 520);
-            this.bangGia = bangGia;
-            this.editingChiTiet = chiTiet;
+        private DraftChiTietBangGiaFormDialog(Frame owner, BangGiaFormDialog parentDialog, ChiTietBangGia chiTiet, int rowIndex) {
+            super(owner, chiTiet == null ? "Them chi tiet bang gia" : "Cap nhat chi tiet bang gia", 620, 520);
+            this.parentDialog = parentDialog;
+            this.editingChiTiet = chiTiet == null ? null : copyChiTietBangGia(chiTiet);
+            this.editingRowIndex = rowIndex;
 
             add(buildHeader(
-                    chiTiet == null ? "THÊM CHI TIẾT BẢNG GIÁ" : "CẬP NHẬT CHI TIẾT BẢNG GIÁ",
-                    "Khai báo giá chi tiết theo ChiTietBangGia."
+                    chiTiet == null ? "THEM CHI TIET BANG GIA" : "CAP NHAT CHI TIET BANG GIA",
+                    "Dong chi tiet nay se duoc luu cung header khi ban bam Luu bang gia."
             ), BorderLayout.NORTH);
 
             JPanel card = createCardPanel(new BorderLayout());
@@ -1033,42 +1475,158 @@ public class BangGiaGUI extends JFrame {
                 cboLoaiNgayDialog.setSelectedItem(chiTiet.getLoaiNgay());
             }
 
-            addFormRow(form, gbc, 0, "Loại ngày", cboLoaiNgayDialog);
-            addFormRow(form, gbc, 1, "Khung giờ", txtKhungGio);
-            addFormRow(form, gbc, 2, "Giá theo giờ", txtGiaTheoGio);
-            addFormRow(form, gbc, 3, "Giá qua đêm", txtGiaQuaDem);
-            addFormRow(form, gbc, 4, "Giá theo ngày", txtGiaTheoNgay);
-            addFormRow(form, gbc, 5, "Giá cuối tuần", txtGiaCuoiTuan);
-            addFormRow(form, gbc, 6, "Giá lễ", txtGiaLe);
-            addFormRow(form, gbc, 7, "Phụ thu", txtPhuThu);
+            addFormRow(form, gbc, 0, "Loai ngay", cboLoaiNgayDialog);
+            addFormRow(form, gbc, 1, "Khung gio", txtKhungGio);
+            addFormRow(form, gbc, 2, "Gia theo gio", txtGiaTheoGio);
+            addFormRow(form, gbc, 3, "Gia qua dem", txtGiaQuaDem);
+            addFormRow(form, gbc, 4, "Gia theo ngay", txtGiaTheoNgay);
+            addFormRow(form, gbc, 5, "Gia cuoi tuan", txtGiaCuoiTuan);
+            addFormRow(form, gbc, 6, "Gia le", txtGiaLe);
+            addFormRow(form, gbc, 7, "Phu thu", txtPhuThu);
 
             card.add(form, BorderLayout.CENTER);
             add(card, BorderLayout.CENTER);
             add(buildButtons(
-                    createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose()),
-                    createPrimaryButton("Lưu", new Color(59, 130, 246), Color.WHITE, e -> saveChiTiet())
+                    createOutlineButton("Huy", new Color(107, 114, 128), e -> dispose()),
+                    createPrimaryButton("Luu chi tiet", new Color(59, 130, 246), Color.WHITE, e -> saveDraftChiTiet())
+            ), BorderLayout.SOUTH);
+        }
+
+        private void saveDraftChiTiet() {
+            if (valueOf(cboLoaiNgayDialog.getSelectedItem()).trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Loai ngay khong duoc de trong.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (txtKhungGio.getText().trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Khung gio khong duoc de trong.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (txtKhungGio.getTimeValue() == null) {
+                JOptionPane.showMessageDialog(this, "Khung gio khong dung dinh dang HH:mm.", "Du lieu khong hop le", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Gia theo gio");
+            double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "Gia qua dem");
+            double giaTheoNgay = parseMoney(txtGiaTheoNgay.getText().trim(), "Gia theo ngay");
+            double giaCuoiTuan = parseMoney(txtGiaCuoiTuan.getText().trim(), "Gia cuoi tuan");
+            double giaLe = parseMoney(txtGiaLe.getText().trim(), "Gia le");
+            double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phu thu");
+            if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || giaCuoiTuan < 0 || giaLe < 0 || phuThu < 0) {
+                return;
+            }
+
+            ChiTietBangGia chiTietBangGia = editingChiTiet == null ? new ChiTietBangGia() : editingChiTiet;
+            chiTietBangGia.setLoaiNgay(valueOf(cboLoaiNgayDialog.getSelectedItem()));
+            chiTietBangGia.setKhungGio(txtKhungGio.getText().trim());
+            chiTietBangGia.setGiaTheoGio(giaTheoGio);
+            chiTietBangGia.setGiaQuaDem(giaQuaDem);
+            chiTietBangGia.setGiaTheoNgay(giaTheoNgay);
+            chiTietBangGia.setGiaCuoiTuan(giaCuoiTuan);
+            chiTietBangGia.setGiaLe(giaLe);
+            chiTietBangGia.setPhuThu(phuThu);
+
+            if (editingRowIndex >= 0 && editingRowIndex < parentDialog.draftChiTietList.size()) {
+                parentDialog.draftChiTietList.set(editingRowIndex, chiTietBangGia);
+            } else {
+                parentDialog.draftChiTietList.add(chiTietBangGia);
+            }
+            parentDialog.refillDraftChiTietTable();
+            parentDialog.clearDetailErrorState();
+            dispose();
+        }
+
+        private ChiTietBangGia copyChiTietBangGia(ChiTietBangGia source) {
+            ChiTietBangGia copy = new ChiTietBangGia();
+            copy.setMaChiTietBangGia(source.getMaChiTietBangGia());
+            copy.setMaBangGia(source.getMaBangGia());
+            copy.setLoaiNgay(source.getLoaiNgay());
+            copy.setKhungGio(source.getKhungGio());
+            copy.setGiaTheoGio(source.getGiaTheoGio());
+            copy.setGiaQuaDem(source.getGiaQuaDem());
+            copy.setGiaTheoNgay(source.getGiaTheoNgay());
+            copy.setGiaCuoiTuan(source.getGiaCuoiTuan());
+            copy.setGiaLe(source.getGiaLe());
+            copy.setPhuThu(source.getPhuThu());
+            return copy;
+        }
+    }
+
+    private final class ChiTietBangGiaFormDialog extends BaseDialog {
+        private final BangGia bangGia;
+        private final ChiTietBangGia editingChiTiet;
+        private final JComboBox<String> cboLoaiNgayDialog;
+        private final AppTimePickerField txtKhungGio;
+        private final JTextField txtGiaTheoGio;
+        private final JTextField txtGiaQuaDem;
+        private final JTextField txtGiaTheoNgay;
+        private final JTextField txtGiaCuoiTuan;
+        private final JTextField txtGiaLe;
+        private final JTextField txtPhuThu;
+
+        private ChiTietBangGiaFormDialog(Frame owner, BangGia bangGia, ChiTietBangGia chiTiet) {
+            super(owner, chiTiet == null ? "ThĂªm chi tiáº¿t báº£ng giĂ¡" : "Cáº­p nháº­t chi tiáº¿t báº£ng giĂ¡", 620, 520);
+            this.bangGia = bangGia;
+            this.editingChiTiet = chiTiet;
+
+            add(buildHeader(
+                    chiTiet == null ? "THĂM CHI TIáº¾T Báº¢NG GIĂ" : "Cáº¬P NHáº¬T CHI TIáº¾T Báº¢NG GIĂ",
+                    "Khai bĂ¡o giĂ¡ chi tiáº¿t theo ChiTietBangGia."
+            ), BorderLayout.NORTH);
+
+            JPanel card = createCardPanel(new BorderLayout());
+            JPanel form = createFormPanel();
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new Insets(6, 0, 6, 12);
+
+            cboLoaiNgayDialog = createComboBox(LOAI_NGAY_OPTIONS);
+            txtKhungGio = new AppTimePickerField(chiTiet == null ? "" : safeValue(chiTiet.getKhungGio(), ""), true);
+            txtGiaTheoGio = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoGio()));
+            txtGiaQuaDem = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaQuaDem()));
+            txtGiaTheoNgay = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoNgay()));
+            txtGiaCuoiTuan = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaCuoiTuan()));
+            txtGiaLe = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaLe()));
+            txtPhuThu = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThu()));
+            if (chiTiet != null) {
+                cboLoaiNgayDialog.setSelectedItem(chiTiet.getLoaiNgay());
+            }
+
+            addFormRow(form, gbc, 0, "Loáº¡i ngĂ y", cboLoaiNgayDialog);
+            addFormRow(form, gbc, 1, "Khung giá»", txtKhungGio);
+            addFormRow(form, gbc, 2, "GiĂ¡ theo giá»", txtGiaTheoGio);
+            addFormRow(form, gbc, 3, "GiĂ¡ qua Ä‘Ăªm", txtGiaQuaDem);
+            addFormRow(form, gbc, 4, "GiĂ¡ theo ngĂ y", txtGiaTheoNgay);
+            addFormRow(form, gbc, 5, "GiĂ¡ cuá»‘i tuáº§n", txtGiaCuoiTuan);
+            addFormRow(form, gbc, 6, "GiĂ¡ lá»…", txtGiaLe);
+            addFormRow(form, gbc, 7, "Phá»¥ thu", txtPhuThu);
+
+            card.add(form, BorderLayout.CENTER);
+            add(card, BorderLayout.CENTER);
+            add(buildButtons(
+                    createOutlineButton("Há»§y", new Color(107, 114, 128), e -> dispose()),
+                    createPrimaryButton("LÆ°u", new Color(59, 130, 246), Color.WHITE, e -> saveChiTiet())
             ), BorderLayout.SOUTH);
         }
 
         private void saveChiTiet() {
             if (valueOf(cboLoaiNgayDialog.getSelectedItem()).trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Loại ngày không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Loáº¡i ngĂ y khĂ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.", "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             if (txtKhungGio.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Khung giờ không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Khung giá» khĂ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.", "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
                 return;
             }
             if (txtKhungGio.getTimeValue() == null) {
-                JOptionPane.showMessageDialog(this, "Khung giờ không đúng định dạng HH:mm.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Khung giá» khĂ´ng Ä‘Ăºng Ä‘á»‹nh dáº¡ng HH:mm.", "Dá»¯ liá»‡u khĂ´ng há»£p lá»‡", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Giá theo giờ");
-            double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "Giá qua đêm");
-            double giaTheoNgay = parseMoney(txtGiaTheoNgay.getText().trim(), "Giá theo ngày");
-            double giaCuoiTuan = parseMoney(txtGiaCuoiTuan.getText().trim(), "Giá cuối tuần");
-            double giaLe = parseMoney(txtGiaLe.getText().trim(), "Giá lễ");
-            double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phụ thu");
+            double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "GiĂ¡ theo giá»");
+            double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "GiĂ¡ qua Ä‘Ăªm");
+            double giaTheoNgay = parseMoney(txtGiaTheoNgay.getText().trim(), "GiĂ¡ theo ngĂ y");
+            double giaCuoiTuan = parseMoney(txtGiaCuoiTuan.getText().trim(), "GiĂ¡ cuá»‘i tuáº§n");
+            double giaLe = parseMoney(txtGiaLe.getText().trim(), "GiĂ¡ lá»…");
+            double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phá»¥ thu");
             if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || giaCuoiTuan < 0 || giaLe < 0 || phuThu < 0) {
                 return;
             }
@@ -1086,21 +1644,21 @@ public class BangGiaGUI extends JFrame {
 
             boolean success = editingChiTiet == null ? chiTietBangGiaDAO.insert(chiTiet) : chiTietBangGiaDAO.update(chiTiet);
             if (!success) {
-                JOptionPane.showMessageDialog(this, "Không thể lưu chi tiết bảng giá.\nChi tiết: " + safeValue(chiTietBangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "KhĂ´ng thá»ƒ lÆ°u chi tiáº¿t báº£ng giĂ¡.\nChi tiáº¿t: " + safeValue(chiTietBangGiaDAO.getLastErrorMessage(), "KhĂ´ng xĂ¡c Ä‘á»‹nh."), "Lá»—i", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
             reloadBangGiaData(false, false);
             selectBangGia(bangGia.getMaBangGia());
-            JOptionPane.showMessageDialog(this, editingChiTiet == null ? "Thêm chi tiết bảng giá thành công." : "Cập nhật chi tiết bảng giá thành công.", "Thông báo", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(this, editingChiTiet == null ? "ThĂªm chi tiáº¿t báº£ng giĂ¡ thĂ nh cĂ´ng." : "Cáº­p nháº­t chi tiáº¿t báº£ng giĂ¡ thĂ nh cĂ´ng.", "ThĂ´ng bĂ¡o", JOptionPane.INFORMATION_MESSAGE);
             dispose();
         }
     }
 
     private final class BangGiaViewDialog extends BaseDialog {
         private BangGiaViewDialog(Frame owner, BangGia bangGia) {
-            super(owner, "Xem chi tiết bảng giá", 860, 620);
-            add(buildHeader("XEM CHI TIẾT BẢNG GIÁ", "Dữ liệu bảng giá đang lấy trực tiếp từ database."), BorderLayout.NORTH);
+            super(owner, "Xem chi tiáº¿t báº£ng giĂ¡", 860, 620);
+            add(buildHeader("XEM CHI TIáº¾T Báº¢NG GIĂ", "Dá»¯ liá»‡u báº£ng giĂ¡ Ä‘ang láº¥y trá»±c tiáº¿p tá»« database."), BorderLayout.NORTH);
 
             JPanel body = new JPanel(new BorderLayout(0, 12));
             body.setOpaque(false);
@@ -1108,17 +1666,17 @@ public class BangGiaGUI extends JFrame {
             JPanel form = createFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new Insets(6, 0, 6, 12);
-            addFormRow(form, gbc, 0, "Mã bảng giá", new JLabel(formatBangGiaCode(bangGia.getMaBangGia())));
-            addFormRow(form, gbc, 1, "Tên bảng giá", new JLabel(safeValue(bangGia.getTenBangGia(), "-")));
-            addFormRow(form, gbc, 2, "Loại phòng", new JLabel(safeValue(bangGia.getTenLoaiPhong(), "-")));
-            addFormRow(form, gbc, 3, "Ngày bắt đầu", new JLabel(formatDate(bangGia.getTuNgay())));
-            addFormRow(form, gbc, 4, "Ngày kết thúc", new JLabel(formatDate(bangGia.getDenNgay())));
-            addFormRow(form, gbc, 5, "Loại ngày", new JLabel(safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "-")));
-            addFormRow(form, gbc, 6, "Trạng thái", new JLabel(safeValue(bangGia.getTrangThai(), "-")));
+            addFormRow(form, gbc, 0, "MĂ£ báº£ng giĂ¡", new JLabel(formatBangGiaCode(bangGia.getMaBangGia())));
+            addFormRow(form, gbc, 1, "TĂªn báº£ng giĂ¡", new JLabel(safeValue(bangGia.getTenBangGia(), "-")));
+            addFormRow(form, gbc, 2, "Loáº¡i phĂ²ng", new JLabel(safeValue(bangGia.getTenLoaiPhong(), "-")));
+            addFormRow(form, gbc, 3, "NgĂ y báº¯t Ä‘áº§u", new JLabel(formatDate(bangGia.getTuNgay())));
+            addFormRow(form, gbc, 4, "NgĂ y káº¿t thĂºc", new JLabel(formatDate(bangGia.getDenNgay())));
+            addFormRow(form, gbc, 5, "Loáº¡i ngĂ y", new JLabel(safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "-")));
+            addFormRow(form, gbc, 6, "Tráº¡ng thĂ¡i", new JLabel(safeValue(bangGia.getTrangThai(), "-")));
             headerCard.add(form, BorderLayout.CENTER);
 
             DefaultTableModel model = new DefaultTableModel(new String[]{
-                    "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+                    "MĂ£ CT", "Loáº¡i ngĂ y", "Khung giá»", "GiĂ¡ giá»", "GiĂ¡ qua Ä‘Ăªm", "GiĂ¡ ngĂ y", "GiĂ¡ cuá»‘i tuáº§n", "GiĂ¡ lá»…", "Phá»¥ thu"
             }, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
@@ -1149,7 +1707,7 @@ public class BangGiaGUI extends JFrame {
             body.add(headerCard, BorderLayout.NORTH);
             body.add(detailCard, BorderLayout.CENTER);
             add(body, BorderLayout.CENTER);
-            add(buildButtons(createPrimaryButton("Đóng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
+            add(buildButtons(createPrimaryButton("ÄĂ³ng", new Color(59, 130, 246), Color.WHITE, e -> dispose())), BorderLayout.SOUTH);
         }
     }
 

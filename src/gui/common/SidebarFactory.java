@@ -118,7 +118,11 @@ public final class SidebarFactory {
                 ScreenKey.NHAN_VIEN, ScreenKey.TAI_KHOAN);
         addGroup(menuPanel, "Báo cáo thống kê", currentScreen, username, role,
                 "/images/bao_cao_thong_ke.png",
-                ScreenKey.BAO_CAO);
+                ScreenKey.BAO_CAO_DOANH_THU,
+                ScreenKey.BAO_CAO_DAT_PHONG,
+                ScreenKey.BAO_CAO_PHONG,
+                ScreenKey.BAO_CAO_DICH_VU,
+                ScreenKey.BAO_CAO_KHACH_HANG);
 
         JScrollPane menuScrollPane = new JScrollPane(menuPanel);
         menuScrollPane.setBorder(null);

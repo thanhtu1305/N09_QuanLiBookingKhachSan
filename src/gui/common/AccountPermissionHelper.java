@@ -31,6 +31,11 @@ public final class AccountPermissionHelper {
         PERMISSION_COLUMNS.put(ScreenKey.TAI_KHOAN, "permTaiKhoan");
         PERMISSION_COLUMNS.put(ScreenKey.NHAN_VIEN, "permNhanVien");
         PERMISSION_COLUMNS.put(ScreenKey.BAO_CAO, "permBaoCao");
+        PERMISSION_COLUMNS.put(ScreenKey.BAO_CAO_DOANH_THU, "permBaoCao");
+        PERMISSION_COLUMNS.put(ScreenKey.BAO_CAO_DAT_PHONG, "permBaoCao");
+        PERMISSION_COLUMNS.put(ScreenKey.BAO_CAO_PHONG, "permBaoCao");
+        PERMISSION_COLUMNS.put(ScreenKey.BAO_CAO_DICH_VU, "permBaoCao");
+        PERMISSION_COLUMNS.put(ScreenKey.BAO_CAO_KHACH_HANG, "permBaoCao");
     }
 
     private AccountPermissionHelper() {

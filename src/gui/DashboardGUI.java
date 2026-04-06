@@ -1,5 +1,9 @@
 package gui;
 
+import dao.DashboardDAO;
+import entity.DashboardChartPoint;
+import entity.DashboardSummary;
+import entity.DashboardTaskRow;
 import gui.common.AppBranding;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -18,18 +22,26 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
-import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.Component;
+import java.awt.RenderingHints;
+import java.text.DecimalFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 public class DashboardGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -38,38 +50,67 @@ public class DashboardGUI extends JFrame {
     private static final Color TEXT_PRIMARY = new Color(31, 41, 55);
     private static final Color TEXT_MUTED = new Color(107, 114, 128);
     private static final Color BORDER_SOFT = new Color(229, 231, 235);
-    private static final String WORKING_DATE = "16/03/2026";
+    private static final Color BRAND_BLUE = new Color(37, 99, 235);
+    private static final Color BRAND_GREEN = new Color(22, 163, 74);
+    private static final Color BRAND_AMBER = new Color(245, 158, 11);
+    private static final Color BRAND_RED = new Color(220, 38, 38);
+    private static final Color BRAND_INDIGO = new Color(99, 102, 241);
 
     private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final DecimalFormat MONEY_FORMAT = new DecimalFormat("#,##0");
+    private static final DateTimeFormatter DATE_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter DATETIME_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     private final String username;
     private final String role;
+    private final DashboardDAO dashboardDAO;
+
     private JPanel rootPanel;
+    private JLabel lblNgayLamViecValue;
+    private JLabel lblLanCapNhatValue;
+
+    private MetricCard cardPhongHoatDong;
+    private MetricCard cardPhongDangO;
+    private MetricCard cardPhongDaDat;
+    private MetricCard cardPhongBaoTri;
+    private MetricCard cardBookingHomNay;
+    private MetricCard cardChoCheckin;
+    private MetricCard cardCheckoutHomNay;
+    private MetricCard cardChoThanhToan;
+    private MetricCard cardDoanhThuHomNay;
+    private MetricCard cardDoanhThuThang;
+
+    private DashboardBarChartPanel revenueChartPanel;
+    private DashboardBarChartPanel bookingChartPanel;
 
     private JTable tblCongViec;
     private DefaultTableModel taskTableModel;
+    private List<DashboardTaskRow> currentTaskRows = new ArrayList<DashboardTaskRow>();
     private JLabel lblChiTietMa;
+    private JLabel lblChiTietLoai;
     private JLabel lblChiTietDoiTuong;
     private JLabel lblChiTietThoiGian;
     private JLabel lblChiTietTrangThai;
     private JLabel lblChiTietHuongXuLy;
 
     public DashboardGUI() {
-        this("guest", "Lễ tân");
+        this("guest", "Le tan");
     }
 
     public DashboardGUI(String username, String role) {
         this.username = safeValue(username, "guest");
-        this.role = safeValue(role, "Lễ tân");
+        this.role = safeValue(role, "Le tan");
+        this.dashboardDAO = new DashboardDAO();
 
-        setTitle("Dashboard - Hotel PMS");
+        setTitle("Dashboard - " + AppBranding.APP_DISPLAY_NAME);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         initUI();
+        loadDashboardData(false);
         registerShortcuts();
     }
 
@@ -111,15 +152,15 @@ public class DashboardGUI extends JFrame {
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
 
-        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("DASHBOARD TỔNG QUAN"));
+        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("DASHBOARD TONG QUAN"));
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Theo dõi nhanh tình trạng vận hành, đặt phòng, check-in/check-out, thanh toán và trạng thái phòng.");
+        JLabel lblSub = new JLabel("Theo doi van hanh khach san tu du lieu thuc: phong, booking, check-in/out va thanh toan.");
         lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSub.setForeground(TEXT_MUTED);
 
-        JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
+        JLabel lblMeta = new JLabel("Nguoi dung: " + username + " | Vai tro: " + role);
         lblMeta.setFont(BODY_FONT);
         lblMeta.setForeground(TEXT_MUTED);
 
@@ -130,34 +171,39 @@ public class DashboardGUI extends JFrame {
         left.add(lblMeta);
 
         card.add(left, BorderLayout.WEST);
-        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "màn hình Dashboard"), BorderLayout.EAST);
+        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "man hinh Dashboard"), BorderLayout.EAST);
         return card;
     }
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Đặt phòng", new Color(22, 163, 74), Color.WHITE, e ->
+        card.add(createPrimaryButton("Dat phong", BRAND_GREEN, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.DAT_PHONG, username, role)));
-        card.add(createPrimaryButton("Check-in", new Color(37, 99, 235), Color.WHITE, e ->
+        card.add(createPrimaryButton("Check-in", BRAND_BLUE, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role)));
-        card.add(createPrimaryButton("Check-out", new Color(245, 158, 11), TEXT_PRIMARY, e ->
+        card.add(createPrimaryButton("Check-out", BRAND_AMBER, TEXT_PRIMARY, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role)));
-        card.add(createPrimaryButton("Thanh toán", new Color(220, 38, 38), Color.WHITE, e ->
+        card.add(createPrimaryButton("Thanh toan", BRAND_RED, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role)));
-        card.add(createPrimaryButton("Tìm nhanh", new Color(15, 118, 110), Color.WHITE, e ->
-                showMessage("Mở tìm kiếm nhanh.")));
+        card.add(createPrimaryButton("Lam moi", new Color(15, 118, 110), Color.WHITE, e ->
+                loadDashboardData(true)));
         return card;
     }
 
     private JPanel buildInfoRow() {
-        JPanel card = createCardPanel(new GridLayout(1, 3, 12, 0));
-        card.add(createInfoCell("Ngày làm việc", WORKING_DATE));
-        card.add(createInfoCell("Người dùng", username));
-        card.add(createInfoCell("Vai trò", role));
+        JPanel card = createInfoCardPanel(new GridLayout(1, 4, 12, 0));
+
+        lblNgayLamViecValue = new JLabel();
+        lblLanCapNhatValue = new JLabel();
+
+        card.add(createInfoCell("Ngay lam viec", lblNgayLamViecValue));
+        card.add(createInfoCell("Lan cap nhat", lblLanCapNhatValue));
+        card.add(createInfoCell("Nguoi dung", createStaticValueLabel(username)));
+        card.add(createInfoCell("Vai tro", createStaticValueLabel(role)));
         return card;
     }
 
-    private JPanel createInfoCell(String label, String value) {
+    private JPanel createInfoCell(String label, JLabel valueLabel) {
         JPanel cell = new JPanel();
         cell.setOpaque(false);
         cell.setLayout(new BoxLayout(cell, BoxLayout.Y_AXIS));
@@ -166,14 +212,20 @@ public class DashboardGUI extends JFrame {
         lblLabel.setFont(LABEL_FONT);
         lblLabel.setForeground(TEXT_MUTED);
 
-        JLabel lblValue = new JLabel(value);
-        lblValue.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        lblValue.setForeground(TEXT_PRIMARY);
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        valueLabel.setForeground(TEXT_PRIMARY);
 
         cell.add(lblLabel);
         cell.add(Box.createVerticalStrut(4));
-        cell.add(lblValue);
+        cell.add(valueLabel);
         return cell;
+    }
+
+    private JLabel createStaticValueLabel(String value) {
+        JLabel label = new JLabel(value);
+        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setForeground(TEXT_PRIMARY);
+        return label;
     }
 
     private JScrollPane buildCenterContent() {
@@ -185,15 +237,18 @@ public class DashboardGUI extends JFrame {
         kpiSection.setAlignmentX(Component.LEFT_ALIGNMENT);
         kpiSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, kpiSection.getPreferredSize().height));
 
-        // Wrap JSplitPane trong mot JPanel de can trai dung
-        JSplitPane splitPane = buildMainSplitPanels();
-        JPanel splitWrapper = new JPanel(new BorderLayout());
-        splitWrapper.setOpaque(false);
-        splitWrapper.setAlignmentX(Component.LEFT_ALIGNMENT);
-        splitWrapper.add(splitPane, BorderLayout.CENTER);
+        JSplitPane chartSplitPane = buildChartsSplitPane();
+        chartSplitPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        chartSplitPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, 360));
+
+        JPanel taskSection = buildTaskSection();
+        taskSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+
         content.add(kpiSection);
         content.add(Box.createVerticalStrut(12));
-        content.add(splitWrapper);
+        content.add(chartSplitPane);
+        content.add(Box.createVerticalStrut(12));
+        content.add(taskSection);
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(null);
@@ -209,75 +264,96 @@ public class DashboardGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Chỉ số vận hành nhanh");
+        JLabel lblTitle = new JLabel("Chi so van hanh nhanh");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Tổng hợp nhanh theo ca làm việc hiện tại.");
+        JLabel lblSub = new JLabel("Tong hop KPI thuc tu database QLKS theo ngay lam viec hien tai.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
         titleRow.add(lblTitle, BorderLayout.WEST);
         titleRow.add(lblSub, BorderLayout.EAST);
 
-        JPanel grid = new JPanel(new GridLayout(3, 3, 10, 10));
+        JPanel grid = new JPanel(new GridLayout(2, 5, 10, 10));
         grid.setOpaque(false);
 
-        grid.add(createKpiCard("Phòng trống", "12", "Sẵn sàng bán", new Color(220, 252, 231)));
-        grid.add(createKpiCard("Đang ở", "18", "Khách đang lưu trú", new Color(219, 234, 254)));
-        grid.add(createKpiCard("Đã đặt", "05", "Booking đã xác nhận", new Color(254, 249, 195)));
-        grid.add(createKpiCard("Dọn dẹp", "04", "Phòng chờ vệ sinh", new Color(255, 237, 213)));
-        grid.add(createKpiCard("Booking mới", "07", "Trong hôm nay", new Color(236, 253, 245)));
-        grid.add(createKpiCard("Chờ check-in", "05", "Dự kiến nhận phòng", new Color(219, 234, 254)));
-        grid.add(createKpiCard("Chờ check-out", "06", "Dự kiến trả phòng", new Color(254, 243, 199)));
-        grid.add(createKpiCard("Chờ thanh toán", "03", "Hóa đơn chưa tất toán", new Color(254, 226, 226)));
-        grid.add(createKpiCard("Doanh thu tạm tính ngày", "12.450.000", "VNĐ", new Color(238, 242, 255)));
+        cardPhongHoatDong = createMetricCard("Phong hoat dong", new Color(219, 234, 254));
+        cardPhongDangO = createMetricCard("Phong dang o", new Color(220, 252, 231));
+        cardPhongDaDat = createMetricCard("Phong da dat", new Color(254, 249, 195));
+        cardPhongBaoTri = createMetricCard("Phong bao tri", new Color(254, 226, 226));
+        cardBookingHomNay = createMetricCard("Booking hom nay", new Color(238, 242, 255));
+        cardChoCheckin = createMetricCard("Cho check-in", new Color(224, 242, 254));
+        cardCheckoutHomNay = createMetricCard("Checkout hom nay", new Color(255, 237, 213));
+        cardChoThanhToan = createMetricCard("Hoa don cho TT", new Color(254, 226, 226));
+        cardDoanhThuHomNay = createMetricCard("Doanh thu hom nay", new Color(236, 253, 245));
+        cardDoanhThuThang = createMetricCard("Doanh thu thang", new Color(224, 231, 255));
+
+        grid.add(cardPhongHoatDong.panel);
+        grid.add(cardPhongDangO.panel);
+        grid.add(cardPhongDaDat.panel);
+        grid.add(cardPhongBaoTri.panel);
+        grid.add(cardBookingHomNay.panel);
+        grid.add(cardChoCheckin.panel);
+        grid.add(cardCheckoutHomNay.panel);
+        grid.add(cardChoThanhToan.panel);
+        grid.add(cardDoanhThuHomNay.panel);
+        grid.add(cardDoanhThuThang.panel);
 
         card.add(titleRow, BorderLayout.NORTH);
         card.add(grid, BorderLayout.CENTER);
         return card;
     }
 
-    private JPanel createKpiCard(String label, String value, String note, Color badgeBg) {
-        JPanel card = new JPanel(new BorderLayout(0, 8));
-        card.setBackground(PANEL_SOFT);
-        card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(10, 5, 10, 12)
-        ));
+    private JSplitPane buildChartsSplitPane() {
+        revenueChartPanel = new DashboardBarChartPanel(true, BRAND_BLUE, "Doanh thu 7 ngay gan nhat");
+        bookingChartPanel = new DashboardBarChartPanel(false, BRAND_INDIGO, "Booking 7 ngay gan nhat");
 
-        JLabel lblLabel = new JLabel(label);
-        lblLabel.setFont(LABEL_FONT);
-        lblLabel.setForeground(TEXT_MUTED);
+        JPanel revenueCard = createChartCard(
+                "Doanh thu 7 ngay gan nhat",
+                "Tong tien thu duoc tu bang ThanhToan theo ngay.",
+                revenueChartPanel
+        );
+        JPanel bookingCard = createChartCard(
+                "Booking 7 ngay gan nhat",
+                "So booking tao moi theo ngay tu bang DatPhong.",
+                bookingChartPanel
+        );
 
-        JLabel lblValue = new JLabel(value);
-        lblValue.setFont(new Font("Segoe UI", Font.BOLD, 22));
-        lblValue.setForeground(TEXT_PRIMARY);
-
-        JLabel lblNote = new JLabel(note);
-        lblNote.setFont(BODY_FONT);
-        lblNote.setForeground(TEXT_PRIMARY);
-        lblNote.setOpaque(true);
-        lblNote.setBackground(badgeBg);
-        lblNote.setBorder(new EmptyBorder(4, 8, 4, 8));
-
-        card.add(lblLabel, BorderLayout.NORTH);
-        card.add(lblValue, BorderLayout.CENTER);
-        card.add(lblNote, BorderLayout.SOUTH);
-        return card;
-    }
-
-    private JSplitPane buildMainSplitPanels() {
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildTaskPanel(), buildRoomStatusPanel());
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, revenueCard, bookingCard);
         splitPane.setOpaque(false);
         splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.58);
+        splitPane.setResizeWeight(0.5);
         splitPane.setDividerSize(8);
         splitPane.setContinuousLayout(true);
         return splitPane;
     }
 
-    private JPanel buildTaskPanel() {
+    private JPanel createChartCard(String title, String subtitle, DashboardBarChartPanel chart) {
+        JPanel card = createCardPanel(new BorderLayout(0, 10));
+
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+
+        JLabel lblTitle = new JLabel(title);
+        lblTitle.setFont(SECTION_FONT);
+        lblTitle.setForeground(TEXT_PRIMARY);
+
+        JLabel lblSub = new JLabel(subtitle);
+        lblSub.setFont(BODY_FONT);
+        lblSub.setForeground(TEXT_MUTED);
+
+        titleRow.add(lblTitle, BorderLayout.WEST);
+        titleRow.add(lblSub, BorderLayout.EAST);
+
+        chart.setPreferredSize(new Dimension(0, 280));
+
+        card.add(titleRow, BorderLayout.NORTH);
+        card.add(chart, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel buildTaskSection() {
         JPanel wrapper = new JPanel(new BorderLayout(0, 12));
         wrapper.setOpaque(false);
 
@@ -286,11 +362,11 @@ public class DashboardGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Công việc cần xử lý");
+        JLabel lblTitle = new JLabel("Cong viec can xu ly");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Danh sách nghiệp vụ cần theo dõi trong ca.");
+        JLabel lblSub = new JLabel("Booking cho check-in, khach sap checkout va hoa don cho thanh toan.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -298,7 +374,7 @@ public class DashboardGUI extends JFrame {
         titleRow.add(lblSub, BorderLayout.EAST);
 
         taskTableModel = new DefaultTableModel(
-                new Object[]{"Mã", "Đối tượng", "Thời gian", "Trạng thái"},
+                new Object[]{"Ma", "Doi tuong", "Thoi gian", "Trang thai"},
                 0
         ) {
             @Override
@@ -306,8 +382,6 @@ public class DashboardGUI extends JFrame {
                 return false;
             }
         };
-
-        seedTaskTable();
 
         tblCongViec = new JTable(taskTableModel);
         tblCongViec.setFont(BODY_FONT);
@@ -332,7 +406,7 @@ public class DashboardGUI extends JFrame {
         tableCard.add(scrollPane, BorderLayout.CENTER);
 
         JPanel detailCard = createCardPanel(new BorderLayout(0, 10));
-        JLabel lblDetailTitle = new JLabel("Chi tiết xử lý");
+        JLabel lblDetailTitle = new JLabel("Chi tiet xu ly");
         lblDetailTitle.setFont(SECTION_FONT);
         lblDetailTitle.setForeground(TEXT_PRIMARY);
 
@@ -341,203 +415,159 @@ public class DashboardGUI extends JFrame {
         detailBody.setLayout(new BoxLayout(detailBody, BoxLayout.Y_AXIS));
 
         lblChiTietMa = createValueLabel();
+        lblChiTietLoai = createValueLabel();
         lblChiTietDoiTuong = createValueLabel();
         lblChiTietThoiGian = createValueLabel();
         lblChiTietTrangThai = createValueLabel();
         lblChiTietHuongXuLy = createValueLabel();
 
-        addDetailRow(detailBody, "Mã nghiệp vụ", lblChiTietMa);
-        addDetailRow(detailBody, "Đối tượng", lblChiTietDoiTuong);
-        addDetailRow(detailBody, "Thời gian", lblChiTietThoiGian);
-        addDetailRow(detailBody, "Trạng thái", lblChiTietTrangThai);
-        addDetailRow(detailBody, "Hướng xử lý", lblChiTietHuongXuLy);
+        addDetailRow(detailBody, "Ma nghiep vu", lblChiTietMa);
+        addDetailRow(detailBody, "Loai cong viec", lblChiTietLoai);
+        addDetailRow(detailBody, "Doi tuong", lblChiTietDoiTuong);
+        addDetailRow(detailBody, "Thoi gian", lblChiTietThoiGian);
+        addDetailRow(detailBody, "Trang thai", lblChiTietTrangThai);
+        addDetailRow(detailBody, "Huong xu ly", lblChiTietHuongXuLy);
 
         detailCard.add(lblDetailTitle, BorderLayout.NORTH);
         detailCard.add(detailBody, BorderLayout.CENTER);
 
         wrapper.add(tableCard, BorderLayout.CENTER);
         wrapper.add(detailCard, BorderLayout.SOUTH);
+        return wrapper;
+    }
 
-        if (taskTableModel.getRowCount() > 0) {
+    private void loadDashboardData(boolean showMessage) {
+        DashboardSummary summary = dashboardDAO.getDashboardSummary();
+        String errorMessage = safeValue(dashboardDAO.getLastErrorMessage(), "");
+
+        List<DashboardChartPoint> revenuePoints = dashboardDAO.getRevenueLast7Days();
+        errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
+
+        List<DashboardChartPoint> bookingPoints = dashboardDAO.getBookingLast7Days();
+        errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
+
+        List<DashboardTaskRow> taskRows = dashboardDAO.getTodayTasks();
+        errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
+
+        loadSummaryCards(summary);
+        loadCharts(revenuePoints, bookingPoints);
+        loadTaskTable(taskRows);
+        updateInfoRow();
+
+        if (showMessage) {
+            if (!errorMessage.isEmpty()) {
+                showMessage("Da tai dashboard voi fallback an toan. Chi tiet: " + errorMessage);
+            } else {
+                showMessage("Da cap nhat dashboard.");
+            }
+        }
+    }
+
+    private void loadSummaryCards(DashboardSummary summary) {
+        cardPhongHoatDong.setValue(formatCount(summary.getActiveRooms()));
+        cardPhongHoatDong.setNote("Phong trong + phong san sang khai thac");
+
+        cardPhongDangO.setValue(formatCount(summary.getOccupiedRooms()));
+        cardPhongDangO.setNote("Trang thai phong dang o");
+
+        cardPhongDaDat.setValue(formatCount(summary.getBookedRooms()));
+        cardPhongDaDat.setNote("Phong khoa cho booking da xac nhan");
+
+        cardPhongBaoTri.setValue(formatCount(summary.getMaintenanceRooms()));
+        cardPhongBaoTri.setNote("Can ky thuat hoac tam ngung khai thac");
+
+        cardBookingHomNay.setValue(formatCount(summary.getTodayBookings()));
+        cardBookingHomNay.setNote("So booking tao trong ngay");
+
+        cardChoCheckin.setValue(formatCount(summary.getPendingCheckinToday()));
+        cardChoCheckin.setNote("Nhan phong trong hom nay");
+
+        cardCheckoutHomNay.setValue(formatCount(summary.getCheckoutDueTodayCount()));
+        cardCheckoutHomNay.setNote("Luot luu tru den han checkout");
+
+        cardChoThanhToan.setValue(formatCount(summary.getPendingPaymentCount()));
+        cardChoThanhToan.setNote("Hoa don con trang thai cho thanh toan");
+
+        cardDoanhThuHomNay.setValue(formatMoney(summary.getRevenueToday()));
+        cardDoanhThuHomNay.setNote("Tien thu duoc trong ngay");
+
+        cardDoanhThuThang.setValue(formatMoney(summary.getRevenueThisMonth()));
+        cardDoanhThuThang.setNote("Tien thu tu ngay 01 den hien tai");
+    }
+
+    private void loadCharts(List<DashboardChartPoint> revenuePoints, List<DashboardChartPoint> bookingPoints) {
+        revenueChartPanel.setPoints(revenuePoints);
+        bookingChartPanel.setPoints(bookingPoints);
+    }
+
+    private void loadTaskTable(List<DashboardTaskRow> rows) {
+        currentTaskRows = rows == null ? new ArrayList<DashboardTaskRow>() : new ArrayList<DashboardTaskRow>(rows);
+        taskTableModel.setRowCount(0);
+
+        for (DashboardTaskRow row : currentTaskRows) {
+            taskTableModel.addRow(new Object[]{
+                    row.getTaskCode(),
+                    row.getTarget(),
+                    row.getTimeText(),
+                    row.getStatus()
+            });
+        }
+
+        if (!currentTaskRows.isEmpty()) {
             tblCongViec.setRowSelectionInterval(0, 0);
             updateTaskDetail(0);
+        } else {
+            resetTaskDetail();
         }
-
-        return wrapper;
     }
 
-    private JPanel buildRoomStatusPanel() {
-        JPanel wrapper = new JPanel(new BorderLayout(0, 12));
-        wrapper.setOpaque(false);
-
-        JPanel roomCard = createCardPanel(new BorderLayout(0, 10));
-
-        JPanel titleRow = new JPanel(new BorderLayout());
-        titleRow.setOpaque(false);
-
-        JLabel lblTitle = new JLabel("Sơ đồ phòng realtime");
-        lblTitle.setFont(SECTION_FONT);
-        lblTitle.setForeground(TEXT_PRIMARY);
-
-        JLabel lblSub = new JLabel("Trạng thái phòng đang vận hành theo khu vực.");
-        lblSub.setFont(BODY_FONT);
-        lblSub.setForeground(TEXT_MUTED);
-
-        titleRow.add(lblTitle, BorderLayout.WEST);
-        titleRow.add(lblSub, BorderLayout.EAST);
-
-        JPanel floors = new JPanel();
-        floors.setOpaque(false);
-        floors.setLayout(new BoxLayout(floors, BoxLayout.Y_AXIS));
-        floors.add(buildFloorRow("Tầng 1", new String[]{"101:T", "102:O", "103:D", "104:C"}));
-        floors.add(Box.createVerticalStrut(10));
-        floors.add(buildFloorRow("Tầng 2", new String[]{"201:T", "202:D", "203:O", "204:T"}));
-        floors.add(Box.createVerticalStrut(10));
-        floors.add(buildFloorRow("Tầng 5", new String[]{"501:B", "502:O", "503:T", "504:C"}));
-
-        roomCard.add(titleRow, BorderLayout.NORTH);
-        roomCard.add(floors, BorderLayout.CENTER);
-
-        JPanel legendCard = createCardPanel(new BorderLayout(0, 10));
-        JLabel lblLegendTitle = new JLabel("Chú thích trạng thái");
-        lblLegendTitle.setFont(SECTION_FONT);
-        lblLegendTitle.setForeground(TEXT_PRIMARY);
-
-        JPanel legendGrid = new JPanel(new GridLayout(3, 2, 8, 8));
-        legendGrid.setOpaque(false);
-        legendGrid.add(createLegendItem("T", "Trống"));
-        legendGrid.add(createLegendItem("O", "Đang ở"));
-        legendGrid.add(createLegendItem("D", "Đã đặt"));
-        legendGrid.add(createLegendItem("C", "Dọn dẹp"));
-        legendGrid.add(createLegendItem("B", "Bảo trì"));
-
-        legendCard.add(lblLegendTitle, BorderLayout.NORTH);
-        legendCard.add(legendGrid, BorderLayout.CENTER);
-
-        wrapper.add(roomCard, BorderLayout.CENTER);
-        wrapper.add(legendCard, BorderLayout.SOUTH);
-        return wrapper;
-    }
-
-    private JPanel buildFloorRow(String floorName, String[] rooms) {
-        JPanel row = new JPanel(new BorderLayout(10, 0));
-        row.setOpaque(false);
-
-        JLabel floorLabel = new JLabel(floorName);
-        floorLabel.setPreferredSize(new Dimension(68, 46));
-        floorLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        floorLabel.setForeground(TEXT_PRIMARY);
-
-        JPanel roomGrid = new JPanel(new GridLayout(1, rooms.length, 8, 0));
-        roomGrid.setOpaque(false);
-
-        for (int i = 0; i < rooms.length; i++) {
-            String[] pair = rooms[i].split(":");
-            roomGrid.add(createRoomBadge(pair[0], pair[1]));
-        }
-
-        row.add(floorLabel, BorderLayout.WEST);
-        row.add(roomGrid, BorderLayout.CENTER);
-        return row;
-    }
-
-    private JPanel createRoomBadge(String roomCode, String status) {
-        JPanel badge = new JPanel(new BorderLayout(0, 4));
-        badge.setPreferredSize(new Dimension(76, 54));
-        badge.setBackground(resolveStatusColor(status));
-        badge.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                new EmptyBorder(6, 6, 6, 6)
-        ));
-
-        JLabel lblRoom = new JLabel(roomCode, SwingConstants.CENTER);
-        lblRoom.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        lblRoom.setForeground(TEXT_PRIMARY);
-
-        JLabel lblStatus = new JLabel(status, SwingConstants.CENTER);
-        lblStatus.setFont(BODY_FONT);
-        lblStatus.setForeground(TEXT_MUTED);
-
-        badge.add(lblRoom, BorderLayout.CENTER);
-        badge.add(lblStatus, BorderLayout.SOUTH);
-
-        MouseAdapter mouseAdapter = new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                showMessage("Phòng " + roomCode + " - Trạng thái: " + resolveStatusText(status));
-            }
-        };
-        badge.addMouseListener(mouseAdapter);
-        lblRoom.addMouseListener(mouseAdapter);
-        lblStatus.addMouseListener(mouseAdapter);
-        return badge;
-    }
-
-    private JPanel createLegendItem(String code, String meaning) {
-        JPanel item = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        item.setOpaque(false);
-
-        JPanel swatch = new JPanel(new BorderLayout());
-        swatch.setPreferredSize(new Dimension(28, 24));
-        swatch.setBackground(resolveStatusColor(code));
-        swatch.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-
-        JLabel lblCode = new JLabel(code, SwingConstants.CENTER);
-        lblCode.setFont(new Font("Segoe UI", Font.BOLD, 12));
-        lblCode.setForeground(TEXT_PRIMARY);
-        swatch.add(lblCode, BorderLayout.CENTER);
-
-        JLabel lblMeaning = new JLabel(meaning);
-        lblMeaning.setFont(BODY_FONT);
-        lblMeaning.setForeground(TEXT_PRIMARY);
-
-        item.add(swatch);
-        item.add(lblMeaning);
-        return item;
-    }
-
-    private void seedTaskTable() {
-        taskTableModel.setRowCount(0);
+    private void updateInfoRow() {
+        lblNgayLamViecValue.setText(LocalDate.now().format(DATE_LABEL_FORMAT));
+        lblLanCapNhatValue.setText(LocalDateTime.now().format(DATETIME_LABEL_FORMAT));
     }
 
     private void updateTaskDetail(int row) {
-        if (row < 0 || row >= taskTableModel.getRowCount()) {
-            lblChiTietMa.setText("-");
-            lblChiTietDoiTuong.setText("-");
-            lblChiTietThoiGian.setText("-");
-            lblChiTietTrangThai.setText("-");
-            lblChiTietHuongXuLy.setText("-");
+        if (row < 0 || row >= currentTaskRows.size()) {
+            resetTaskDetail();
             return;
         }
 
-        String ma = valueAt(row, 0);
-        String doiTuong = valueAt(row, 1);
-        String thoiGian = valueAt(row, 2);
-        String trangThai = valueAt(row, 3);
-
-        lblChiTietMa.setText(ma);
-        lblChiTietDoiTuong.setText(doiTuong);
-        lblChiTietThoiGian.setText(thoiGian);
-        lblChiTietTrangThai.setText(trangThai);
-        lblChiTietHuongXuLy.setText(resolveTaskAction(ma, trangThai));
+        DashboardTaskRow taskRow = currentTaskRows.get(row);
+        lblChiTietMa.setText(safeValue(taskRow.getTaskCode(), "-"));
+        lblChiTietLoai.setText(safeValue(taskRow.getTaskType(), "-"));
+        lblChiTietDoiTuong.setText(safeValue(taskRow.getTarget(), "-"));
+        lblChiTietThoiGian.setText(safeValue(taskRow.getTimeText(), "-"));
+        lblChiTietTrangThai.setText(safeValue(taskRow.getStatus(), "-"));
+        lblChiTietHuongXuLy.setText(safeValue(taskRow.getActionHint(), "-"));
     }
 
-    private String resolveTaskAction(String ma, String trangThai) {
-        if (ma.startsWith("DP")) {
-            return "Mở hồ sơ đặt phòng và xác nhận tiếp nhận.";
-        }
-        if (ma.startsWith("ST")) {
-            return "Kiểm tra tình trạng phòng và chuẩn bị checkout.";
-        }
-        if (ma.startsWith("HD")) {
-            return "Đối chiếu dịch vụ và hoàn tất thanh toán.";
-        }
-        return "Chuyển bộ phận kỹ thuật xử lý.";
+    private void resetTaskDetail() {
+        lblChiTietMa.setText("-");
+        lblChiTietLoai.setText("-");
+        lblChiTietDoiTuong.setText("-");
+        lblChiTietThoiGian.setText("-");
+        lblChiTietTrangThai.setText("-");
+        lblChiTietHuongXuLy.setText("-");
     }
 
-    private String valueAt(int row, int column) {
-        Object value = taskTableModel.getValueAt(row, column);
-        return value == null ? "" : value.toString();
+    private void openSelectedTask() {
+        int row = tblCongViec == null ? -1 : tblCongViec.getSelectedRow();
+        if (row < 0 || row >= currentTaskRows.size()) {
+            showMessage("Vui long chon mot cong viec trong danh sach.");
+            return;
+        }
+
+        DashboardTaskRow taskRow = currentTaskRows.get(row);
+        String taskType = safeValue(taskRow.getTaskType(), "");
+        if ("PAYMENT".equalsIgnoreCase(taskType)) {
+            NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role);
+            return;
+        }
+        if ("CHECKIN".equalsIgnoreCase(taskType) || "CHECKOUT".equalsIgnoreCase(taskType)) {
+            NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role);
+            return;
+        }
+        NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.DAT_PHONG, username, role);
     }
 
     private void addDetailRow(JPanel panel, String label, JLabel value) {
@@ -562,7 +592,37 @@ public class DashboardGUI extends JFrame {
         return label;
     }
 
-    private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
+    private MetricCard createMetricCard(String title, Color badgeBg) {
+        JPanel card = new JPanel(new BorderLayout(0, 8));
+        card.setBackground(PANEL_SOFT);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
+                new EmptyBorder(10, 12, 10, 12)
+        ));
+
+        JLabel lblLabel = new JLabel(title);
+        lblLabel.setFont(LABEL_FONT);
+        lblLabel.setForeground(TEXT_MUTED);
+
+        JLabel lblValue = new JLabel("0");
+        lblValue.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        lblValue.setForeground(TEXT_PRIMARY);
+
+        JLabel lblNote = new JLabel("-");
+        lblNote.setFont(BODY_FONT);
+        lblNote.setForeground(TEXT_PRIMARY);
+        lblNote.setOpaque(true);
+        lblNote.setBackground(badgeBg);
+        lblNote.setBorder(new EmptyBorder(4, 8, 4, 8));
+
+        card.add(lblLabel, BorderLayout.NORTH);
+        card.add(lblValue, BorderLayout.CENTER);
+        card.add(lblNote, BorderLayout.SOUTH);
+        return new MetricCard(card, lblValue, lblNote);
+    }
+
+    private JButton createPrimaryButton(String text, Color background, Color foreground,
+                                        java.awt.event.ActionListener listener) {
         JButton button = new JButton(text);
         button.setFont(new Font("Segoe UI", Font.BOLD, 13));
         button.setForeground(foreground);
@@ -599,7 +659,7 @@ public class DashboardGUI extends JFrame {
         return panel;
     }
 
-    private JPanel createCardPanel(GridLayout layout) {
+    private JPanel createInfoCardPanel(GridLayout layout) {
         JPanel panel = new JPanel(layout);
         panel.setBackground(CARD_BG);
         panel.setBorder(BorderFactory.createCompoundBorder(
@@ -614,48 +674,13 @@ public class DashboardGUI extends JFrame {
                 CARD_BG,
                 BORDER_SOFT,
                 TEXT_MUTED,
-                "F1 Đặt phòng",
+                "F1 Dat phong",
                 "F2 Check-in",
                 "F3 Check-out",
-                "F4 Thanh toán",
-                "Enter Mở chi tiết"
+                "F4 Thanh toan",
+                "F5 Lam moi",
+                "Enter Mo cong viec"
         );
-    }
-
-    private Color resolveStatusColor(String status) {
-        if ("T".equals(status)) {
-            return new Color(220, 252, 231);
-        }
-        if ("D".equals(status)) {
-            return new Color(254, 249, 195);
-        }
-        if ("O".equals(status)) {
-            return new Color(219, 234, 254);
-        }
-        if ("C".equals(status)) {
-            return new Color(255, 237, 213);
-        }
-        return new Color(254, 226, 226);
-    }
-
-    private String resolveStatusText(String status) {
-        if ("T".equals(status)) {
-            return "Trống";
-        }
-        if ("D".equals(status)) {
-            return "Đã đặt";
-        }
-        if ("O".equals(status)) {
-            return "Đang ở";
-        }
-        if ("C".equals(status)) {
-            return "Dọn dẹp";
-        }
-        return "Bảo trì";
-    }
-
-    private void showMessage(String message) {
-        JOptionPane.showMessageDialog(this, message, "Thông báo", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private void registerShortcuts() {
@@ -667,26 +692,205 @@ public class DashboardGUI extends JFrame {
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role));
         ScreenUIHelper.registerShortcut(this, "F4", "dashboard-f4", () ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role));
-        ScreenUIHelper.registerShortcut(this, "ENTER", "dashboard-enter", () -> {
-            int row = tblCongViec == null ? -1 : tblCongViec.getSelectedRow();
-            if (row < 0) {
-                showMessage("Vui lòng chọn một công việc trong danh sách.");
-                return;
-            }
-            showMessage("Đang mở chi tiết " + valueAt(row, 0) + ".");
-        });
+        ScreenUIHelper.registerShortcut(this, "F5", "dashboard-f5", () ->
+                loadDashboardData(true));
+        ScreenUIHelper.registerShortcut(this, "ENTER", "dashboard-enter", this::openSelectedTask);
+    }
+
+    private String formatCount(int value) {
+        return String.valueOf(value);
+    }
+
+    private String formatMoney(double value) {
+        return MONEY_FORMAT.format(value) + " d";
+    }
+
+    private String mergeErrors(String current, String next) {
+        String left = safeValue(current, "");
+        String right = safeValue(next, "");
+        if (right.isEmpty()) {
+            return left;
+        }
+        if (left.isEmpty()) {
+            return right;
+        }
+        if (left.contains(right)) {
+            return left;
+        }
+        return left + " | " + right;
     }
 
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
-    /**
-     * Trả về panel đã build — dùng bởi NavigationUtil để swap vào AppFrame.
-     */
+    private void showMessage(String message) {
+        JOptionPane.showMessageDialog(this, message, "Dashboard", JOptionPane.INFORMATION_MESSAGE);
+    }
+
     public JPanel buildPanel() {
-        if (rootPanel == null) initUI();
+        if (rootPanel == null) {
+            initUI();
+            loadDashboardData(false);
+        }
         return rootPanel;
     }
 
+    private static final class MetricCard {
+        private final JPanel panel;
+        private final JLabel valueLabel;
+        private final JLabel noteLabel;
+
+        private MetricCard(JPanel panel, JLabel valueLabel, JLabel noteLabel) {
+            this.panel = panel;
+            this.valueLabel = valueLabel;
+            this.noteLabel = noteLabel;
+        }
+
+        private void setValue(String value) {
+            valueLabel.setText(value);
+        }
+
+        private void setNote(String note) {
+            noteLabel.setText(note);
+        }
+    }
+
+    private final class DashboardBarChartPanel extends JPanel {
+        private final boolean moneyMode;
+        private final Color accentColor;
+        private final String emptyMessage;
+        private List<DashboardChartPoint> points = new ArrayList<DashboardChartPoint>();
+
+        private DashboardBarChartPanel(boolean moneyMode, Color accentColor, String emptyMessage) {
+            this.moneyMode = moneyMode;
+            this.accentColor = accentColor;
+            this.emptyMessage = emptyMessage;
+            setOpaque(true);
+            setBackground(PANEL_SOFT);
+            setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
+                    new EmptyBorder(12, 12, 12, 12)
+            ));
+        }
+
+        private void setPoints(List<DashboardChartPoint> points) {
+            this.points = points == null ? new ArrayList<DashboardChartPoint>() : new ArrayList<DashboardChartPoint>(points);
+            repaint();
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g.create();
+            try {
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+                int width = getWidth();
+                int height = getHeight();
+                int left = 52;
+                int right = 20;
+                int top = 18;
+                int bottom = 42;
+                int chartWidth = width - left - right;
+                int chartHeight = height - top - bottom;
+
+                if (chartWidth <= 0 || chartHeight <= 0 || points.isEmpty()) {
+                    drawEmptyState(g2, width, height);
+                    return;
+                }
+
+                double maxValue = 0d;
+                for (DashboardChartPoint point : points) {
+                    maxValue = Math.max(maxValue, point.getValue());
+                }
+                if (maxValue <= 0d) {
+                    drawEmptyState(g2, width, height);
+                    return;
+                }
+
+                g2.setColor(new Color(226, 232, 240));
+                for (int i = 0; i <= 4; i++) {
+                    int y = top + i * chartHeight / 4;
+                    g2.drawLine(left, y, left + chartWidth, y);
+                }
+
+                g2.setColor(TEXT_MUTED);
+                g2.setFont(LABEL_FONT);
+                for (int i = 0; i <= 4; i++) {
+                    double axisValue = maxValue - (maxValue * i / 4d);
+                    int y = top + i * chartHeight / 4;
+                    String text = formatAxisValue(axisValue);
+                    int textWidth = g2.getFontMetrics().stringWidth(text);
+                    g2.drawString(text, left - textWidth - 8, y + 4);
+                }
+
+                int step = Math.max(1, chartWidth / Math.max(1, points.size()));
+                int barWidth = Math.max(22, step / 2);
+
+                for (int i = 0; i < points.size(); i++) {
+                    DashboardChartPoint point = points.get(i);
+                    int centerX = left + step * i + step / 2;
+                    int barHeight = (int) Math.round(point.getValue() * chartHeight / maxValue);
+                    int barX = centerX - barWidth / 2;
+                    int barY = top + chartHeight - barHeight;
+
+                    g2.setColor(new Color(
+                            Math.min(255, accentColor.getRed() + 130),
+                            Math.min(255, accentColor.getGreen() + 120),
+                            Math.min(255, accentColor.getBlue() + 110)
+                    ));
+                    g2.fillRoundRect(barX, barY, barWidth, barHeight, 12, 12);
+                    g2.setColor(accentColor);
+                    g2.setStroke(new BasicStroke(1.2f));
+                    g2.drawRoundRect(barX, barY, barWidth, barHeight, 12, 12);
+
+                    String valueText = moneyMode ? shortMoney(point.getValue()) : String.valueOf((int) Math.round(point.getValue()));
+                    g2.setColor(TEXT_PRIMARY);
+                    g2.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                    int valueWidth = g2.getFontMetrics().stringWidth(valueText);
+                    g2.drawString(valueText, centerX - valueWidth / 2, Math.max(top + 12, barY - 6));
+
+                    g2.setFont(LABEL_FONT);
+                    String label = point.getLabel();
+                    int labelWidth = g2.getFontMetrics().stringWidth(label);
+                    g2.drawString(label, centerX - labelWidth / 2, top + chartHeight + 16);
+                }
+            } finally {
+                g2.dispose();
+            }
+        }
+
+        private String formatAxisValue(double value) {
+            if (moneyMode) {
+                if (value >= 1000000d) {
+                    return String.format(Locale.US, "%.1ftr", value / 1000000d);
+                }
+                if (value >= 1000d) {
+                    return String.format(Locale.US, "%.0fk", value / 1000d);
+                }
+                return String.format(Locale.US, "%.0f", value);
+            }
+            return String.valueOf((int) Math.round(value));
+        }
+
+        private String shortMoney(double value) {
+            if (value >= 1000000d) {
+                return String.format(Locale.US, "%.1ftr", value / 1000000d);
+            }
+            if (value >= 1000d) {
+                return String.format(Locale.US, "%.0fk", value / 1000d);
+            }
+            return String.format(Locale.US, "%.0f", value);
+        }
+
+        private void drawEmptyState(Graphics2D g2, int width, int height) {
+            g2.setColor(TEXT_MUTED);
+            g2.setFont(BODY_FONT);
+            String message = "Chua co du lieu cho " + emptyMessage.toLowerCase(Locale.ROOT) + ".";
+            int textWidth = g2.getFontMetrics().stringWidth(message);
+            g2.drawString(message, (width - textWidth) / 2, height / 2);
+        }
+    }
 }

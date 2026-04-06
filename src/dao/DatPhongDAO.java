@@ -2,6 +2,7 @@ package dao;
 
 import db.ConnectDB;
 import entity.ChiTietDatPhong;
+import entity.DatPhongConflictInfo;
 import entity.DatPhong;
 
 import java.sql.Connection;
@@ -293,6 +294,76 @@ public class DatPhongDAO {
         } finally {
             resetAutoCommit(con);
         }
+    }
+
+    public DatPhongConflictInfo findRoomConflict(int maPhong, LocalDate ngayNhanPhong, LocalDate ngayTraPhong, Integer excludeMaDatPhong) {
+        clearLastError();
+        Connection con = getReadyConnection();
+        if (con == null) {
+            return null;
+        }
+        if (maPhong <= 0 || ngayNhanPhong == null || ngayTraPhong == null || !ngayTraPhong.isAfter(ngayNhanPhong)) {
+            return null;
+        }
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT TOP 1 dp.maDatPhong, ctdp.maChiTietDatPhong, ")
+                .append("ISNULL(lt.maLuuTru, 0) AS maLuuTru, ")
+                .append("ISNULL(kh.hoTen, N'Khách chưa xác định') AS tenKhachHang, ")
+                .append("ISNULL(p.soPhong, CAST(ctdp.maPhong AS NVARCHAR(20))) AS soPhong, ")
+                .append("CAST(dp.ngayNhanPhong AS DATE) AS ngayNhanPhong, ")
+                .append("CAST(dp.ngayTraPhong AS DATE) AS ngayTraPhong, ")
+                .append("CASE ")
+                .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang lưu trú' ")
+                .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang lưu trú' ")
+                .append(" ELSE dp.trangThai ")
+                .append("END AS trangThai ")
+                .append("FROM ChiTietDatPhong ctdp ")
+                .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
+                .append("LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang ")
+                .append("LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong ")
+                .append("LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong ")
+                .append("WHERE ctdp.maPhong = ? ")
+                .append("AND dp.ngayNhanPhong < ? ")
+                .append("AND dp.ngayTraPhong > ? ");
+        if (excludeMaDatPhong != null && excludeMaDatPhong.intValue() > 0) {
+            sql.append("AND dp.maDatPhong <> ? ");
+        }
+        sql.append("AND (")
+                .append(" dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang lưu trú', N'Đã check-in') ")
+                .append(" OR (lt.maLuuTru IS NOT NULL AND (lt.checkOut IS NULL OR CAST(lt.checkOut AS DATE) > ?))")
+                .append(") ")
+                .append("ORDER BY CASE WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN 0 ELSE 1 END, dp.ngayNhanPhong ASC, dp.maDatPhong DESC");
+
+        try (PreparedStatement stmt = con.prepareStatement(sql.toString())) {
+            int index = 1;
+            stmt.setInt(index++, maPhong);
+            stmt.setDate(index++, Date.valueOf(ngayTraPhong));
+            stmt.setDate(index++, Date.valueOf(ngayNhanPhong));
+            if (excludeMaDatPhong != null && excludeMaDatPhong.intValue() > 0) {
+                stmt.setInt(index++, excludeMaDatPhong.intValue());
+            }
+            stmt.setDate(index, Date.valueOf(ngayNhanPhong));
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    DatPhongConflictInfo info = new DatPhongConflictInfo();
+                    info.setMaDatPhong(rs.getInt("maDatPhong"));
+                    info.setMaChiTietDatPhong(rs.getInt("maChiTietDatPhong"));
+                    info.setMaLuuTru(rs.getInt("maLuuTru"));
+                    info.setTenKhachHang(safeTrim(rs.getString("tenKhachHang")));
+                    info.setSoPhong(safeTrim(rs.getString("soPhong")));
+                    info.setNgayNhanPhong(toLocalDate(rs.getDate("ngayNhanPhong")));
+                    info.setNgayTraPhong(toLocalDate(rs.getDate("ngayTraPhong")));
+                    info.setTrangThai(safeTrim(rs.getString("trangThai")));
+                    return info;
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
     }
 
     private List<ChiTietDatPhong> getChiTietByMaDatPhongInternal(Connection con, DatPhong header) {

@@ -449,7 +449,6 @@ public class CheckInOutGUI extends JFrame {
         legend.add(createLegendItem("Hoạt động", resolveStatusColor("T")));
         legend.add(createLegendItem("Đã đặt", resolveStatusColor("D")));
         legend.add(createLegendItem("Đang ở", resolveStatusColor("O")));
-        legend.add(createLegendItem("Dọn dẹp", resolveStatusColor("C")));
         legend.add(createLegendItem("Bảo trì", resolveStatusColor("B")));
         return legend;
     }

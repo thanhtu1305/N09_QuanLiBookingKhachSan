@@ -391,7 +391,7 @@ public class CheckInOutDAO {
         }
 
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở', N'Dọn dẹp')")) {
+                "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở')")) {
             ps.executeUpdate();
         }
         try (PreparedStatement ps = con.prepareStatement(
@@ -401,7 +401,7 @@ public class CheckInOutDAO {
             ps.executeUpdate();
         }
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'Dọn dẹp' FROM Phong p WHERE EXISTS (" +
+                "UPDATE p SET p.trangThai = N'Hoạt động' FROM Phong p WHERE EXISTS (" +
                         "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
                         "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đã check-out')")) {
             ps.executeUpdate();

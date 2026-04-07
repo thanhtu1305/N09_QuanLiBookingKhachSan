@@ -51,7 +51,7 @@ public final class ScreenUIHelper {
     private ScreenUIHelper() {}
 
     /**
-     * Nút [_] thu nhỏ và [X] đóng — hoạt động trên AppFrame singleton.
+     * Nút [_] thu nhỏ và [X] đóng, hoạt động trên AppFrame singleton.
      */
     public static JPanel createWindowControlPanel(Object ignored, Color textPrimary, Color borderSoft, String screenName) {
         AppFrame frame = AppFrame.get();
@@ -82,7 +82,7 @@ public final class ScreenUIHelper {
 
     /**
      * Đăng ký shortcut vào AppFrame (JFrame duy nhất).
-     * Tham số frame bỏ qua — shortcut luôn bind vào AppFrame.get().
+     * Tham số frame bỏ qua, shortcut luôn bind vào AppFrame.get().
      */
     public static void registerShortcut(Object ignored, String keyStroke, String actionKey, Runnable runnable) {
         JRootPane rootPane = AppFrame.get().getRootPane();

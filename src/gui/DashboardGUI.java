@@ -58,8 +58,13 @@ public class DashboardGUI extends JFrame {
 
     private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
+    private static final Font SUBTITLE_FONT = new Font("Segoe UI", Font.PLAIN, 14);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final Font VALUE_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font BUTTON_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font METRIC_VALUE_FONT = new Font("Segoe UI", Font.BOLD, 22);
+    private static final Font CHART_VALUE_FONT = new Font("Segoe UI", Font.BOLD, 11);
     private static final DecimalFormat MONEY_FORMAT = new DecimalFormat("#,##0");
     private static final DateTimeFormatter DATE_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATETIME_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
@@ -97,12 +102,12 @@ public class DashboardGUI extends JFrame {
     private JLabel lblChiTietHuongXuLy;
 
     public DashboardGUI() {
-        this("guest", "Le tan");
+        this("guest", "Lễ tân");
     }
 
     public DashboardGUI(String username, String role) {
         this.username = safeValue(username, "guest");
-        this.role = safeValue(role, "Le tan");
+        this.role = safeValue(role, "Lễ tân");
         this.dashboardDAO = new DashboardDAO();
 
         setTitle("Dashboard - " + AppBranding.APP_DISPLAY_NAME);
@@ -152,15 +157,15 @@ public class DashboardGUI extends JFrame {
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
 
-        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("DASHBOARD TONG QUAN"));
+        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("DASHBOARD TỔNG QUAN"));
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Theo doi van hanh khach san tu du lieu thuc: phong, booking, check-in/out va thanh toan.");
-        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        JLabel lblSub = new JLabel("Theo dõi vận hành khách sạn từ dữ liệu thực: phòng, booking, check-in/out và thanh toán.");
+        lblSub.setFont(SUBTITLE_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
-        JLabel lblMeta = new JLabel("Nguoi dung: " + username + " | Vai tro: " + role);
+        JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
         lblMeta.setFont(BODY_FONT);
         lblMeta.setForeground(TEXT_MUTED);
 
@@ -171,21 +176,21 @@ public class DashboardGUI extends JFrame {
         left.add(lblMeta);
 
         card.add(left, BorderLayout.WEST);
-        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "man hinh Dashboard"), BorderLayout.EAST);
+        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "màn hình Dashboard"), BorderLayout.EAST);
         return card;
     }
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Dat phong", BRAND_GREEN, Color.WHITE, e ->
+        card.add(createPrimaryButton("Đặt phòng", BRAND_GREEN, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.DAT_PHONG, username, role)));
         card.add(createPrimaryButton("Check-in", BRAND_BLUE, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role)));
         card.add(createPrimaryButton("Check-out", BRAND_AMBER, TEXT_PRIMARY, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role)));
-        card.add(createPrimaryButton("Thanh toan", BRAND_RED, Color.WHITE, e ->
+        card.add(createPrimaryButton("Thanh toán", BRAND_RED, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role)));
-        card.add(createPrimaryButton("Lam moi", new Color(15, 118, 110), Color.WHITE, e ->
+        card.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE, e ->
                 loadDashboardData(true)));
         return card;
     }
@@ -196,10 +201,10 @@ public class DashboardGUI extends JFrame {
         lblNgayLamViecValue = new JLabel();
         lblLanCapNhatValue = new JLabel();
 
-        card.add(createInfoCell("Ngay lam viec", lblNgayLamViecValue));
-        card.add(createInfoCell("Lan cap nhat", lblLanCapNhatValue));
-        card.add(createInfoCell("Nguoi dung", createStaticValueLabel(username)));
-        card.add(createInfoCell("Vai tro", createStaticValueLabel(role)));
+        card.add(createInfoCell("Ngày làm việc", lblNgayLamViecValue));
+        card.add(createInfoCell("Lần cập nhật", lblLanCapNhatValue));
+        card.add(createInfoCell("Người dùng", createStaticValueLabel(username)));
+        card.add(createInfoCell("Vai trò", createStaticValueLabel(role)));
         return card;
     }
 
@@ -212,7 +217,7 @@ public class DashboardGUI extends JFrame {
         lblLabel.setFont(LABEL_FONT);
         lblLabel.setForeground(TEXT_MUTED);
 
-        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        valueLabel.setFont(VALUE_FONT);
         valueLabel.setForeground(TEXT_PRIMARY);
 
         cell.add(lblLabel);
@@ -223,7 +228,7 @@ public class DashboardGUI extends JFrame {
 
     private JLabel createStaticValueLabel(String value) {
         JLabel label = new JLabel(value);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setFont(VALUE_FONT);
         label.setForeground(TEXT_PRIMARY);
         return label;
     }
@@ -264,11 +269,11 @@ public class DashboardGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Chi so van hanh nhanh");
+        JLabel lblTitle = new JLabel("Chỉ số vận hành nhanh");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Tong hop KPI thuc tu database QLKS theo ngay lam viec hien tai.");
+        JLabel lblSub = new JLabel("Tổng hợp KPI thực từ database QLKS theo ngày làm việc hiện tại.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -278,16 +283,16 @@ public class DashboardGUI extends JFrame {
         JPanel grid = new JPanel(new GridLayout(2, 5, 10, 10));
         grid.setOpaque(false);
 
-        cardPhongHoatDong = createMetricCard("Phong hoat dong", new Color(219, 234, 254));
-        cardPhongDangO = createMetricCard("Phong dang o", new Color(220, 252, 231));
-        cardPhongDaDat = createMetricCard("Phong da dat", new Color(254, 249, 195));
-        cardPhongBaoTri = createMetricCard("Phong bao tri", new Color(254, 226, 226));
-        cardBookingHomNay = createMetricCard("Booking hom nay", new Color(238, 242, 255));
-        cardChoCheckin = createMetricCard("Cho check-in", new Color(224, 242, 254));
-        cardCheckoutHomNay = createMetricCard("Checkout hom nay", new Color(255, 237, 213));
-        cardChoThanhToan = createMetricCard("Hoa don cho TT", new Color(254, 226, 226));
-        cardDoanhThuHomNay = createMetricCard("Doanh thu hom nay", new Color(236, 253, 245));
-        cardDoanhThuThang = createMetricCard("Doanh thu thang", new Color(224, 231, 255));
+        cardPhongHoatDong = createMetricCard("Phòng hoạt động", new Color(219, 234, 254));
+        cardPhongDangO = createMetricCard("Phòng đang ở", new Color(220, 252, 231));
+        cardPhongDaDat = createMetricCard("Phòng đã đặt", new Color(254, 249, 195));
+        cardPhongBaoTri = createMetricCard("Phòng bảo trì", new Color(254, 226, 226));
+        cardBookingHomNay = createMetricCard("Booking hôm nay", new Color(238, 242, 255));
+        cardChoCheckin = createMetricCard("Chờ check-in", new Color(224, 242, 254));
+        cardCheckoutHomNay = createMetricCard("Checkout hôm nay", new Color(255, 237, 213));
+        cardChoThanhToan = createMetricCard("Hóa đơn chờ thanh toán", new Color(254, 226, 226));
+        cardDoanhThuHomNay = createMetricCard("Doanh thu hôm nay", new Color(236, 253, 245));
+        cardDoanhThuThang = createMetricCard("Doanh thu tháng", new Color(224, 231, 255));
 
         grid.add(cardPhongHoatDong.panel);
         grid.add(cardPhongDangO.panel);
@@ -306,17 +311,17 @@ public class DashboardGUI extends JFrame {
     }
 
     private JSplitPane buildChartsSplitPane() {
-        revenueChartPanel = new DashboardBarChartPanel(true, BRAND_BLUE, "Doanh thu 7 ngay gan nhat");
-        bookingChartPanel = new DashboardBarChartPanel(false, BRAND_INDIGO, "Booking 7 ngay gan nhat");
+        revenueChartPanel = new DashboardBarChartPanel(true, BRAND_BLUE, "Doanh thu 7 ngày gần nhất");
+        bookingChartPanel = new DashboardBarChartPanel(false, BRAND_INDIGO, "Booking 7 ngày gần nhất");
 
         JPanel revenueCard = createChartCard(
-                "Doanh thu 7 ngay gan nhat",
-                "Tong tien thu duoc tu bang ThanhToan theo ngay.",
+                "Doanh thu 7 ngày gần nhất",
+                "Tổng tiền thu được từ bảng ThanhToán theo ngày.",
                 revenueChartPanel
         );
         JPanel bookingCard = createChartCard(
-                "Booking 7 ngay gan nhat",
-                "So booking tao moi theo ngay tu bang DatPhong.",
+                "Booking 7 ngày gần nhất",
+                "Số booking tạo mới theo ngày từ bảng ĐặtPhòng.",
                 bookingChartPanel
         );
 
@@ -362,11 +367,11 @@ public class DashboardGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Cong viec can xu ly");
+        JLabel lblTitle = new JLabel("Công việc cần xử lý");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Booking cho check-in, khach sap checkout va hoa don cho thanh toan.");
+        JLabel lblSub = new JLabel("Booking chờ check-in, khách sắp checkout và hóa đơn chờ thanh toán.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -374,7 +379,7 @@ public class DashboardGUI extends JFrame {
         titleRow.add(lblSub, BorderLayout.EAST);
 
         taskTableModel = new DefaultTableModel(
-                new Object[]{"Ma", "Doi tuong", "Thoi gian", "Trang thai"},
+                new Object[]{"Mã", "Đối tượng", "Thời gian", "Trạng thái"},
                 0
         ) {
             @Override
@@ -390,6 +395,7 @@ public class DashboardGUI extends JFrame {
         tblCongViec.setGridColor(BORDER_SOFT);
         tblCongViec.setShowGrid(true);
         tblCongViec.setFillsViewportHeight(true);
+        tblCongViec.setToolTipText("Danh sách công việc cần xử lý trong ngày.");
         ScreenUIHelper.styleTableHeader(tblCongViec);
 
         tblCongViec.getSelectionModel().addListSelectionListener(e -> {
@@ -406,7 +412,7 @@ public class DashboardGUI extends JFrame {
         tableCard.add(scrollPane, BorderLayout.CENTER);
 
         JPanel detailCard = createCardPanel(new BorderLayout(0, 10));
-        JLabel lblDetailTitle = new JLabel("Chi tiet xu ly");
+        JLabel lblDetailTitle = new JLabel("Chi tiết xử lý");
         lblDetailTitle.setFont(SECTION_FONT);
         lblDetailTitle.setForeground(TEXT_PRIMARY);
 
@@ -421,12 +427,12 @@ public class DashboardGUI extends JFrame {
         lblChiTietTrangThai = createValueLabel();
         lblChiTietHuongXuLy = createValueLabel();
 
-        addDetailRow(detailBody, "Ma nghiep vu", lblChiTietMa);
-        addDetailRow(detailBody, "Loai cong viec", lblChiTietLoai);
-        addDetailRow(detailBody, "Doi tuong", lblChiTietDoiTuong);
-        addDetailRow(detailBody, "Thoi gian", lblChiTietThoiGian);
-        addDetailRow(detailBody, "Trang thai", lblChiTietTrangThai);
-        addDetailRow(detailBody, "Huong xu ly", lblChiTietHuongXuLy);
+        addDetailRow(detailBody, "Mã nghiệp vụ", lblChiTietMa);
+        addDetailRow(detailBody, "Loại công việc", lblChiTietLoai);
+        addDetailRow(detailBody, "Đối tượng", lblChiTietDoiTuong);
+        addDetailRow(detailBody, "Thời gian", lblChiTietThoiGian);
+        addDetailRow(detailBody, "Trạng thái", lblChiTietTrangThai);
+        addDetailRow(detailBody, "Hướng xử lý", lblChiTietHuongXuLy);
 
         detailCard.add(lblDetailTitle, BorderLayout.NORTH);
         detailCard.add(detailBody, BorderLayout.CENTER);
@@ -456,43 +462,43 @@ public class DashboardGUI extends JFrame {
 
         if (showMessage) {
             if (!errorMessage.isEmpty()) {
-                showMessage("Da tai dashboard voi fallback an toan. Chi tiet: " + errorMessage);
+                showMessage("Đã tải dashboard với fallback an toàn. Chi tiết: " + errorMessage);
             } else {
-                showMessage("Da cap nhat dashboard.");
+                showMessage("Đã cập nhật dashboard.");
             }
         }
     }
 
     private void loadSummaryCards(DashboardSummary summary) {
         cardPhongHoatDong.setValue(formatCount(summary.getActiveRooms()));
-        cardPhongHoatDong.setNote("Phong trong + phong san sang khai thac");
+        cardPhongHoatDong.setNote("Phòng trống + phòng sẵn sàng khai thác");
 
         cardPhongDangO.setValue(formatCount(summary.getOccupiedRooms()));
-        cardPhongDangO.setNote("Trang thai phong dang o");
+        cardPhongDangO.setNote("Trạng thái phòng đang ở");
 
         cardPhongDaDat.setValue(formatCount(summary.getBookedRooms()));
-        cardPhongDaDat.setNote("Phong khoa cho booking da xac nhan");
+        cardPhongDaDat.setNote("Phòng khóa cho booking đã xác nhận");
 
         cardPhongBaoTri.setValue(formatCount(summary.getMaintenanceRooms()));
-        cardPhongBaoTri.setNote("Can ky thuat hoac tam ngung khai thac");
+        cardPhongBaoTri.setNote("Cần kỹ thuật hoặc tạm ngưng khai thác");
 
         cardBookingHomNay.setValue(formatCount(summary.getTodayBookings()));
-        cardBookingHomNay.setNote("So booking tao trong ngay");
+        cardBookingHomNay.setNote("Số booking tạo trong ngày");
 
         cardChoCheckin.setValue(formatCount(summary.getPendingCheckinToday()));
-        cardChoCheckin.setNote("Nhan phong trong hom nay");
+        cardChoCheckin.setNote("Nhận phòng trong hôm nay");
 
         cardCheckoutHomNay.setValue(formatCount(summary.getCheckoutDueTodayCount()));
-        cardCheckoutHomNay.setNote("Luot luu tru den han checkout");
+        cardCheckoutHomNay.setNote("Lượt lưu trú đến hạn checkout");
 
         cardChoThanhToan.setValue(formatCount(summary.getPendingPaymentCount()));
-        cardChoThanhToan.setNote("Hoa don con trang thai cho thanh toan");
+        cardChoThanhToan.setNote("Hóa đơn còn trạng thái chờ thanh toán");
 
         cardDoanhThuHomNay.setValue(formatMoney(summary.getRevenueToday()));
-        cardDoanhThuHomNay.setNote("Tien thu duoc trong ngay");
+        cardDoanhThuHomNay.setNote("Tiền thu được trong ngày");
 
         cardDoanhThuThang.setValue(formatMoney(summary.getRevenueThisMonth()));
-        cardDoanhThuThang.setNote("Tien thu tu ngay 01 den hien tai");
+        cardDoanhThuThang.setNote("Tiền thu từ ngày 01 đến hiện tại");
     }
 
     private void loadCharts(List<DashboardChartPoint> revenuePoints, List<DashboardChartPoint> bookingPoints) {
@@ -553,7 +559,7 @@ public class DashboardGUI extends JFrame {
     private void openSelectedTask() {
         int row = tblCongViec == null ? -1 : tblCongViec.getSelectedRow();
         if (row < 0 || row >= currentTaskRows.size()) {
-            showMessage("Vui long chon mot cong viec trong danh sach.");
+            showMessage("Vui lòng chọn một công việc trong danh sách.");
             return;
         }
 
@@ -587,7 +593,7 @@ public class DashboardGUI extends JFrame {
 
     private JLabel createValueLabel() {
         JLabel label = new JLabel("-");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setFont(VALUE_FONT);
         label.setForeground(TEXT_PRIMARY);
         return label;
     }
@@ -605,7 +611,7 @@ public class DashboardGUI extends JFrame {
         lblLabel.setForeground(TEXT_MUTED);
 
         JLabel lblValue = new JLabel("0");
-        lblValue.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        lblValue.setFont(METRIC_VALUE_FONT);
         lblValue.setForeground(TEXT_PRIMARY);
 
         JLabel lblNote = new JLabel("-");
@@ -624,7 +630,7 @@ public class DashboardGUI extends JFrame {
     private JButton createPrimaryButton(String text, Color background, Color foreground,
                                         java.awt.event.ActionListener listener) {
         JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setFont(BUTTON_FONT);
         button.setForeground(foreground);
         button.setBackground(background);
         button.setOpaque(true);
@@ -674,12 +680,12 @@ public class DashboardGUI extends JFrame {
                 CARD_BG,
                 BORDER_SOFT,
                 TEXT_MUTED,
-                "F1 Dat phong",
+                "F1 Đặt phòng",
                 "F2 Check-in",
                 "F3 Check-out",
-                "F4 Thanh toan",
-                "F5 Lam moi",
-                "Enter Mo cong viec"
+                "F4 Thanh toán",
+                "F5 Làm mới",
+                "Enter Mở công việc"
         );
     }
 
@@ -702,7 +708,7 @@ public class DashboardGUI extends JFrame {
     }
 
     private String formatMoney(double value) {
-        return MONEY_FORMAT.format(value) + " d";
+        return MONEY_FORMAT.format(value) + " đ";
     }
 
     private String mergeErrors(String current, String next) {
@@ -725,7 +731,7 @@ public class DashboardGUI extends JFrame {
     }
 
     private void showMessage(String message) {
-        JOptionPane.showMessageDialog(this, message, "Dashboard", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, message, "Tổng quan", JOptionPane.INFORMATION_MESSAGE);
     }
 
     public JPanel buildPanel() {
@@ -768,6 +774,7 @@ public class DashboardGUI extends JFrame {
             this.emptyMessage = emptyMessage;
             setOpaque(true);
             setBackground(PANEL_SOFT);
+            setToolTipText(emptyMessage);
             setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
                     new EmptyBorder(12, 12, 12, 12)
@@ -848,7 +855,7 @@ public class DashboardGUI extends JFrame {
 
                     String valueText = moneyMode ? shortMoney(point.getValue()) : String.valueOf((int) Math.round(point.getValue()));
                     g2.setColor(TEXT_PRIMARY);
-                    g2.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                    g2.setFont(CHART_VALUE_FONT);
                     int valueWidth = g2.getFontMetrics().stringWidth(valueText);
                     g2.drawString(valueText, centerX - valueWidth / 2, Math.max(top + 12, barY - 6));
 
@@ -888,7 +895,7 @@ public class DashboardGUI extends JFrame {
         private void drawEmptyState(Graphics2D g2, int width, int height) {
             g2.setColor(TEXT_MUTED);
             g2.setFont(BODY_FONT);
-            String message = "Chua co du lieu cho " + emptyMessage.toLowerCase(Locale.ROOT) + ".";
+            String message = "Chưa có dữ liệu cho " + emptyMessage.toLowerCase(Locale.ROOT) + ".";
             int textWidth = g2.getFontMetrics().stringWidth(message);
             g2.drawString(message, (width - textWidth) / 2, height / 2);
         }

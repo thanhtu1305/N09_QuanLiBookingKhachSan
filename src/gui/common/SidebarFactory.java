@@ -75,7 +75,6 @@ public final class SidebarFactory {
                 new EmptyBorder(12, 10, 12, 10)
         ));
 
-        // Brand / logo
         JPanel brand = new JPanel(new BorderLayout());
         brand.setOpaque(false);
         brand.setBorder(new EmptyBorder(6, 8, 18, 8));
@@ -96,7 +95,6 @@ public final class SidebarFactory {
         brandContent.add(lblSub);
         brand.add(brandContent, BorderLayout.CENTER);
 
-        // Menu buttons
         JPanel menuPanel = new JPanel();
         menuPanel.setOpaque(false);
         menuPanel.setLayout(new BoxLayout(menuPanel, BoxLayout.Y_AXIS));

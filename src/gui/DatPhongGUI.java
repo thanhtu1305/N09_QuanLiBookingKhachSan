@@ -401,7 +401,7 @@ public class DatPhongGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
         lblTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
 
-        String[] columns = {"STT", "Phòng", "Loại phòng", "Check-in", "Check-out", "Số người", "Thu tiền cọc", "Trạng thái"};
+        String[] columns = {"STT", "Phòng", "Loại phòng", "Check-in", "Check-out", "Số người", "Loại ngày", "Loại giá", "Giá áp dụng", "Tiền cọc", "Trạng thái"};
         bookingDetailModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -635,6 +635,7 @@ public class DatPhongGUI extends JFrame {
                     detail.tienDatCocChiTiet = 0;
                     detail.thanhTien = rs.getDouble("thanhTien");
                     detail.trangThaiChiTiet = safeValue(rs.getString("trangThai"), "Đã đặt");
+                    refreshResolvedRate(con, detail);
                     details.add(detail);
                 }
             }
@@ -778,11 +779,13 @@ public class DatPhongGUI extends JFrame {
             BookingDetailRecord detail = booking.details.get(i);
             bookingDetailModel.addRow(new Object[]{
                     i + 1,
-                    detail.loaiPhong,
                     detail.maPhong == null || detail.maPhong.trim().isEmpty() ? "Chưa gán" : detail.maPhong,
+                    detail.loaiPhong,
                     detail.formatCheckIn(),
                     detail.formatCheckOut(),
                     detail.soNguoi,
+                    safeValue(detail.loaiNgayApDung, "-"),
+                    safeValue(detail.loaiGiaApDung, "-"),
                     formatMoney(detail.giaApDung),
                     formatMoney(detail.tienDatCocChiTiet),
                     detail.trangThaiChiTiet
@@ -1217,6 +1220,26 @@ public class DatPhongGUI extends JFrame {
         }
         return null;
     }
+    private void refreshResolvedRate(Connection con, BookingDetailRecord detail) throws Exception {
+        if (detail == null || detail.maLoaiPhong <= 0 || detail.checkInDuKien == null) {
+            return;
+        }
+        Integer maBangGia = findBangGiaByLoaiPhongId(con, detail.maLoaiPhong);
+        if (maBangGia == null) {
+            return;
+        }
+        DatPhongDAO.RoomRateResolution resolution = datPhongDAO.resolveRoomRate(
+                String.valueOf(maBangGia.intValue()),
+                detail.checkInDuKien,
+                detail.checkOutDuKien
+        );
+        detail.loaiNgayApDung = resolution.getLoaiNgay();
+        detail.loaiGiaApDung = resolution.getLoaiGiaApDung();
+        if (resolution.getGiaApDung() > 0d) {
+            detail.giaApDung = resolution.getGiaApDung();
+        }
+    }
+
 
     private List<RoomOption> loadRoomOptions(Integer includeRoomId) {
         List<RoomOption> options = new ArrayList<RoomOption>();
@@ -1562,7 +1585,7 @@ public class DatPhongGUI extends JFrame {
             lblSection.setFont(SECTION_FONT);
             lblSection.setForeground(TEXT_PRIMARY);
 
-            String[] columns = {"STT", "Phòng", "Loại phòng", "Check-in", "Check-out", "Số người", "Thu tiền cọc", "Trạng thái"};
+            String[] columns = {"STT", "Phòng", "Loại phòng", "Check-in", "Check-out", "Số người", "Loại ngày", "Loại giá", "Giá áp dụng", "Tiền cọc", "Trạng thái"};
             bookingDetailDialogModel = new DefaultTableModel(columns, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
@@ -1648,6 +1671,9 @@ public class DatPhongGUI extends JFrame {
                         detail.formatCheckIn(),
                         detail.formatCheckOut(),
                         detail.soNguoi,
+                        safeValue(detail.loaiNgayApDung, "-"),
+                        safeValue(detail.loaiGiaApDung, "-"),
+                        formatMoney(detail.giaApDung),
                         formatMoney(detail.tienDatCocChiTiet),
                         getDetailStatusDisplay(detail)
                 });
@@ -1958,6 +1984,7 @@ public class DatPhongGUI extends JFrame {
 
                 try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien) VALUES (?, ?, ?, ?, ?)")) {
                     for (BookingDetailRecord detail : detailRows) {
+                        refreshResolvedRate(con, detail);
                         ps.setInt(1, maDatPhong);
                         ps.setInt(2, detail.maPhongId);
                         ps.setInt(3, detail.soNguoi);
@@ -2037,6 +2064,7 @@ public class DatPhongGUI extends JFrame {
             private final JTextArea txtGhiChuChiTietDialog;
             private final JPanel pnlInlineWarning;
             private final JLabel lblInlineWarning;
+            private final JLabel lblRatePreview;
             private final JButton btnPrimary;
             private final Border defaultRoomBorder;
             private final Border defaultCheckInBorder;
@@ -2073,6 +2101,8 @@ public class DatPhongGUI extends JFrame {
                 txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
                 txtDatCocDialog = createInputField(detail == null ? "0" : formatMoney(detail.tienDatCocChiTiet));
                 txtGhiChuChiTietDialog = createDialogTextArea(2);
+                lblRatePreview = createValueLabel();
+                lblRatePreview.setText(detail == null ? "-" : buildRatePreviewText(detail));
                 defaultRoomBorder = cboPhongDialog.getBorder();
                 defaultCheckInBorder = txtCheckInDialog.getBorder();
                 defaultCheckOutBorder = txtCheckOutDialog.getBorder();
@@ -2083,8 +2113,11 @@ public class DatPhongGUI extends JFrame {
                     txtGhiChuChiTietDialog.setText(detail.ghiChu);
                 }
                 cboPhongDialog.addActionListener(e -> syncSelectedRoomInfo());
+                cboPhongDialog.addActionListener(e -> refreshSelectedRatePreview());
                 cboPhongDialog.addActionListener(e -> reevaluateCurrentSelectionState());
+                installDateFieldChangeListener(txtCheckInDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckInDialog, this::reevaluateCurrentSelectionState);
+                installDateFieldChangeListener(txtCheckOutDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckOutDialog, this::reevaluateCurrentSelectionState);
                 if (detail != null) {
                     for (int i = 0; i < cboPhongDialog.getItemCount(); i++) {
@@ -2097,13 +2130,14 @@ public class DatPhongGUI extends JFrame {
                 }
                 syncSelectedRoomInfo();
 
-                addFormRow(form, gbc, 0, "Phòng", cboPhongDialog);
-                addFormRow(form, gbc, 1, "Loại phòng", txtLoaiPhongDialog);
-                addFormRow(form, gbc, 2, "Check-in dự kiến", txtCheckInDialog);
-                addFormRow(form, gbc, 3, "Check-out dự kiến", txtCheckOutDialog);
-                addFormRow(form, gbc, 4, "Số người", txtSoNguoiDialog);
-                addFormRow(form, gbc, 5, "Thu tiền cọc", txtDatCocDialog);
-                addFormRow(form, gbc, 6, "Ghi chú", new JScrollPane(txtGhiChuChiTietDialog));
+                addFormRow(form, gbc, 0, "Phong", cboPhongDialog);
+                addFormRow(form, gbc, 1, "Loai phong", txtLoaiPhongDialog);
+                addFormRow(form, gbc, 2, "Check-in du kien", txtCheckInDialog);
+                addFormRow(form, gbc, 3, "Check-out du kien", txtCheckOutDialog);
+                addFormRow(form, gbc, 4, "So nguoi", txtSoNguoiDialog);
+                addFormRow(form, gbc, 5, "Thu tien coc", txtDatCocDialog);
+                addFormRow(form, gbc, 6, "Gia ap dung", lblRatePreview);
+                addFormRow(form, gbc, 7, "Ghi chu", new JScrollPane(txtGhiChuChiTietDialog));
 
                 pnlInlineWarning = new JPanel(new BorderLayout());
                 pnlInlineWarning.setBackground(CONFLICT_BG);
@@ -2128,6 +2162,7 @@ public class DatPhongGUI extends JFrame {
                 content.add(buildDialogButtons(btnCancel, btnPrimary), BorderLayout.SOUTH);
                 add(content, BorderLayout.CENTER);
                 reevaluateCurrentSelectionState();
+                refreshSelectedRatePreview();
             }
 
             private void syncSelectedRoomInfo() {
@@ -2137,6 +2172,41 @@ public class DatPhongGUI extends JFrame {
                     return;
                 }
                 txtLoaiPhongDialog.setText(option.tenLoaiPhong);
+            }
+
+            private void refreshSelectedRatePreview() {
+                RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
+                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
+                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                if (option == null || checkIn == null) {
+                    lblRatePreview.setText("-");
+                    return;
+                }
+                try {
+                    Connection con = ConnectDB.getConnection();
+                    if (con == null) {
+                        lblRatePreview.setText("-");
+                        return;
+                    }
+                    BookingDetailRecord preview = new BookingDetailRecord();
+                    preview.maLoaiPhong = option.maLoaiPhong;
+                    preview.checkInDuKien = checkIn;
+                    preview.checkOutDuKien = checkOut == null ? checkIn.plusDays(1) : checkOut;
+                    preview.giaApDung = option.giaMacDinh;
+                    refreshResolvedRate(con, preview);
+                    lblRatePreview.setText(buildRatePreviewText(preview));
+                } catch (Exception ex) {
+                    lblRatePreview.setText("-");
+                }
+            }
+
+            private String buildRatePreviewText(BookingDetailRecord detail) {
+                if (detail == null) {
+                    return "-";
+                }
+                return safeValue(detail.loaiNgayApDung, "-") + " | "
+                        + safeValue(detail.loaiGiaApDung, "-") + " | "
+                        + formatMoney(detail.giaApDung);
             }
 
             private void reevaluateCurrentSelectionState() {
@@ -2257,6 +2327,15 @@ public class DatPhongGUI extends JFrame {
                 target.soNguoi = soNguoi;
                 target.sucChuaToiDa = option.sucChuaToiDa;
                 target.giaApDung = option.giaMacDinh > 0 ? option.giaMacDinh : (editingDetail == null ? 0d : editingDetail.giaApDung);
+                try {
+                    Connection con = ConnectDB.getConnection();
+                    if (con != null) {
+                        refreshResolvedRate(con, target);
+                    }
+                } catch (Exception ex) {
+                    target.loaiNgayApDung = "-";
+                    target.loaiGiaApDung = "-";
+                }
                 target.tienDatCocChiTiet = tienCoc;
                 target.duplicateInBooking = isDuplicateRoomSelection(option.maPhongId);
                 target.capacityExceeded = option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa;
@@ -2649,6 +2728,8 @@ public class DatPhongGUI extends JFrame {
         private int soNguoi;
         private int sucChuaToiDa;
         private double giaApDung;
+        private String loaiNgayApDung;
+        private String loaiGiaApDung;
         private double tienDatCocChiTiet;
         private String trangThaiChiTiet;
         private String ghiChu;
@@ -2669,6 +2750,8 @@ public class DatPhongGUI extends JFrame {
             detail.soNguoi = soNguoi;
             detail.sucChuaToiDa = sucChuaToiDa;
             detail.giaApDung = giaApDung;
+            detail.loaiNgayApDung = loaiNgayApDung;
+            detail.loaiGiaApDung = loaiGiaApDung;
             detail.tienDatCocChiTiet = tienDatCocChiTiet;
             detail.trangThaiChiTiet = trangThaiChiTiet;
             detail.ghiChu = ghiChu;

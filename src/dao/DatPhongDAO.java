@@ -4,6 +4,8 @@ import db.ConnectDB;
 import entity.ChiTietDatPhong;
 import entity.DatPhongConflictInfo;
 import entity.DatPhong;
+import entity.ChiTietBangGia;
+import entity.NgayLe;
 
 import java.sql.Connection;
 import java.sql.Date;
@@ -11,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -25,6 +28,8 @@ public class DatPhongDAO {
                     + "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang";
 
     private String lastErrorMessage = "";
+    private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
+    private final NgayLeDAO ngayLeDAO = new NgayLeDAO();
 
     public String getLastErrorMessage() {
         return lastErrorMessage;
@@ -463,6 +468,7 @@ public class DatPhongDAO {
         String sql = "INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement stmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             for (ChiTietDatPhong detail : details) {
+                applyResolvedRoomRate(detail, datPhong.getMaBangGia(), datPhong.getNgayNhanPhong(), datPhong.getNgayTraPhong());
                 stmt.setInt(1, Integer.parseInt(datPhong.getMaDatPhong()));
                 setNullableInt(stmt, 2, detail.getMaPhong());
                 stmt.setInt(3, detail.getSoNguoi() <= 0 ? 1 : detail.getSoNguoi());
@@ -627,6 +633,111 @@ public class DatPhongDAO {
         return detail.getGiaApDung() * nights;
     }
 
+    public String determineLoaiNgay(LocalDate date) {
+        if (date == null) {
+            return "NgÃ y thÆ°á»ng";
+        }
+        if (ngayLeDAO.isHoliday(date)) {
+            return "NgÃ y lá»…";
+        }
+        return isWeekend(date) ? "Cuá»‘i tuáº§n" : "NgÃ y thÆ°á»ng";
+    }
+
+    public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
+        RoomRateResolution resolution = new RoomRateResolution();
+        resolution.setLoaiNgay(determineLoaiNgay(checkIn));
+        resolution.setLoaiGiaApDung("Theo ngÃ y");
+        resolution.setGiaApDung(0d);
+        resolution.setMaChiTietBangGia("");
+
+        Integer bangGiaId = parseIntOrNull(maBangGia);
+        if (bangGiaId == null) {
+            return resolution;
+        }
+
+        ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(bangGiaId.intValue(), checkIn);
+        if (detail == null) {
+            List<ChiTietBangGia> details = bangGiaDAO.getChiTietBangGiaByMaBangGia(bangGiaId.intValue());
+            if (!details.isEmpty()) {
+                detail = details.get(0);
+            }
+        }
+        if (detail == null) {
+            return resolution;
+        }
+
+        resolution.setMaChiTietBangGia(String.valueOf(detail.getMaChiTietBangGia()));
+        String loaiNgay = resolution.getLoaiNgay();
+        long soDem = 1L;
+        if (checkIn != null && checkOut != null) {
+            soDem = Math.max(1L, ChronoUnit.DAYS.between(checkIn, checkOut));
+        }
+
+        double giaApDung;
+        if ("NgÃ y lá»…".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
+            giaApDung = detail.getGiaLe();
+            resolution.setLoaiGiaApDung("GiÃ¡ lá»…");
+        } else if ("Cuá»‘i tuáº§n".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
+            giaApDung = detail.getGiaCuoiTuan();
+            resolution.setLoaiGiaApDung("GiÃ¡ cuá»‘i tuáº§n");
+        } else if (soDem == 1L && detail.getGiaQuaDem() > 0d) {
+            giaApDung = chooseLowerPositive(detail.getGiaQuaDem(), detail.getGiaTheoNgay());
+            resolution.setLoaiGiaApDung(giaApDung == detail.getGiaQuaDem() ? "Qua Ä‘Ãªm" : "Theo ngÃ y");
+        } else if (detail.getGiaTheoNgay() > 0d) {
+            giaApDung = detail.getGiaTheoNgay();
+            resolution.setLoaiGiaApDung("Theo ngÃ y");
+        } else if (detail.getGiaQuaDem() > 0d) {
+            giaApDung = detail.getGiaQuaDem();
+            resolution.setLoaiGiaApDung("Qua Ä‘Ãªm");
+        } else {
+            giaApDung = detail.getGiaTheoGio();
+            resolution.setLoaiGiaApDung("Theo giá»");
+        }
+
+        resolution.setGiaApDung(Math.max(giaApDung, 0d));
+        return resolution;
+    }
+
+    private void applyResolvedRoomRate(ChiTietDatPhong detail, String maBangGia, LocalDate defaultCheckIn, LocalDate defaultCheckOut) {
+        if (detail == null) {
+            return;
+        }
+        LocalDate checkIn = detail.getCheckInDuKien() == null ? defaultCheckIn : detail.getCheckInDuKien();
+        LocalDate checkOut = detail.getCheckOutDuKien() == null ? defaultCheckOut : detail.getCheckOutDuKien();
+        RoomRateResolution resolution = resolveRoomRate(maBangGia, checkIn, checkOut);
+        if (resolution.getGiaApDung() > 0d) {
+            detail.setGiaApDung(resolution.getGiaApDung());
+        }
+        detail.setMaBangGia(defaultIfEmpty(maBangGia, detail.getMaBangGia()));
+        detail.setMaChiTietBangGia(resolution.getMaChiTietBangGia());
+        detail.setGhiChu(buildRateNote(resolution));
+    }
+
+    private String buildRateNote(RoomRateResolution resolution) {
+        if (resolution == null) {
+            return "";
+        }
+        return resolution.getLoaiNgay() + " - " + resolution.getLoaiGiaApDung();
+    }
+
+    private boolean isWeekend(LocalDate date) {
+        if (date == null) {
+            return false;
+        }
+        DayOfWeek dayOfWeek = date.getDayOfWeek();
+        return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
+    }
+
+    private double chooseLowerPositive(double first, double second) {
+        if (first <= 0d) {
+            return Math.max(second, 0d);
+        }
+        if (second <= 0d) {
+            return Math.max(first, 0d);
+        }
+        return Math.min(first, second);
+    }
+
     private String resolveRoomStatusForBooking(String bookingStatus) {
         String status = safeTrim(bookingStatus);
         if ("Đang lưu trú".equalsIgnoreCase(status) || "Đã check-in".equalsIgnoreCase(status)) {
@@ -718,5 +829,44 @@ public class DatPhongDAO {
 
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
+    }
+
+    public static final class RoomRateResolution {
+        private String loaiNgay;
+        private String loaiGiaApDung;
+        private double giaApDung;
+        private String maChiTietBangGia;
+
+        public String getLoaiNgay() {
+            return loaiNgay;
+        }
+
+        public void setLoaiNgay(String loaiNgay) {
+            this.loaiNgay = loaiNgay;
+        }
+
+        public String getLoaiGiaApDung() {
+            return loaiGiaApDung;
+        }
+
+        public void setLoaiGiaApDung(String loaiGiaApDung) {
+            this.loaiGiaApDung = loaiGiaApDung;
+        }
+
+        public double getGiaApDung() {
+            return giaApDung;
+        }
+
+        public void setGiaApDung(double giaApDung) {
+            this.giaApDung = giaApDung;
+        }
+
+        public String getMaChiTietBangGia() {
+            return maChiTietBangGia;
+        }
+
+        public void setMaChiTietBangGia(String maChiTietBangGia) {
+            this.maChiTietBangGia = maChiTietBangGia;
+        }
     }
 }

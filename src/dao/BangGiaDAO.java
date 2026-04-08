@@ -12,6 +12,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -403,6 +404,74 @@ public class BangGiaDAO {
         return "";
     }
 
+    public List<ChiTietBangGia> getChiTietBangGiaByMaBangGia(int maBangGia) {
+        clearLastError();
+        List<ChiTietBangGia> details = new ArrayList<ChiTietBangGia>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("KhÃ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            return details;
+        }
+
+        String sql = "SELECT maChiTietBangGia, maBangGia, loaiNgay, khungGio, giaTheoGio, giaQuaDem, giaTheoNgay, giaCuoiTuan, giaLe, phuThu " +
+                "FROM ChiTietBangGia WHERE maBangGia = ? ORDER BY maChiTietBangGia ASC";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maBangGia);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    details.add(mapChiTietBangGia(rs));
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Loi lay chi tiet bang gia theo ma bang gia: " + maBangGia);
+            e.printStackTrace();
+            setLastError(e.getMessage());
+        }
+        return details;
+    }
+
+    public ChiTietBangGia getChiTietBangGiaDangApDung(int maBangGia) {
+        return getChiTietBangGiaDangApDung(maBangGia, null);
+    }
+
+    public ChiTietBangGia getChiTietBangGiaDangApDung(int maBangGia, LocalDate ngayApDung) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("KhÃ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            return null;
+        }
+
+        String sql = "SELECT TOP 1 ct.maChiTietBangGia, ct.maBangGia, ct.loaiNgay, ct.khungGio, ct.giaTheoGio, ct.giaQuaDem, ct.giaTheoNgay, ct.giaCuoiTuan, ct.giaLe, ct.phuThu " +
+                "FROM ChiTietBangGia ct " +
+                "JOIN BangGia bg ON ct.maBangGia = bg.maBangGia " +
+                "WHERE ct.maBangGia = ? " +
+                "AND bg.trangThai = N'Đang áp dụng' " +
+                "AND (? IS NULL OR ? BETWEEN bg.ngayBatDau AND bg.ngayKetThuc) " +
+                "ORDER BY ct.maChiTietBangGia ASC";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maBangGia);
+            if (ngayApDung == null) {
+                stmt.setDate(2, null);
+                stmt.setDate(3, null);
+            } else {
+                Date sqlDate = Date.valueOf(ngayApDung);
+                stmt.setDate(2, sqlDate);
+                stmt.setDate(3, sqlDate);
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return mapChiTietBangGia(rs);
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Loi lay chi tiet bang gia dang ap dung: " + maBangGia);
+            e.printStackTrace();
+            setLastError(e.getMessage());
+        }
+        return null;
+    }
+
     private BangGia mapBangGia(ResultSet rs) throws SQLException {
         int maBangGia = rs.getInt("maBangGia");
         loaiNgayCache.put(maBangGia, rs.getString("loaiNgay"));
@@ -415,6 +484,21 @@ public class BangGiaDAO {
                 rs.getString("trangThai"),
                 "",
                 rs.getString("tenLoaiPhong")
+        );
+    }
+
+    private ChiTietBangGia mapChiTietBangGia(ResultSet rs) throws SQLException {
+        return new ChiTietBangGia(
+                rs.getInt("maChiTietBangGia"),
+                rs.getInt("maBangGia"),
+                rs.getString("loaiNgay"),
+                rs.getString("khungGio"),
+                rs.getDouble("giaTheoGio"),
+                rs.getDouble("giaQuaDem"),
+                rs.getDouble("giaTheoNgay"),
+                rs.getDouble("giaCuoiTuan"),
+                rs.getDouble("giaLe"),
+                rs.getDouble("phuThu")
         );
     }
 

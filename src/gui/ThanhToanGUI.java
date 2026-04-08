@@ -97,6 +97,12 @@ public class ThanhToanGUI extends JFrame {
     private JLabel lblMaHoSo;
     private JLabel lblKhachHang;
     private JLabel lblSoPhong;
+    private JLabel lblCheckInThucTe;
+    private JLabel lblCheckOutThucTe;
+    private JLabel lblSoGioLuuTru;
+    private JLabel lblLoaiNgayApDung;
+    private JLabel lblLoaiGiaApDung;
+    private JLabel lblTienPhongCuoiCung;
     private JLabel lblTienPhong;
     private JLabel lblTienDichVu;
     private JLabel lblPhuThu;
@@ -363,6 +369,12 @@ public class ThanhToanGUI extends JFrame {
         lblMaHoSo = createValueLabel();
         lblKhachHang = createValueLabel();
         lblSoPhong = createValueLabel();
+        lblCheckInThucTe = createValueLabel();
+        lblCheckOutThucTe = createValueLabel();
+        lblSoGioLuuTru = createValueLabel();
+        lblLoaiNgayApDung = createValueLabel();
+        lblLoaiGiaApDung = createValueLabel();
+        lblTienPhongCuoiCung = createValueLabel();
         lblTienPhong = createValueLabel();
         lblTienDichVu = createValueLabel();
         lblPhuThu = createValueLabel();
@@ -376,6 +388,12 @@ public class ThanhToanGUI extends JFrame {
         addDetailRow(body, "Mã hồ sơ", lblMaHoSo);
         addDetailRow(body, "Khách hàng", lblKhachHang);
         addDetailRow(body, "Số phòng", lblSoPhong);
+        addDetailRow(body, "Check-in", lblCheckInThucTe);
+        addDetailRow(body, "Check-out", lblCheckOutThucTe);
+        addDetailRow(body, "Số giờ lưu trú", lblSoGioLuuTru);
+        addDetailRow(body, "Loại ngày", lblLoaiNgayApDung);
+        addDetailRow(body, "Loại giá", lblLoaiGiaApDung);
+        addDetailRow(body, "Tiền phòng cuối", lblTienPhongCuoiCung);
         addDetailRow(body, "Tiền phòng", lblTienPhong);
         addDetailRow(body, "Tiền dịch vụ", lblTienDichVu);
         addDetailRow(body, "Phụ thu", lblPhuThu);
@@ -595,10 +613,17 @@ public class ThanhToanGUI extends JFrame {
 
 
     private void updateDetailPanel(ThanhToan invoice) {
+        RoomPricingSummary pricingSummary = buildRoomPricingSummary(invoice);
         lblMaHoaDon.setText("HD" + invoice.getMaHoaDon());
         lblMaHoSo.setText(safeValue(invoice.getMaHoSo(), "-"));
         lblKhachHang.setText(safeValue(invoice.getKhachHang(), "-"));
         lblSoPhong.setText(safeValue(invoice.getSoPhong(), "-"));
+        lblCheckInThucTe.setText(formatDateTime(invoice.getNgayNhanPhong()));
+        lblCheckOutThucTe.setText(formatDateTime(invoice.getNgayTraPhong()));
+        lblSoGioLuuTru.setText(pricingSummary.soGioLuuTru);
+        lblLoaiNgayApDung.setText(pricingSummary.loaiNgay);
+        lblLoaiGiaApDung.setText(pricingSummary.loaiGia);
+        lblTienPhongCuoiCung.setText(pricingSummary.tienPhongCuoi);
         lblTienPhong.setText(ThanhToan.formatMoney(invoice.getTienPhong()));
         lblTienDichVu.setText(ThanhToan.formatMoney(invoice.getTienDichVu()));
         lblPhuThu.setText(ThanhToan.formatMoney(invoice.getPhuThu()));
@@ -642,11 +667,49 @@ public class ThanhToanGUI extends JFrame {
         txtGhiChu.setCaretPosition(0);
     }
 
+    private RoomPricingSummary buildRoomPricingSummary(ThanhToan invoice) {
+        RoomPricingSummary summary = new RoomPricingSummary();
+        summary.loaiNgay = "-";
+        summary.loaiGia = "-";
+        summary.soGioLuuTru = "-";
+        summary.tienPhongCuoi = ThanhToan.formatMoney(invoice.getTienPhong());
+
+        if (invoice.getNgayNhanPhong() != null && invoice.getNgayTraPhong() != null) {
+            long hours = Math.max(1L, java.time.Duration.between(
+                    invoice.getNgayNhanPhong().toLocalDateTime(),
+                    invoice.getNgayTraPhong().toLocalDateTime()
+            ).toHours());
+            summary.soGioLuuTru = String.valueOf(hours);
+        }
+
+        for (ChiTietDong line : invoice.getChiTiet()) {
+            String value = safeValue(line.getLoaiChiPhi(), "");
+            if (!value.toLowerCase(Locale.ROOT).contains("tien phong")) {
+                continue;
+            }
+            String[] parts = value.split("\\|");
+            if (parts.length >= 4) {
+                summary.loaiNgay = parts[1].trim();
+                summary.loaiGia = parts[2].trim();
+                summary.soGioLuuTru = parts[3].trim();
+            }
+            summary.tienPhongCuoi = ThanhToan.formatMoney(line.getThanhTien() > 0d ? line.getThanhTien() : line.getDonGia());
+            break;
+        }
+        return summary;
+    }
+
     private void clearDetailPanel() {
         lblMaHoaDon.setText("-");
         lblMaHoSo.setText("-");
         lblKhachHang.setText("-");
         lblSoPhong.setText("-");
+        lblCheckInThucTe.setText("-");
+        lblCheckOutThucTe.setText("-");
+        lblSoGioLuuTru.setText("-");
+        lblLoaiNgayApDung.setText("-");
+        lblLoaiGiaApDung.setText("-");
+        lblTienPhongCuoiCung.setText("-");
         lblTienPhong.setText("-");
         lblTienDichVu.setText("-");
         lblPhuThu.setText("-");
@@ -2050,6 +2113,13 @@ public class ThanhToanGUI extends JFrame {
             this.unitPrice = unitPrice;
             this.total = total;
         }
+    }
+
+    private static final class RoomPricingSummary {
+        private String loaiNgay;
+        private String loaiGia;
+        private String soGioLuuTru;
+        private String tienPhongCuoi;
     }
 
     private JTextArea createReadonlyArea(String text) {

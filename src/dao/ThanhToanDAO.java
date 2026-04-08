@@ -2,10 +2,14 @@ package dao;
 
 import dao.KhachHangDAO;
 import db.ConnectDB;
+import entity.ChiTietBangGia;
+import entity.NgayLe;
 import entity.ThanhToan;
 import entity.ThanhToan.ChiTietDong;
 import entity.ThanhToan.GiaoDichThanhToan;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -13,7 +17,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,6 +31,8 @@ public class ThanhToanDAO {
     private String lastErrorMessage = "";
     private static boolean schemaEnsured = false;
     private static boolean synchronizingInvoices = false;
+    private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
+    private final NgayLeDAO ngayLeDAO = new NgayLeDAO();
 
     public String getLastErrorMessage() {
         return lastErrorMessage;
@@ -397,7 +405,7 @@ public class ThanhToanDAO {
         }
         synchronizingInvoices = true;
         try {
-            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, dp.maKhachHang, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, lt.maChiTietDatPhong, dp.maKhachHang, dp.maBangGia, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
                     "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, " +
                     "ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
                     "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong " +
@@ -427,14 +435,15 @@ public class ThanhToanDAO {
                         aggregate.tienCoc = rs.getDouble("tienCocDatPhong");
                         aggregates.put(Integer.valueOf(maDatPhong), aggregate);
                     }
-                    double tienPhong = resolveRoomCharge(
+                    RoomChargeBreakdown roomCharge = calculateRoomCharge(
+                            rs.getInt("maBangGia"),
                             rs.getDouble("giaPhong"),
                             rs.getTimestamp("checkIn"),
                             rs.getTimestamp("checkOut"),
                             rs.getLong("soDemDatPhong"),
                             rs.getDouble("giaPhongDatPhong"),
                             rs.getDouble("thanhTienDatPhong"));
-                    aggregate.tienPhong += tienPhong;
+                    aggregate.tienPhong += roomCharge.getThanhTien().doubleValue();
                     aggregate.tienDichVu += loadServiceCharge(con, rs.getInt("maLuuTru"));
                 }
             }
@@ -503,9 +512,7 @@ public class ThanhToanDAO {
         if (invoice == null) {
             return;
         }
-
-        insertInvoiceLine(con, maHoaDon, "Tiền phòng", 1, invoice.getTienPhong());
-
+        insertRoomChargeLines(con, maHoaDon, maDatPhong, invoice);
         String serviceSql = "SELECT dv.tenDichVu, SUM(sddv.soLuong) AS soLuong, MAX(sddv.donGia) AS donGia " +
                 "FROM SuDungDichVu sddv " +
                 "JOIN DichVu dv ON sddv.maDichVu = dv.maDichVu " +
@@ -531,6 +538,48 @@ public class ThanhToanDAO {
         }
         if (invoice.getGiamGia() > 0d) {
             insertInvoiceLine(con, maHoaDon, "GIAM_GIA", 1, -invoice.getGiamGia());
+        }
+    }
+
+    private void insertRoomChargeLines(Connection con, int maHoaDon, int maDatPhong, ThanhToan invoice) throws Exception {
+        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.maBangGia, " +
+                "ISNULL(p.soPhong, N'Phong') AS soPhong, " +
+                "ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
+                "ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
+                "ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
+                "FROM LuuTru lt " +
+                "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
+                "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
+                "LEFT JOIN ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                "WHERE lt.maDatPhong = ? " +
+                "ORDER BY lt.maLuuTru ASC";
+        try (PreparedStatement ps = con.prepareStatement(roomSql)) {
+            ps.setInt(1, maDatPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                boolean insertedRoomLine = false;
+                while (rs.next()) {
+                    RoomChargeBreakdown roomCharge = calculateRoomCharge(
+                            rs.getInt("maBangGia"),
+                            rs.getDouble("giaPhong"),
+                            rs.getTimestamp("checkIn"),
+                            rs.getTimestamp("checkOut"),
+                            rs.getLong("soDemDatPhong"),
+                            rs.getDouble("giaPhongDatPhong"),
+                            rs.getDouble("thanhTienDatPhong"));
+                    if (roomCharge.getThanhTien().doubleValue() <= 0d) {
+                        continue;
+                    }
+                    String roomLine = "Tien phong - " + safeTrim(rs.getString("soPhong"))
+                            + " | " + roomCharge.getLoaiNgay()
+                            + " | " + roomCharge.getLoaiGiaApDung()
+                            + " | " + roomCharge.getSoGioLuuTru() + " gio";
+                    insertInvoiceLine(con, maHoaDon, roomLine, 1, roomCharge.getThanhTien().doubleValue());
+                    insertedRoomLine = true;
+                }
+                if (!insertedRoomLine && invoice.getTienPhong() > 0d) {
+                    insertInvoiceLine(con, maHoaDon, "Tien phong", 1, invoice.getTienPhong());
+                }
+            }
         }
     }
 
@@ -717,35 +766,120 @@ public class ThanhToanDAO {
         return invoice;
     }
 
-    private double calculateRoomCharge(double giaPhong, Timestamp checkIn, Timestamp checkOut) {
-        if (giaPhong <= 0d) {
-            return 0d;
+    private boolean isWeekend(LocalDate date) {
+        if (date == null) {
+            return false;
         }
-        LocalDateTime start = checkIn == null ? LocalDateTime.now() : checkIn.toLocalDateTime();
-        LocalDateTime end = checkOut == null ? LocalDateTime.now() : checkOut.toLocalDateTime();
-        long hours = Math.max(1L, Duration.between(start, end).toHours());
-        long nights = Math.max(1L, (hours + 23L) / 24L);
-        return giaPhong * nights;
+        DayOfWeek dayOfWeek = date.getDayOfWeek();
+        return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
     }
 
-    private double resolveRoomCharge(double giaPhongLuuTru,
-                                     Timestamp checkIn,
-                                     Timestamp checkOut,
-                                     long soDemDatPhong,
-                                     double giaPhongDatPhong,
-                                     double thanhTienDatPhong) {
-        double tienTheoLuuTru = calculateRoomCharge(giaPhongLuuTru, checkIn, checkOut);
-        if (tienTheoLuuTru > 0d) {
-            return tienTheoLuuTru;
+    private String determineLoaiNgay(LocalDate date) {
+        if (date == null) {
+            return "Ngay thuong";
         }
-        if (thanhTienDatPhong > 0d) {
-            return thanhTienDatPhong;
+        return ngayLeDAO.isHoliday(date) ? "Ngay le" : (isWeekend(date) ? "Cuoi tuan" : "Ngay thuong");
+    }
+
+    private long calculateStayHours(LocalDateTime checkIn, LocalDateTime checkOut) {
+        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+            return 1L;
         }
-        if (giaPhongDatPhong > 0d) {
+        return Math.max(1L, (long) Math.ceil(Duration.between(checkIn, checkOut).toMinutes() / 60.0d));
+    }
+
+    private BigDecimal resolveAppliedRate(ChiTietBangGia detail, String loaiNgay) {
+        if (detail == null) {
+            return BigDecimal.ZERO;
+        }
+        if ("Ngay le".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
+            return toMoney(detail.getGiaLe());
+        }
+        if ("Cuoi tuan".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
+            return toMoney(detail.getGiaCuoiTuan());
+        }
+        return toMoney(detail.getGiaTheoNgay());
+    }
+
+    private RoomChargeBreakdown calculateRoomCharge(int maBangGia,
+                                                    double giaPhongLuuTru,
+                                                    Timestamp checkIn,
+                                                    Timestamp checkOut,
+                                                    long soDemDatPhong,
+                                                    double giaPhongDatPhong,
+                                                    double thanhTienDatPhong) {
+        LocalDateTime start = checkIn == null ? null : checkIn.toLocalDateTime();
+        LocalDateTime end = checkOut == null ? null : checkOut.toLocalDateTime();
+        long soGio = calculateStayHours(start, end);
+        LocalDate ngayApDung = start == null ? null : start.toLocalDate();
+        String loaiNgay = determineLoaiNgay(ngayApDung);
+        ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(maBangGia, ngayApDung);
+        if (detail == null) {
+            List<ChiTietBangGia> details = bangGiaDAO.getChiTietBangGiaByMaBangGia(maBangGia);
+            if (!details.isEmpty()) {
+                detail = details.get(0);
+            }
+        }
+
+        RoomChargeBreakdown breakdown = new RoomChargeBreakdown();
+        breakdown.setLoaiNgay(loaiNgay);
+        breakdown.setSoGioLuuTru(soGio);
+        breakdown.setLoaiGiaApDung("Theo ngay");
+
+        BigDecimal tienPhong = BigDecimal.ZERO;
+        if (detail != null) {
+            BigDecimal giaNgayUuTien = resolveAppliedRate(detail, loaiNgay);
+            long soNgay = Math.max(1L, (long) Math.ceil(soGio / 24.0d));
+            boolean quaDem = start != null && end != null && end.toLocalDate().isAfter(start.toLocalDate());
+
+            if ("Ngay le".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
+                breakdown.setLoaiGiaApDung("Gia le");
+                tienPhong = toMoney(detail.getGiaLe()).multiply(BigDecimal.valueOf(soNgay));
+            } else if ("Cuoi tuan".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
+                breakdown.setLoaiGiaApDung("Gia cuoi tuan");
+                tienPhong = toMoney(detail.getGiaCuoiTuan()).multiply(BigDecimal.valueOf(soNgay));
+            } else if (quaDem && soGio <= 24L && detail.getGiaQuaDem() > 0d) {
+                breakdown.setLoaiGiaApDung("Qua dem");
+                tienPhong = toMoney(detail.getGiaQuaDem());
+            } else if (!quaDem && detail.getGiaTheoGio() > 0d) {
+                BigDecimal tienTheoGio = toMoney(detail.getGiaTheoGio()).multiply(BigDecimal.valueOf(soGio));
+                if (giaNgayUuTien.signum() > 0 && tienTheoGio.compareTo(giaNgayUuTien) > 0) {
+                    breakdown.setLoaiGiaApDung("Theo ngay");
+                    tienPhong = giaNgayUuTien;
+                } else {
+                    breakdown.setLoaiGiaApDung("Theo gio");
+                    tienPhong = tienTheoGio;
+                }
+            } else if (giaNgayUuTien.signum() > 0) {
+                breakdown.setLoaiGiaApDung("Theo ngay");
+                tienPhong = giaNgayUuTien.multiply(BigDecimal.valueOf(soNgay));
+            }
+        }
+
+        if (tienPhong.signum() <= 0 && thanhTienDatPhong > 0d) {
+            breakdown.setLoaiGiaApDung("Theo ngay");
+            tienPhong = toMoney(thanhTienDatPhong);
+        }
+        if (tienPhong.signum() <= 0 && giaPhongDatPhong > 0d) {
             long soDem = Math.max(1L, soDemDatPhong);
-            return giaPhongDatPhong * soDem;
+            breakdown.setLoaiGiaApDung("Theo ngay");
+            tienPhong = toMoney(giaPhongDatPhong).multiply(BigDecimal.valueOf(soDem));
         }
-        return 0d;
+        if (tienPhong.signum() <= 0 && giaPhongLuuTru > 0d) {
+            long soNgay = Math.max(1L, (long) Math.ceil(soGio / 24.0d));
+            breakdown.setLoaiGiaApDung("Theo ngay");
+            tienPhong = toMoney(giaPhongLuuTru).multiply(BigDecimal.valueOf(soNgay));
+        }
+
+        breakdown.setThanhTien(tienPhong.max(BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP));
+        return breakdown;
+    }
+
+    private BigDecimal toMoney(double value) {
+        if (value <= 0d) {
+            return BigDecimal.ZERO;
+        }
+        return BigDecimal.valueOf(value).setScale(0, RoundingMode.HALF_UP);
     }
 
     private double loadServiceCharge(Connection con, int maLuuTru) throws Exception {
@@ -868,6 +1002,45 @@ public class ThanhToanDAO {
         private double tienPhong;
         private double tienDichVu;
         private double tienCoc;
+    }
+
+    private static final class RoomChargeBreakdown {
+        private String loaiNgay;
+        private String loaiGiaApDung;
+        private long soGioLuuTru;
+        private BigDecimal thanhTien = BigDecimal.ZERO;
+
+        public String getLoaiNgay() {
+            return loaiNgay;
+        }
+
+        public void setLoaiNgay(String loaiNgay) {
+            this.loaiNgay = loaiNgay;
+        }
+
+        public String getLoaiGiaApDung() {
+            return loaiGiaApDung;
+        }
+
+        public void setLoaiGiaApDung(String loaiGiaApDung) {
+            this.loaiGiaApDung = loaiGiaApDung;
+        }
+
+        public long getSoGioLuuTru() {
+            return soGioLuuTru;
+        }
+
+        public void setSoGioLuuTru(long soGioLuuTru) {
+            this.soGioLuuTru = soGioLuuTru;
+        }
+
+        public BigDecimal getThanhTien() {
+            return thanhTien;
+        }
+
+        public void setThanhTien(BigDecimal thanhTien) {
+            this.thanhTien = thanhTien;
+        }
     }
 
     private void ensureExtendedSchema(Connection con) throws Exception {

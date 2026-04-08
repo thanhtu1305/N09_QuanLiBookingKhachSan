@@ -20,6 +20,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DatPhongDAO {
+    private static final String LOAI_NGAY_THUONG = "Ngày thường";
+    private static final String LOAI_NGAY_CUOI_TUAN = "Cuối tuần";
+    private static final String LOAI_NGAY_LE = "Ngày lễ";
+    private static final String LOAI_GIA_THEO_NGAY = "Theo ngày";
+    private static final String LOAI_GIA_QUA_DEM = "Qua đêm";
+    private static final String LOAI_GIA_THEO_GIO = "Theo giờ";
+    private static final String LOAI_GIA_LE = "Giá lễ";
+    private static final String LOAI_GIA_CUOI_TUAN = "Giá cuối tuần";
+
     private static final String SELECT_HEADER_BASE =
             "SELECT dp.maDatPhong, dp.maKhachHang, dp.maNhanVien, dp.maBangGia, dp.ngayDat, dp.ngayNhanPhong, dp.ngayTraPhong, "
                     + "dp.soLuongPhong, dp.soNguoi, dp.tienCoc, dp.trangThai, "
@@ -645,7 +654,7 @@ public class DatPhongDAO {
 
     public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
         RoomRateResolution resolution = new RoomRateResolution();
-        resolution.setLoaiNgay(determineLoaiNgay(checkIn));
+        resolution.setLoaiNgay(normalizeLoaiNgay(determineLoaiNgay(checkIn)));
         resolution.setLoaiGiaApDung("Theo ngÃ y");
         resolution.setGiaApDung(0d);
         resolution.setMaChiTietBangGia("");
@@ -694,6 +703,7 @@ public class DatPhongDAO {
             resolution.setLoaiGiaApDung("Theo giá»");
         }
 
+        resolution.setLoaiGiaApDung(normalizeLoaiGia(resolution.getLoaiGiaApDung()));
         resolution.setGiaApDung(Math.max(giaApDung, 0d));
         return resolution;
     }
@@ -736,6 +746,42 @@ public class DatPhongDAO {
             return Math.max(first, 0d);
         }
         return Math.min(first, second);
+    }
+
+    private String normalizeLoaiNgay(String value) {
+        String normalized = safeTrim(value);
+        if (normalized.isEmpty()) {
+            return LOAI_NGAY_THUONG;
+        }
+        String lower = normalized.toLowerCase();
+        if (lower.contains("lá»") || lower.contains("lễ") || lower.endsWith("le")) {
+            return LOAI_NGAY_LE;
+        }
+        if (lower.contains("cuá»") || lower.contains("tuáº§n") || lower.contains("cuối") || lower.contains("tuan")) {
+            return LOAI_NGAY_CUOI_TUAN;
+        }
+        return LOAI_NGAY_THUONG;
+    }
+
+    private String normalizeLoaiGia(String value) {
+        String normalized = safeTrim(value);
+        if (normalized.isEmpty()) {
+            return LOAI_GIA_THEO_NGAY;
+        }
+        String lower = normalized.toLowerCase();
+        if (lower.contains("qua") && (lower.contains("đêm") || lower.contains("ªm") || lower.contains("dem"))) {
+            return LOAI_GIA_QUA_DEM;
+        }
+        if (lower.contains("lễ") || lower.contains("lá»") || lower.endsWith("le")) {
+            return LOAI_GIA_LE;
+        }
+        if (lower.contains("cuối") || lower.contains("cuá»") || lower.contains("tuan") || lower.contains("tuáº§n")) {
+            return LOAI_GIA_CUOI_TUAN;
+        }
+        if (lower.contains("giờ") || lower.contains("giá»") || lower.contains("gio")) {
+            return LOAI_GIA_THEO_GIO;
+        }
+        return LOAI_GIA_THEO_NGAY;
     }
 
     private String resolveRoomStatusForBooking(String bookingStatus) {

@@ -784,8 +784,8 @@ public class DatPhongGUI extends JFrame {
                     detail.formatCheckIn(),
                     detail.formatCheckOut(),
                     detail.soNguoi,
-                    safeValue(detail.loaiNgayApDung, "-"),
-                    safeValue(detail.loaiGiaApDung, "-"),
+                    normalizeAppliedRateText(detail.loaiNgayApDung),
+                    normalizeAppliedRateText(detail.loaiGiaApDung),
                     formatMoney(detail.giaApDung),
                     formatMoney(detail.tienDatCocChiTiet),
                     detail.trangThaiChiTiet
@@ -957,6 +957,24 @@ public class DatPhongGUI extends JFrame {
 
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private String normalizeAppliedRateText(String value) {
+        return safeValue(value, "-");
+    }
+
+    private int countMojibakeMarkers(String value) {
+        if (value == null || value.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == 'Ã' || ch == 'Â' || ch == 'Ä' || ch == 'Æ') {
+                count++;
+            }
+        }
+        return count;
     }
 
     private String valueOf(Object value) {
@@ -1233,8 +1251,8 @@ public class DatPhongGUI extends JFrame {
                 detail.checkInDuKien,
                 detail.checkOutDuKien
         );
-        detail.loaiNgayApDung = resolution.getLoaiNgay();
-        detail.loaiGiaApDung = resolution.getLoaiGiaApDung();
+        detail.loaiNgayApDung = normalizeAppliedRateText(resolution.getLoaiNgay());
+        detail.loaiGiaApDung = normalizeAppliedRateText(resolution.getLoaiGiaApDung());
         if (resolution.getGiaApDung() > 0d) {
             detail.giaApDung = resolution.getGiaApDung();
         }
@@ -1671,8 +1689,8 @@ public class DatPhongGUI extends JFrame {
                         detail.formatCheckIn(),
                         detail.formatCheckOut(),
                         detail.soNguoi,
-                        safeValue(detail.loaiNgayApDung, "-"),
-                        safeValue(detail.loaiGiaApDung, "-"),
+                        normalizeAppliedRateText(detail.loaiNgayApDung),
+                        normalizeAppliedRateText(detail.loaiGiaApDung),
                         formatMoney(detail.giaApDung),
                         formatMoney(detail.tienDatCocChiTiet),
                         getDetailStatusDisplay(detail)
@@ -2204,8 +2222,8 @@ public class DatPhongGUI extends JFrame {
                 if (detail == null) {
                     return "-";
                 }
-                return safeValue(detail.loaiNgayApDung, "-") + " | "
-                        + safeValue(detail.loaiGiaApDung, "-") + " | "
+                return normalizeAppliedRateText(detail.loaiNgayApDung) + " | "
+                        + normalizeAppliedRateText(detail.loaiGiaApDung) + " | "
                         + formatMoney(detail.giaApDung);
             }
 

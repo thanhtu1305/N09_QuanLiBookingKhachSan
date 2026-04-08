@@ -635,18 +635,18 @@ public class DatPhongDAO {
 
     public String determineLoaiNgay(LocalDate date) {
         if (date == null) {
-            return "NgÃ y thÆ°á»ng";
+            return "Ngày thường";
         }
         if (ngayLeDAO.isHoliday(date)) {
-            return "NgÃ y lá»…";
+            return "Ngày lễ";
         }
-        return isWeekend(date) ? "Cuá»‘i tuáº§n" : "NgÃ y thÆ°á»ng";
+        return isWeekend(date) ? "Cuối tuần" : "Ngày thường";
     }
 
     public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
         RoomRateResolution resolution = new RoomRateResolution();
         resolution.setLoaiNgay(determineLoaiNgay(checkIn));
-        resolution.setLoaiGiaApDung("Theo ngÃ y");
+        resolution.setLoaiGiaApDung("Theo ngày");
         resolution.setGiaApDung(0d);
         resolution.setMaChiTietBangGia("");
 
@@ -674,24 +674,24 @@ public class DatPhongDAO {
         }
 
         double giaApDung;
-        if ("NgÃ y lá»…".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
+        if ("Ngày lễ".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
             giaApDung = detail.getGiaLe();
-            resolution.setLoaiGiaApDung("GiÃ¡ lá»…");
-        } else if ("Cuá»‘i tuáº§n".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
+            resolution.setLoaiGiaApDung("Giá lễ");
+        } else if ("Cuối tuần".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
             giaApDung = detail.getGiaCuoiTuan();
-            resolution.setLoaiGiaApDung("GiÃ¡ cuá»‘i tuáº§n");
+            resolution.setLoaiGiaApDung("Giá cuối tuần");
         } else if (soDem == 1L && detail.getGiaQuaDem() > 0d) {
             giaApDung = chooseLowerPositive(detail.getGiaQuaDem(), detail.getGiaTheoNgay());
-            resolution.setLoaiGiaApDung(giaApDung == detail.getGiaQuaDem() ? "Qua Ä‘Ãªm" : "Theo ngÃ y");
+            resolution.setLoaiGiaApDung(giaApDung == detail.getGiaQuaDem() ? "Qua đêm" : "Theo ngày");
         } else if (detail.getGiaTheoNgay() > 0d) {
             giaApDung = detail.getGiaTheoNgay();
-            resolution.setLoaiGiaApDung("Theo ngÃ y");
+            resolution.setLoaiGiaApDung("Theo ngày");
         } else if (detail.getGiaQuaDem() > 0d) {
             giaApDung = detail.getGiaQuaDem();
-            resolution.setLoaiGiaApDung("Qua Ä‘Ãªm");
+            resolution.setLoaiGiaApDung("Qua đêm");
         } else {
             giaApDung = detail.getGiaTheoGio();
-            resolution.setLoaiGiaApDung("Theo giá»");
+            resolution.setLoaiGiaApDung("Theo giờ");
         }
 
         resolution.setGiaApDung(Math.max(giaApDung, 0d));

@@ -6,6 +6,7 @@ import entity.ThanhToan;
 import entity.ThanhToan.ChiTietDong;
 import entity.ThanhToan.GiaoDichThanhToan;
 import gui.common.AppBranding;
+import gui.common.AppFonts;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
@@ -69,10 +70,10 @@ public class ThanhToanGUI extends JFrame {
     private static final Color TEXT_PRIMARY = new Color(31, 41, 55);
     private static final Color TEXT_MUTED = new Color(107, 114, 128);
     private static final Color BORDER_SOFT = new Color(229, 231, 235);
-    private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
-    private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
-    private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
-    private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final Font TITLE_FONT = AppFonts.title(24);
+    private static final Font SECTION_FONT = AppFonts.section(16);
+    private static final Font BODY_FONT = AppFonts.body(13);
+    private static final Font LABEL_FONT = AppFonts.label(12);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private static final List<ThanhToanGUI> OPEN_INSTANCES = new ArrayList<ThanhToanGUI>();
@@ -193,7 +194,7 @@ public class ThanhToanGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
 
         JLabel lblSub = new JLabel("Liên kết trực tiếp với Lưu trú, Dịch vụ, Đặt phòng và bảng ThanhToan / HoaDon trong SQL.");
-        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        lblSub.setFont(AppFonts.body(14));
         lblSub.setForeground(TEXT_MUTED);
 
         JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
@@ -864,7 +865,7 @@ public class ThanhToanGUI extends JFrame {
             content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
             JLabel lblTitle = new JLabel(title);
-            lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
+            lblTitle.setFont(AppFonts.title(18));
             lblTitle.setForeground(TEXT_PRIMARY);
 
             JLabel lblSub = new JLabel("<html>" + subtitle + "</html>");
@@ -1743,7 +1744,7 @@ public class ThanhToanGUI extends JFrame {
 
     private JLabel createHeaderLine(String text, Color color) {
         JLabel label = new JLabel(text);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        label.setFont(AppFonts.ui(Font.BOLD, 12));
         label.setForeground(color);
         return label;
     }
@@ -1765,7 +1766,7 @@ public class ThanhToanGUI extends JFrame {
         body.setBorder(new EmptyBorder(0, 12, 10, 12));
         for (String[] row : rows) {
             JLabel label = new JLabel(row[0] + ": " + safeValue(row[1], "-"));
-            label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            label.setFont(AppFonts.ui(Font.BOLD, 13));
             label.setForeground(TEXT_PRIMARY);
             label.setAlignmentX(Component.LEFT_ALIGNMENT);
             body.add(label);
@@ -1979,7 +1980,7 @@ public class ThanhToanGUI extends JFrame {
         }
 
         JLabel noteLabel = new JLabel("<html><b>Ghi chú:</b> " + note.substring("Ghi chú: ".length()) + "</html>");
-        noteLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        noteLabel.setFont(AppFonts.body(12));
         noteLabel.setForeground(TEXT_PRIMARY);
         panel.add(noteLabel);
         panel.add(Box.createVerticalStrut(8));
@@ -2294,7 +2295,7 @@ public class ThanhToanGUI extends JFrame {
 
     private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
         JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setFont(AppFonts.ui(Font.BOLD, 13));
         button.setForeground(foreground);
         button.setBackground(background);
         button.setOpaque(true);
@@ -2311,7 +2312,7 @@ public class ThanhToanGUI extends JFrame {
 
     private JButton createOutlineButton(String text, Color borderColor, java.awt.event.ActionListener listener) {
         JButton button = new JButton(text);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setFont(AppFonts.ui(Font.BOLD, 13));
         button.setForeground(TEXT_PRIMARY);
         button.setBackground(Color.WHITE);
         button.setOpaque(true);
@@ -2343,7 +2344,7 @@ public class ThanhToanGUI extends JFrame {
 
     private JLabel createValueLabel() {
         JLabel label = new JLabel("-");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setFont(AppFonts.ui(Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
         label.setVerticalAlignment(SwingConstants.TOP);
         return label;
@@ -2351,7 +2352,7 @@ public class ThanhToanGUI extends JFrame {
 
     private JLabel createValueLabel(String value) {
         JLabel label = new JLabel(value);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setFont(AppFonts.ui(Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
         return label;
     }

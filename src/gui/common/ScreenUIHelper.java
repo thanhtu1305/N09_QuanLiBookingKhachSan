@@ -48,10 +48,10 @@ public final class ScreenUIHelper {
     private static final Color TABLE_HEADER_BG = new Color(44, 94, 143);
     private static final Color TABLE_HEADER_FG = Color.WHITE;
     private static final Color TABLE_HEADER_BORDER = new Color(122, 162, 202);
-    private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 18);
-    private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
-    private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
-    private static final Font TABLE_HEADER_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static final Font TITLE_FONT = AppFonts.title(18);
+    private static final Font BODY_FONT = AppFonts.body(13);
+    private static final Font LABEL_FONT = AppFonts.label(12);
+    private static final Font TABLE_HEADER_FONT = AppFonts.ui(Font.BOLD, 13);
     private static boolean uiDefaultsInstalled;
 
     private ScreenUIHelper() {}
@@ -80,7 +80,7 @@ public final class ScreenUIHelper {
         ));
         for (String label : labels) {
             JLabel shortcut = new JLabel(label);
-            shortcut.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            shortcut.setFont(AppFonts.ui(Font.BOLD, 12));
             shortcut.setForeground(textMuted);
             panel.add(shortcut);
         }
@@ -431,7 +431,7 @@ public final class ScreenUIHelper {
                                               java.awt.event.ActionListener listener) {
         JButton button = new JButton(text);
         button.setHorizontalAlignment(SwingConstants.CENTER);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        button.setFont(AppFonts.ui(Font.BOLD, 12));
         button.setForeground(textPrimary);
         button.setBackground(new Color(243, 244, 246));
         button.setFocusPainted(false);
@@ -487,11 +487,11 @@ public final class ScreenUIHelper {
                     continue;
                 }
                 if (uiKey.contains("Title") || uiKey.contains("Header")) {
-                    UIManager.put(uiKey, new Font("Segoe UI", Font.BOLD, Math.max(font.getSize(), TITLE_FONT.getSize())));
+                    UIManager.put(uiKey, AppFonts.ui(Font.BOLD, Math.max(font.getSize(), TITLE_FONT.getSize())));
                 } else if (uiKey.contains("TableHeader")) {
                     UIManager.put(uiKey, TABLE_HEADER_FONT);
                 } else {
-                    UIManager.put(uiKey, new Font("Segoe UI", Font.PLAIN, Math.max(font.getSize(), BODY_FONT.getSize())));
+                    UIManager.put(uiKey, AppFonts.ui(Font.PLAIN, Math.max(font.getSize(), BODY_FONT.getSize())));
                 }
             }
         }

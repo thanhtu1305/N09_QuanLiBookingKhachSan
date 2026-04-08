@@ -8,7 +8,7 @@ public class ConnectDB {
     private static final String URL =
             "jdbc:sqlserver://localhost:1433;databaseName=QLKS;encrypt=false;trustServerCertificate=true";
     private static final String USER = "sa";
-    private static final String PASSWORD = "123456";
+    private static final String PASSWORD = "sa123";
 
     private static Connection connection;
 

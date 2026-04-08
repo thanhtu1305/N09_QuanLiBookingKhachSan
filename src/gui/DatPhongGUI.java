@@ -1687,7 +1687,7 @@ public class DatPhongGUI extends JFrame {
                 return "-";
             }
             if (detail.duplicateInBooking) {
-                return "Trung phong";
+                return "Trùng phòng";
             }
             if (detail.capacityExceeded) {
                 return "Vuot suc chua";
@@ -1743,11 +1743,11 @@ public class DatPhongGUI extends JFrame {
 
             String warningMessage = null;
             if (detailRows.isEmpty()) {
-                warningMessage = "Phieu dat phong phai co it nhat 1 phong.";
+                warningMessage = "Phiếu đặt phòng phải có ít nhất 1 phòng.";
             } else if (highlightedConflictRow != null) {
                 if (highlightedConflictRow.duplicateInBooking) {
                     warningMessage = "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
-                            + " dang bi chon trung trong cung phieu dat phong.";
+                            + " đang bị chọn trùng trong cùng phiếu đặt phòng.";
                 } else if (highlightedConflictRow.capacityExceeded) {
                     warningMessage = "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
                             + " chi nhan toi da " + highlightedConflictRow.sucChuaToiDa
@@ -1763,7 +1763,7 @@ public class DatPhongGUI extends JFrame {
         private void applyDetailWarningState(String warningMessage, boolean focusConflictRow) {
             boolean hasWarning = warningMessage != null && !warningMessage.trim().isEmpty();
             lblConflictWarning.setText(hasWarning
-                    ? "<html>" + warningMessage + "<br/>Vui long chon phong khac hoac doi ngay nhan/tra phong.</html>"
+                    ? "<html>" + warningMessage + "<br/>Vui lòng chọn phòng khác hoặc đổi ngày nhận/trả phòng.</html>"
                     : "");
             pnlConflictWarning.setVisible(hasWarning);
             bookingDetailScrollPane.setBorder(hasWarning
@@ -1802,8 +1802,8 @@ public class DatPhongGUI extends JFrame {
 
         private String buildConflictMessage(DatPhongConflictInfo conflictInfo) {
             return "Phong " + safeValue(conflictInfo.getSoPhong(), "-")
-                    + " dang trung voi phieu dat phong DP" + conflictInfo.getMaDatPhong()
-                    + " cua khach " + safeValue(conflictInfo.getTenKhachHang(), "Khach chua xac dinh")
+                    + " đang trùng với phiếu đặt phòng DP" + conflictInfo.getMaDatPhong()
+                    + " của khách " + safeValue(conflictInfo.getTenKhachHang(), "Khách chưa xác định")
                     + ", tu " + formatDate(conflictInfo.getNgayNhanPhong())
                     + " den " + formatDate(conflictInfo.getNgayTraPhong())
                     + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
@@ -1812,13 +1812,13 @@ public class DatPhongGUI extends JFrame {
         private String validateDetailRowsBeforeSave() {
             if (detailRows.isEmpty()) {
                 reevaluateDetailValidationState(true);
-                return "Phieu dat phong phai co it nhat 1 phong.";
+                return "Phiếu đặt phòng phải có ít nhất 1 phòng.";
             }
             reevaluateDetailValidationState(true);
             if (highlightedConflictRow != null) {
                 if (highlightedConflictRow.duplicateInBooking) {
                     return "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
-                            + " dang bi chon trung trong cung phieu dat phong.";
+                            + " đang bị chọn trùng trong cùng phiếu đặt phòng.";
                 }
                 if (highlightedConflictRow.capacityExceeded) {
                     return "Phong " + safeValue(highlightedConflictRow.maPhong, String.valueOf(highlightedConflictRow.maPhongId))
@@ -2130,14 +2130,14 @@ public class DatPhongGUI extends JFrame {
                 }
                 syncSelectedRoomInfo();
 
-                addFormRow(form, gbc, 0, "Phong", cboPhongDialog);
-                addFormRow(form, gbc, 1, "Loai phong", txtLoaiPhongDialog);
-                addFormRow(form, gbc, 2, "Check-in du kien", txtCheckInDialog);
-                addFormRow(form, gbc, 3, "Check-out du kien", txtCheckOutDialog);
-                addFormRow(form, gbc, 4, "So nguoi", txtSoNguoiDialog);
-                addFormRow(form, gbc, 5, "Thu tien coc", txtDatCocDialog);
-                addFormRow(form, gbc, 6, "Gia ap dung", lblRatePreview);
-                addFormRow(form, gbc, 7, "Ghi chu", new JScrollPane(txtGhiChuChiTietDialog));
+                addFormRow(form, gbc, 0, "Phòng", cboPhongDialog);
+                addFormRow(form, gbc, 1, "Loại phòng", txtLoaiPhongDialog);
+                addFormRow(form, gbc, 2, "Check-in dự kiến", txtCheckInDialog);
+                addFormRow(form, gbc, 3, "Check-out dự kiến", txtCheckOutDialog);
+                addFormRow(form, gbc, 4, "Số người", txtSoNguoiDialog);
+                addFormRow(form, gbc, 5, "Thu tiền cọc", txtDatCocDialog);
+                addFormRow(form, gbc, 6, "Giá áp dụng", lblRatePreview);
+                addFormRow(form, gbc, 7, "Ghi chú", new JScrollPane(txtGhiChuChiTietDialog));
 
                 pnlInlineWarning = new JPanel(new BorderLayout());
                 pnlInlineWarning.setBackground(CONFLICT_BG);
@@ -2218,16 +2218,16 @@ public class DatPhongGUI extends JFrame {
                 String warningMessage = null;
                 boolean hasIssue = false;
                 if (option == null) {
-                    warningMessage = "Vui long chon phong truoc khi luu.";
+                    warningMessage = "Vui lòng chọn phòng trước khi lưu.";
                     hasIssue = true;
                 } else if (isDuplicateRoomSelection(option.maPhongId)) {
-                    warningMessage = "Phong " + option.soPhong + " da duoc chon trong phieu dat phong nay.";
+                    warningMessage = "Phòng " + option.soPhong + " đã được chọn trong phiếu đặt phòng này.";
                     hasIssue = true;
                 } else if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
-                    warningMessage = "Ngay tra phong phai lon hon ngay nhan phong.";
+                    warningMessage = "Ngày trả phòng phải lớn hơn ngày nhận phòng.";
                     hasIssue = true;
                 } else if (option != null && option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa) {
-                    warningMessage = "Phong " + option.soPhong + " chi nhan toi da " + option.sucChuaToiDa + " khach.";
+                    warningMessage = "Phòng " + option.soPhong + " chỉ nhận tối đa " + option.sucChuaToiDa + " khách.";
                     hasIssue = true;
                 } else if (option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
                     DatPhongConflictInfo conflictInfo = datPhongDAO.findRoomConflict(
@@ -2247,7 +2247,7 @@ public class DatPhongGUI extends JFrame {
 
             private void applyInlineWarningState(String warningMessage, boolean hasIssue) {
                 lblInlineWarning.setText(hasIssue
-                        ? "<html>" + warningMessage + "<br/>Vui long chon phong khac hoac doi ngay nhan/tra phong.</html>"
+                        ? "<html>" + warningMessage + "<br/>Vui lòng chọn phòng khác hoặc đổi ngày nhận/trả phòng.</html>"
                         : "");
                 pnlInlineWarning.setVisible(hasIssue);
                 cboPhongDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultRoomBorder);

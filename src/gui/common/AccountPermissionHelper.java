@@ -136,10 +136,10 @@ public final class AccountPermissionHelper {
         if (lowered.contains("receptionist")) {
             return "receptionist";
         }
-        if ((lowered.contains("qu") && lowered.contains("ly")) || lowered.contains("qu\u1ea3n l\u00fd") || lowered.contains("quáº£n")) {
+        if ((lowered.contains("qu") && lowered.contains("ly")) || lowered.contains("qu\u1ea3n l\u00fd") || lowered.contains("quản")) {
             return "quan ly";
         }
-        if ((lowered.contains("le") && lowered.contains("tan")) || lowered.contains("l\u1ec5 t\u00e2n") || lowered.contains("lá»…")) {
+        if ((lowered.contains("le") && lowered.contains("tan")) || lowered.contains("l\u1ec5 t\u00e2n") || lowered.contains("lễ")) {
             return "le tan";
         }
 

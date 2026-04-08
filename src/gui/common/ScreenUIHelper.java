@@ -15,6 +15,7 @@ import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingConstants;
+import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
@@ -40,13 +41,18 @@ import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.BorderLayout;
+import java.util.Enumeration;
 
 public final class ScreenUIHelper {
     private static final String DIALOG_PREPARED_KEY = "dialogPrepared";
     private static final Color TABLE_HEADER_BG = new Color(44, 94, 143);
     private static final Color TABLE_HEADER_FG = Color.WHITE;
     private static final Color TABLE_HEADER_BORDER = new Color(122, 162, 202);
+    private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 18);
+    private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
+    private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final Font TABLE_HEADER_FONT = new Font("Segoe UI", Font.BOLD, 13);
+    private static boolean uiDefaultsInstalled;
 
     private ScreenUIHelper() {}
 
@@ -54,6 +60,7 @@ public final class ScreenUIHelper {
      * Nút [_] thu nhỏ và [X] đóng, hoạt động trên AppFrame singleton.
      */
     public static JPanel createWindowControlPanel(Object ignored, Color textPrimary, Color borderSoft, String screenName) {
+        installGlobalUiDefaults();
         AppFrame frame = AppFrame.get();
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         panel.setOpaque(false);
@@ -101,6 +108,7 @@ public final class ScreenUIHelper {
             return;
         }
 
+        installGlobalUiDefaults();
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
 
         if (!Boolean.TRUE.equals(dialog.getRootPane().getClientProperty(DIALOG_PREPARED_KEY))) {
@@ -145,6 +153,7 @@ public final class ScreenUIHelper {
         if (window == null) {
             return;
         }
+        installGlobalUiDefaults();
         Rectangle usableBounds = getUsableBounds(window, null);
         int width = Math.min(Math.max(preferredWidth, 800), usableBounds.width);
         int height = Math.min(Math.max(preferredHeight, 600), usableBounds.height);
@@ -449,5 +458,43 @@ public final class ScreenUIHelper {
             AppFrame.get().dispose();
             System.exit(0);
         }
+    }
+
+    public static synchronized void installGlobalUiDefaults() {
+        if (uiDefaultsInstalled) {
+            return;
+        }
+
+        UIManager.put("OptionPane.messageFont", BODY_FONT);
+        UIManager.put("OptionPane.buttonFont", BODY_FONT);
+        UIManager.put("OptionPane.yesButtonText", "Có");
+        UIManager.put("OptionPane.noButtonText", "Không");
+        UIManager.put("OptionPane.cancelButtonText", "Hủy");
+        UIManager.put("OptionPane.okButtonText", "Đồng ý");
+        UIManager.put("ToolTip.font", LABEL_FONT);
+        UIManager.put("TitledBorder.font", TABLE_HEADER_FONT);
+        UIManager.put("TitledBorder.titleColor", new Color(31, 41, 55));
+
+        for (Enumeration<Object> keys = UIManager.getDefaults().keys(); keys.hasMoreElements(); ) {
+            Object key = keys.nextElement();
+            if (!(key instanceof String)) {
+                continue;
+            }
+            String uiKey = (String) key;
+            if (uiKey.endsWith(".font")) {
+                Font font = UIManager.getFont(uiKey);
+                if (font == null) {
+                    continue;
+                }
+                if (uiKey.contains("Title") || uiKey.contains("Header")) {
+                    UIManager.put(uiKey, new Font("Segoe UI", Font.BOLD, Math.max(font.getSize(), TITLE_FONT.getSize())));
+                } else if (uiKey.contains("TableHeader")) {
+                    UIManager.put(uiKey, TABLE_HEADER_FONT);
+                } else {
+                    UIManager.put(uiKey, new Font("Segoe UI", Font.PLAIN, Math.max(font.getSize(), BODY_FONT.getSize())));
+                }
+            }
+        }
+        uiDefaultsInstalled = true;
     }
 }

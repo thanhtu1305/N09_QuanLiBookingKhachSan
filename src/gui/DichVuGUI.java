@@ -16,9 +16,11 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -139,6 +141,7 @@ public class DichVuGUI extends JFrame {
         JLabel sub = new JLabel("Quản lý danh mục dịch vụ và ghi nhận dịch vụ phát sinh theo lưu trú.");
         sub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         sub.setForeground(TEXT_MUTED);
+        sub.setText("Quản lý danh mục dịch vụ. Ghi nhận phát sinh cho khách đang ở nên ưu tiên thao tác tại màn Check-in/out.");
 
         JLabel meta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
         meta.setFont(BODY_FONT);
@@ -161,6 +164,9 @@ public class DichVuGUI extends JFrame {
         card.add(primary("Xóa dịch vụ", new Color(220, 38, 38), e -> deleteSelectedService()));
         card.add(primary("Sử dụng dịch vụ", new Color(99, 102, 241), e -> openUsageDialog(getSelectedService(false))));
         card.add(primary("Tìm kiếm", new Color(15, 118, 110), e -> applyFilters(true)));
+        if (card.getComponentCount() >= 3 && card.getComponent(2) instanceof JButton) {
+            ((JButton) card.getComponent(2)).setText("Ghi nhận sử dụng dịch vụ");
+        }
         return card;
     }
 
@@ -496,20 +502,21 @@ public class DichVuGUI extends JFrame {
             getContentPane().setBackground(APP_BG);
             setLayout(new BorderLayout(0, 12));
             ((JPanel) getContentPane()).setBorder(new EmptyBorder(12, 12, 12, 12));
+            setTitle("Ghi nhận sử dụng dịch vụ");
 
             JTextField txtCccdPassport = input("");
             JComboBox<ActiveStayOption> cboKhachHang = new JComboBox<ActiveStayOption>();
             cboKhachHang.setFont(BODY_FONT);
             cboKhachHang.setPreferredSize(new Dimension(260, 34));
 
-            JComboBox<String> cboDichVu = combo(dichVuOptions());
+            JComboBox<DichVu> cboDichVu = createServiceComboBox();
             JTextField txtSoLuong = input("1");
             JTextField txtDonGia = input("0");
             JTextField txtThanhTien = input("0");
             txtThanhTien.setEditable(false);
 
             if (preselected != null) {
-                cboDichVu.setSelectedItem(display(preselected));
+                setSelectedService(cboDichVu, preselected.getMaDichVu());
                 txtDonGia.setText(String.valueOf((long) preselected.getDonGia()));
             }
 
@@ -539,7 +546,7 @@ public class DichVuGUI extends JFrame {
             );
 
             Runnable fillPrice = () -> {
-                DichVu dichVu = serviceFromDisplay(item(cboDichVu));
+                DichVu dichVu = getSelectedService(cboDichVu);
                 if (dichVu != null) {
                     txtDonGia.setText(String.valueOf((long) dichVu.getDonGia()));
                 }
@@ -580,6 +587,7 @@ public class DichVuGUI extends JFrame {
             JPanel center = new JPanel(new BorderLayout(0, 12));
             center.setOpaque(false);
             center.add(cardWrap(form), BorderLayout.NORTH);
+            center.add(createUsageShortcutNote(), BorderLayout.CENTER);
 
             JPanel tableCard = card(new BorderLayout(0, 8));
             JLabel title = new JLabel("Danh sách dịch vụ đã dùng theo lưu trú");
@@ -587,7 +595,7 @@ public class DichVuGUI extends JFrame {
             title.setForeground(TEXT_PRIMARY);
             tableCard.add(title, BorderLayout.NORTH);
             tableCard.add(new JScrollPane(tblUsage), BorderLayout.CENTER);
-            center.add(tableCard, BorderLayout.CENTER);
+            center.add(tableCard, BorderLayout.SOUTH);
 
             add(dialogHeader("Ghi nhận sử dụng dịch vụ", "Lưu dữ liệu thật vào bảng SuDungDichVu."), BorderLayout.NORTH);
             add(center, BorderLayout.CENTER);
@@ -700,7 +708,7 @@ public class DichVuGUI extends JFrame {
                 selected[0] = suDung;
             }
 
-            context.cboDichVu.setSelectedItem(serviceDisplayById(suDung.getMaDichVu()));
+            setSelectedService(context.cboDichVu, suDung.getMaDichVu());
             context.txtSoLuong.setText(String.valueOf(suDung.getSoLuong()));
             context.txtDonGia.setText(String.valueOf((long) suDung.getDonGia()));
             context.txtThanhTien.setText(money(suDung.getThanhTien()));
@@ -710,7 +718,7 @@ public class DichVuGUI extends JFrame {
     private static final class UsageContext {
         private final JTextField txtCccdPassport;
         private final JComboBox<ActiveStayOption> cboKhachHang;
-        private final JComboBox<String> cboDichVu;
+        private final JComboBox<DichVu> cboDichVu;
         private final JTextField txtSoLuong;
         private final JTextField txtDonGia;
         private final JTextField txtThanhTien;
@@ -720,7 +728,7 @@ public class DichVuGUI extends JFrame {
         private UsageContext(
                 JTextField txtCccdPassport,
                 JComboBox<ActiveStayOption> cboKhachHang,
-                JComboBox<String> cboDichVu,
+                JComboBox<DichVu> cboDichVu,
                 JTextField txtSoLuong,
                 JTextField txtDonGia,
                 JTextField txtThanhTien,
@@ -854,7 +862,7 @@ public class DichVuGUI extends JFrame {
             SuDungDichVu selectedUsage,
             boolean editing,
             JComboBox<ActiveStayOption> cboKhachHang,
-            JComboBox<String> cboDichVu,
+            JComboBox<DichVu> cboDichVu,
             JTextField txtSoLuong,
             JTextField txtDonGia
     ) {
@@ -864,9 +872,9 @@ public class DichVuGUI extends JFrame {
             return null;
         }
 
-        DichVu dichVu = serviceFromDisplay(item(cboDichVu));
+        DichVu dichVu = getSelectedService(cboDichVu);
         if (dichVu == null) {
-            warn("Dịch vụ không hợp lệ.");
+            warn("Vui lòng chọn dịch vụ hợp lệ.");
             return null;
         }
 
@@ -891,34 +899,45 @@ public class DichVuGUI extends JFrame {
         return suDung;
     }
 
-    private String[] dichVuOptions() {
-        String[] options = new String[allServices.size()];
-        for (int i = 0; i < allServices.size(); i++) {
-            options[i] = display(allServices.get(i));
-        }
-        return options;
+    private JComboBox<DichVu> createServiceComboBox() {
+        JComboBox<DichVu> comboBox = new JComboBox<DichVu>(allServices.toArray(new DichVu[0]));
+        comboBox.setFont(BODY_FONT);
+        comboBox.setPreferredSize(new Dimension(180, 34));
+        comboBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof DichVu) {
+                    DichVu dichVu = (DichVu) value;
+                    setText(formatServiceCode(dichVu.getMaDichVu()) + " - " + safe(dichVu.getTenDichVu()));
+                } else if (value == null) {
+                    setText("Chọn dịch vụ");
+                }
+                return this;
+            }
+        });
+        return comboBox;
     }
 
-    private String display(DichVu dichVu) {
-        return formatServiceCode(dichVu.getMaDichVu()) + " - " + dichVu.getTenDichVu();
-    }
-
-    private DichVu serviceFromDisplay(String display) {
+    private DichVu findServiceById(int maDichVu) {
         for (DichVu dichVu : allServices) {
-            if (display(dichVu).equals(display)) {
+            if (dichVu.getMaDichVu() == maDichVu) {
                 return dichVu;
             }
         }
         return null;
     }
 
-    private String serviceDisplayById(int maDichVu) {
-        for (DichVu dichVu : allServices) {
-            if (dichVu.getMaDichVu() == maDichVu) {
-                return display(dichVu);
-            }
+    private void setSelectedService(JComboBox<DichVu> cboDichVu, int maDichVu) {
+        DichVu dichVu = findServiceById(maDichVu);
+        if (dichVu != null) {
+            cboDichVu.setSelectedItem(dichVu);
         }
-        return "";
+    }
+
+    private DichVu getSelectedService(JComboBox<DichVu> cboDichVu) {
+        Object selected = cboDichVu == null ? null : cboDichVu.getSelectedItem();
+        return selected instanceof DichVu ? (DichVu) selected : null;
     }
 
     private void updateThanhTien(JTextField txtSoLuong, JTextField txtDonGia, JTextField txtThanhTien) {
@@ -1005,6 +1024,15 @@ public class DichVuGUI extends JFrame {
         panel.add(lbl);
         panel.add(Box.createVerticalStrut(4));
         panel.add(component);
+        return panel;
+    }
+
+    private JPanel createUsageShortcutNote() {
+        JPanel panel = card(new BorderLayout());
+        JLabel lbl = new JLabel("Lối tắt: nên ưu tiên thêm dịch vụ phát sinh tại màn Check-in/out để gắn trực tiếp với hồ sơ lưu trú đang ở.");
+        lbl.setFont(BODY_FONT);
+        lbl.setForeground(TEXT_MUTED);
+        panel.add(lbl, BorderLayout.CENTER);
         return panel;
     }
 

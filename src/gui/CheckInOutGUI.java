@@ -1,6 +1,8 @@
 package gui;
 
+import dao.DichVuDAO;
 import db.ConnectDB;
+import entity.DichVu;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.AppTimePickerField;
@@ -14,9 +16,11 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.DefaultListCellRenderer;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -73,6 +77,7 @@ public class CheckInOutGUI extends JFrame {
 
     private final String username;
     private final String role;
+    private final DichVuDAO dichVuDAO = new DichVuDAO();
     private JPanel rootPanel;
     private final List<StayRecord> allRecords = new ArrayList<StayRecord>();
     private final List<StayRecord> filteredRecords = new ArrayList<StayRecord>();
@@ -500,6 +505,37 @@ public class CheckInOutGUI extends JFrame {
         field.setPreferredSize(new Dimension(150, 34));
         field.setMaximumSize(new Dimension(280, 34));
         return field;
+    }
+
+    private JComboBox<DichVu> createServiceComboBox(List<DichVu> services) {
+        JComboBox<DichVu> comboBox = new JComboBox<DichVu>(services.toArray(new DichVu[0]));
+        comboBox.setFont(BODY_FONT);
+        comboBox.setPreferredSize(new Dimension(150, 34));
+        comboBox.setMaximumSize(new Dimension(280, 34));
+        comboBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof DichVu) {
+                    DichVu dichVu = (DichVu) value;
+                    setText("DV" + dichVu.getMaDichVu() + " - " + safeValue(dichVu.getTenDichVu(), "Dịch vụ"));
+                } else if (value == null) {
+                    setText("Chọn dịch vụ");
+                }
+                return this;
+            }
+        });
+        return comboBox;
+    }
+
+    private void updateServiceReferencePrice(JComboBox<DichVu> cboDichVu, JTextField txtDonGia) {
+        DichVu dichVu = getSelectedDichVu(cboDichVu);
+        txtDonGia.setText(dichVu == null ? "0" : formatMoney(dichVu.getDonGia()));
+    }
+
+    private DichVu getSelectedDichVu(JComboBox<DichVu> cboDichVu) {
+        Object selected = cboDichVu == null ? null : cboDichVu.getSelectedItem();
+        return selected instanceof DichVu ? (DichVu) selected : null;
     }
 
     private JButton createPrimaryButton(String text, Color background, Color foreground, java.awt.event.ActionListener listener) {
@@ -1328,41 +1364,59 @@ public class CheckInOutGUI extends JFrame {
         private final StayRecord record;
 
         private AddServiceDialog(Frame owner, StayRecord record) {
-            super(owner, "Thêm dịch vụ", 560, 360);
+            super(owner, "Thêm dịch vụ cho khách đang ở", 560, 400);
             this.record = record;
+            List<DichVu> services = dichVuDAO.getAll();
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
-            content.add(buildDialogHeader("THÊM DỊCH VỤ", "Thêm dịch vụ vào hồ sơ lưu trú hiện tại."), BorderLayout.NORTH);
+            content.add(buildDialogHeader("GHI NHẬN DỊCH VỤ PHÁT SINH", "Thêm sử dụng dịch vụ cho hồ sơ lưu trú đang ở."), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            JTextField txtDichVu = createInputField("");
+            JComboBox<DichVu> cboDichVu = createServiceComboBox(services);
             JTextField txtSoLuong = createInputField("1");
+            JTextField txtDonGia = createInputField("0");
+            txtDonGia.setEditable(false);
+
+            updateServiceReferencePrice(cboDichVu, txtDonGia);
+            cboDichVu.addActionListener(e -> updateServiceReferencePrice(cboDichVu, txtDonGia));
 
             addFormRow(form, gbc, 0, "Mã hồ sơ", createValueLabel(record.maHoSo));
-            addFormRow(form, gbc, 1, "Dịch vụ", txtDichVu);
-            addFormRow(form, gbc, 2, "Số lượng", txtSoLuong);
+            addFormRow(form, gbc, 1, "Mã lưu trú", createValueLabel(String.valueOf(record.maLuuTru)));
+            addFormRow(form, gbc, 2, "Dịch vụ", cboDichVu);
+            addFormRow(form, gbc, 3, "Đơn giá tham khảo", txtDonGia);
+            addFormRow(form, gbc, 4, "Số lượng", txtSoLuong);
 
             JPanel card = createDialogCardPanel();
             card.add(form, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
 
-            JButton btnConfirm = createPrimaryButton("Lưu", new Color(37, 99, 235), Color.WHITE, e -> submit(txtDichVu, txtSoLuong));
+            JButton btnConfirm = createPrimaryButton("Lưu", new Color(37, 99, 235), Color.WHITE, e -> submit(cboDichVu, txtSoLuong, txtDonGia));
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
         }
 
-        private void submit(JTextField txtDichVu, JTextField txtSoLuong) {
-            String tenDichVu = txtDichVu.getText().trim();
-            if (tenDichVu.isEmpty()) {
-                showInfo("Tên dịch vụ không được trống.");
+        private void submit(JComboBox<DichVu> cboDichVu, JTextField txtSoLuong, JTextField txtDonGia) {
+            if (!"Đang ở".equalsIgnoreCase(safeValue(record.trangThai, ""))) {
+                showInfo("Chỉ hồ sơ đang ở mới được ghi nhận dịch vụ.");
                 return;
             }
+            if (record.maLuuTru <= 0) {
+                showInfo("Mã lưu trú hiện tại không hợp lệ.");
+                return;
+            }
+
+            DichVu dichVu = getSelectedDichVu(cboDichVu);
+            if (dichVu == null || dichVu.getMaDichVu() <= 0) {
+                showInfo("Vui lòng chọn dịch vụ hợp lệ.");
+                return;
+            }
+
             int soLuong;
             try {
                 soLuong = Integer.parseInt(txtSoLuong.getText().trim());
@@ -1370,40 +1424,41 @@ public class CheckInOutGUI extends JFrame {
                 showInfo("Số lượng không hợp lệ.");
                 return;
             }
+            if (soLuong <= 0) {
+                showInfo("Số lượng phải lớn hơn 0.");
+                return;
+            }
+
+            double donGia = dichVu.getDonGia();
+            try {
+                String normalizedPrice = txtDonGia.getText().trim().replace(".", "");
+                if (!normalizedPrice.isEmpty()) {
+                    donGia = Double.parseDouble(normalizedPrice);
+                }
+            } catch (NumberFormatException ignored) {
+                donGia = dichVu.getDonGia();
+            }
+
             Connection con = ConnectDB.getConnection();
             if (con == null) {
                 showInfo("Không thể kết nối cơ sở dữ liệu.");
                 return;
             }
             try {
-                Integer maDichVu = null;
-                double donGia = 0;
-                try (PreparedStatement ps = con.prepareStatement("SELECT TOP 1 maDichVu, donGia FROM DichVu WHERE tenDichVu = ?")) {
-                    ps.setString(1, tenDichVu);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        if (rs.next()) {
-                            maDichVu = Integer.valueOf(rs.getInt("maDichVu"));
-                            donGia = rs.getDouble("donGia");
-                        }
-                    }
-                }
-                if (maDichVu == null) {
-                    showInfo("Không tìm thấy dịch vụ trong bảng DichVu.");
-                    return;
-                }
+                // Ghi nhận phát sinh phải gắn trực tiếp với hồ sơ lưu trú đang ở.
                 try (PreparedStatement ps = con.prepareStatement("INSERT INTO SuDungDichVu(maLuuTru, maDichVu, soLuong, donGia) VALUES (?, ?, ?, ?)")) {
                     ps.setInt(1, record.maLuuTru);
-                    ps.setInt(2, maDichVu.intValue());
+                    ps.setInt(2, dichVu.getMaDichVu());
                     ps.setInt(3, soLuong);
                     ps.setDouble(4, donGia);
                     ps.executeUpdate();
                 }
                 CheckInOutGUI.refreshAllOpenInstances();
-                showInfo("Đã thêm dịch vụ.");
+                showInfo("Đã ghi nhận sử dụng dịch vụ thành công.");
                 dispose();
             } catch (Exception e) {
                 e.printStackTrace();
-                showInfo("Không thể thêm dịch vụ.");
+                showInfo("Không thể ghi nhận sử dụng dịch vụ.");
             }
         }
     }

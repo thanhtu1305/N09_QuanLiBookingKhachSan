@@ -91,15 +91,15 @@ public class BaoCaoKhachHangGUI extends JFrame {
     private CustomerCategoryChartPanel chartPanel;
 
     public BaoCaoKhachHangGUI() {
-        this("guest", "Quan ly");
+        this("guest", "Quản lý");
     }
 
     public BaoCaoKhachHangGUI(String username, String role) {
         this.username = safeValue(username, "guest");
-        this.role = safeValue(role, "Quan ly");
+        this.role = safeValue(role, "Quản lý");
         this.sourceData = loadCustomerProfiles();
 
-        setTitle("Bao cao khach hang - " + AppBranding.APP_DISPLAY_NAME);
+        setTitle("Báo cáo khách hàng - " + AppBranding.APP_DISPLAY_NAME);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
@@ -148,15 +148,15 @@ public class BaoCaoKhachHangGUI extends JFrame {
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
 
-        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("BAO CAO KHACH HANG"));
+        JLabel lblTitle = new JLabel(AppBranding.formatPageTitle("BÁO CÁO KHÁCH HÀNG"));
         lblTitle.setFont(TITLE_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Theo doi nhom khach, khach moi, VIP va khach noi bat theo ky bao cao.");
+        JLabel lblSub = new JLabel("Theo dõi nhóm khách, khách mới, VIP và khách nổi bật theo kỳ báo cáo.");
         lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblSub.setForeground(TEXT_MUTED);
 
-        JLabel lblMeta = new JLabel("Nguoi dung: " + username + " | Vai tro: " + role);
+        JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
         lblMeta.setFont(BODY_FONT);
         lblMeta.setForeground(TEXT_MUTED);
 
@@ -167,15 +167,15 @@ public class BaoCaoKhachHangGUI extends JFrame {
         left.add(lblMeta);
 
         card.add(left, BorderLayout.WEST);
-        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "man hinh Bao cao khach hang"), BorderLayout.EAST);
+        card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "man hinh Báo cáo khách hàng"), BorderLayout.EAST);
         return card;
     }
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Xem bao cao", BRAND_GREEN, Color.WHITE, e -> loadCustomerReport(true)));
-        card.add(createPrimaryButton("Xuat file", BRAND_BLUE, Color.WHITE, e -> showInfo("Da san sang xuat bao cao khach hang.")));
-        card.add(createPrimaryButton("Lam moi", new Color(15, 118, 110), Color.WHITE, e -> resetFilters()));
+        card.add(createPrimaryButton("Xem báo cáo", BRAND_GREEN, Color.WHITE, e -> loadCustomerReport(true)));
+        card.add(createPrimaryButton("Xuất file", BRAND_BLUE, Color.WHITE, e -> showInfo("Đã sẵn sàng xuất báo cáo khách hàng.")));
+        card.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE, e -> resetFilters()));
         return card;
     }
 
@@ -185,31 +185,31 @@ public class BaoCaoKhachHangGUI extends JFrame {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        cboCheDoLoc = createComboBox(new String[]{"Khoang thoi gian", "Theo ngay", "Theo thang", "Theo nam"});
+        cboCheDoLoc = createComboBox(new String[]{"Khoảng thời gian", "Theo ngày", "Theo tháng", "Theo năm"});
         cboThang = createComboBox(new String[]{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"});
         cboNam = createComboBox(new String[]{"2026", "2025", "2024", "2023"});
-        cboNhomKhach = createComboBox(new String[]{"Tat ca", "VIP", "Thuong", "Nuoc ngoai", "Noi dia", "Doanh nghiep"});
+        cboNhomKhach = createComboBox(new String[]{"Tất cả", "VIP", "Thường", "Nước ngoài", "Nội địa", "Doanh nghiệp"});
         txtTuNgay = new AppDatePickerField("01/04/2026", true);
         txtDenNgay = new AppDatePickerField("30/04/2026", true);
 
-        left.add(createFieldGroup("Che do loc", cboCheDoLoc));
-        left.add(createFieldGroup("Thang", cboThang));
-        left.add(createFieldGroup("Nam", cboNam));
-        left.add(createFieldGroup("Nhom khach", cboNhomKhach));
-        left.add(createFieldGroup("Tu ngay", txtTuNgay));
-        left.add(createFieldGroup("Den ngay", txtDenNgay));
+        left.add(createFieldGroup("Chế độ lọc", cboCheDoLoc));
+        left.add(createFieldGroup("Tháng", cboThang));
+        left.add(createFieldGroup("Năm", cboNam));
+        left.add(createFieldGroup("Nhóm khách", cboNhomKhach));
+        left.add(createFieldGroup("Từ ngày", txtTuNgay));
+        left.add(createFieldGroup("Đến ngày", txtDenNgay));
 
         JPanel right = new JPanel();
         right.setOpaque(false);
         right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
 
-        JLabel lblSearch = new JLabel("Tim nhanh");
+        JLabel lblSearch = new JLabel("Tìm nhanh");
         lblSearch.setFont(LABEL_FONT);
         lblSearch.setForeground(TEXT_MUTED);
 
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(230, 34));
-        txtTuKhoa.setToolTipText("Ten khach, ma khach, quoc tich hoac nhom");
+        txtTuKhoa.setToolTipText("Tên khách, mã khách, quốc tịch hoặc nhóm");
 
         right.add(lblSearch);
         right.add(Box.createVerticalStrut(4));
@@ -233,10 +233,10 @@ public class BaoCaoKhachHangGUI extends JFrame {
         lblKhachVipSub = new JLabel();
         lblKhachNuocNgoaiSub = new JLabel();
 
-        panel.add(createSummaryCard("Tong so khach", lblTongKhach, lblTongKhachSub, BRAND_BLUE));
-        panel.add(createSummaryCard("Khach moi", lblKhachMoi, lblKhachMoiSub, BRAND_GREEN));
+        panel.add(createSummaryCard("Tổng số khách", lblTongKhach, lblTongKhachSub, BRAND_BLUE));
+        panel.add(createSummaryCard("Khách mới", lblKhachMoi, lblKhachMoiSub, BRAND_GREEN));
         panel.add(createSummaryCard("Khach VIP", lblKhachVip, lblKhachVipSub, BRAND_AMBER));
-        panel.add(createSummaryCard("Khach nuoc ngoai", lblKhachNuocNgoai, lblKhachNuocNgoaiSub, BRAND_INDIGO));
+        panel.add(createSummaryCard("Khách nước ngoài", lblKhachNuocNgoai, lblKhachNuocNgoaiSub, BRAND_INDIGO));
         return panel;
     }
 
@@ -260,11 +260,11 @@ public class BaoCaoKhachHangGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Bieu do phan loai khach hang");
+        JLabel lblTitle = new JLabel("Biểu đồ phân loại khách hàng");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("So sanh VIP, thuong, nuoc ngoai va noi dia trong ky dang loc.");
+        JLabel lblSub = new JLabel("So sánh VIP, thường, nước ngoài và nội địa trong kỳ đang lọc.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -285,11 +285,11 @@ public class BaoCaoKhachHangGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Bang phan loai khach hang");
+        JLabel lblTitle = new JLabel("Bảng phân loại khách hàng");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Tong hop theo nhom de doi chieu khi demo va de thay DAO that.");
+        JLabel lblSub = new JLabel("Tổng hợp theo nhóm để đối chiếu khi demo và dễ thay DAO thật.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -297,7 +297,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         titleRow.add(lblSub, BorderLayout.EAST);
 
         phanLoaiModel = new DefaultTableModel(
-                new String[]{"Nhom khach", "So luong", "Ty le", "Khach moi", "Ghi chu"},
+                new String[]{"Nhóm khách", "Số lượng", "Tỷ lệ", "Khách mới", "Ghi chú"},
                 0
         ) {
             @Override
@@ -323,11 +323,11 @@ public class BaoCaoKhachHangGUI extends JFrame {
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
 
-        JLabel lblTitle = new JLabel("Top khach dat nhieu lan");
+        JLabel lblTitle = new JLabel("Top khách đặt nhiều lần");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Du lieu de mo rong sang booking that khi bo sung DAO.");
+        JLabel lblSub = new JLabel("Dữ liệu để mở rộng sang booking thật khi bổ sung DAO.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -335,7 +335,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         titleRow.add(lblSub, BorderLayout.EAST);
 
         topKhachModel = new DefaultTableModel(
-                new String[]{"Ma KH", "Ten khach", "Nhom", "So lan dat", "Tong chi tieu", "Danh gia"},
+                new String[]{"Mã KH", "Tên khách", "Nhom", "Số lần đặt", "Tổng chi tiêu", "Đánh giá"},
                 0
         ) {
             @Override
@@ -360,9 +360,9 @@ public class BaoCaoKhachHangGUI extends JFrame {
                 CARD_BG,
                 BORDER_SOFT,
                 TEXT_MUTED,
-                "F1 Xem bao cao",
-                "F2 Xuat file",
-                "F5 Lam moi",
+                "F1 Xem báo cáo",
+                "F2 Xuất file",
+                "F5 Làm mới",
                 "Enter Xem nhanh"
         );
     }
@@ -382,8 +382,8 @@ public class BaoCaoKhachHangGUI extends JFrame {
     private List<CustomerProfile> filterProfiles() {
         List<CustomerProfile> filtered = new ArrayList<CustomerProfile>();
         String keyword = txtTuKhoa == null ? "" : safeValue(txtTuKhoa.getText(), "").toLowerCase(Locale.ROOT);
-        String selectedGroup = cboNhomKhach == null ? "Tat ca" : String.valueOf(cboNhomKhach.getSelectedItem());
-        String filterMode = cboCheDoLoc == null ? "Khoang thoi gian" : String.valueOf(cboCheDoLoc.getSelectedItem());
+        String selectedGroup = cboNhomKhach == null ? "Tất cả" : String.valueOf(cboNhomKhach.getSelectedItem());
+        String filterMode = cboCheDoLoc == null ? "Khoảng thời gian" : String.valueOf(cboCheDoLoc.getSelectedItem());
         LocalDate fromDate = resolveFromDate(filterMode);
         LocalDate toDate = resolveToDate(filterMode);
 
@@ -420,9 +420,9 @@ public class BaoCaoKhachHangGUI extends JFrame {
         }
 
         summary.chartItems.add(new ChartItem("VIP", summary.vipCustomers, BRAND_AMBER));
-        summary.chartItems.add(new ChartItem("Thuong", countRegularCustomers(profiles), BRAND_BLUE));
-        summary.chartItems.add(new ChartItem("Nuoc ngoai", summary.foreignCustomers, BRAND_INDIGO));
-        summary.chartItems.add(new ChartItem("Noi dia", summary.totalCustomers - summary.foreignCustomers, BRAND_GREEN));
+        summary.chartItems.add(new ChartItem("Thường", countRegularCustomers(profiles), BRAND_BLUE));
+        summary.chartItems.add(new ChartItem("Nước ngoài", summary.foreignCustomers, BRAND_INDIGO));
+        summary.chartItems.add(new ChartItem("Nội địa", summary.totalCustomers - summary.foreignCustomers, BRAND_GREEN));
         return summary;
     }
 
@@ -443,9 +443,9 @@ public class BaoCaoKhachHangGUI extends JFrame {
         lblKhachNuocNgoai.setText(formatNumber(summary.foreignCustomers));
 
         lblTongKhachSub.setText("Ky loc: " + formatSelectedPeriod());
-        lblKhachMoiSub.setText("Ty le: " + percentText(summary.newCustomers, summary.totalCustomers));
-        lblKhachVipSub.setText("Ty le: " + percentText(summary.vipCustomers, summary.totalCustomers));
-        lblKhachNuocNgoaiSub.setText("Ty le: " + percentText(summary.foreignCustomers, summary.totalCustomers));
+        lblKhachMoiSub.setText("Tỷ lệ: " + percentText(summary.newCustomers, summary.totalCustomers));
+        lblKhachVipSub.setText("Tỷ lệ: " + percentText(summary.vipCustomers, summary.totalCustomers));
+        lblKhachNuocNgoaiSub.setText("Tỷ lệ: " + percentText(summary.foreignCustomers, summary.totalCustomers));
     }
 
     private void reloadClassificationTable(SummaryData summary) {
@@ -463,7 +463,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         }
 
         if (phanLoaiModel.getRowCount() == 0) {
-            phanLoaiModel.addRow(new Object[]{"Khong co du lieu", "0", "0%", "0", "Khong co khach phu hop bo loc"});
+            phanLoaiModel.addRow(new Object[]{"Không có dữ liệu", "0", "0%", "0", "Không có khách phù hợp bộ lọc"});
         }
         tblPhanLoai.setRowSelectionInterval(0, 0);
     }
@@ -492,7 +492,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         }
 
         if (topKhachModel.getRowCount() == 0) {
-            topKhachModel.addRow(new Object[]{"-", "Khong co du lieu", "-", "0", formatCurrency(0), "Khong co khach phu hop bo loc"});
+            topKhachModel.addRow(new Object[]{"-", "Không có dữ liệu", "-", "0", formatCurrency(0), "Không có khách phù hợp bộ lọc"});
         }
         tblTopKhach.setRowSelectionInterval(0, 0);
     }
@@ -524,9 +524,9 @@ public class BaoCaoKhachHangGUI extends JFrame {
         String id = safeValue(khachHang.getMaKhachHang(), "KH" + (100 + index));
         int numericId = extractNumber(id, index + 1);
         LocalDate registeredDate = LocalDate.of(2026, 1, 1).plusDays((numericId * 7L) % 95L);
-        String nationality = safeValue(khachHang.getQuocTich(), "Viet Nam");
-        String rank = safeValue(khachHang.getHangKhach(), "Thuong");
-        String type = safeValue(khachHang.getLoaiKhach(), "Khach le");
+        String nationality = safeValue(khachHang.getQuocTich(), "Viet Năm");
+        String rank = safeValue(khachHang.getHangKhach(), "Thường");
+        String type = safeValue(khachHang.getLoaiKhach(), "Khách lẻ");
 
         boolean foreign = !normalize(nationality).contains("viet");
         boolean vip = normalize(rank).contains("vip") || normalize(rank).contains("kim cuong") || normalize(type).contains("vip");
@@ -546,22 +546,22 @@ public class BaoCaoKhachHangGUI extends JFrame {
                 registeredDate,
                 bookingCount,
                 totalSpent,
-                vip ? "Khach gia tri cao" : (foreign ? "Can uu tien ho tro ngoai ngu" : "Khach on dinh")
+                vip ? "Khách giá trị cao" : (foreign ? "Can uu tien ho tro ngoai ngu" : "Khách ổn định")
         );
     }
 
     private List<CustomerProfile> createSampleProfiles() {
         List<CustomerProfile> data = new ArrayList<CustomerProfile>();
-        data.add(new CustomerProfile("KH101", "Nguyen Thi Minh", "Viet Nam", "Thuong", false, false, true, LocalDate.of(2026, 4, 2), 2, 4200000L, "Khach moi, tiep can goi uu dai"));
-        data.add(new CustomerProfile("KH102", "Tran Quoc Bao", "Viet Nam", "VIP", true, false, false, LocalDate.of(2026, 2, 15), 7, 28600000L, "Khach quay lai thuong xuyen"));
-        data.add(new CustomerProfile("KH103", "Anna Lee", "Singapore", "Nuoc ngoai", false, true, true, LocalDate.of(2026, 4, 4), 1, 5600000L, "Can uu tien check-in nhanh"));
-        data.add(new CustomerProfile("KH104", "Pham Gia Han", "Viet Nam", "Doanh nghiep", false, false, false, LocalDate.of(2026, 1, 28), 5, 17100000L, "Dat phong theo cong tac"));
-        data.add(new CustomerProfile("KH105", "David Kim", "Korea", "VIP", true, true, false, LocalDate.of(2026, 1, 12), 6, 32400000L, "Khach VIP nuoc ngoai"));
-        data.add(new CustomerProfile("KH106", "Le Quang Huy", "Viet Nam", "Thuong", false, false, true, LocalDate.of(2026, 3, 30), 1, 2300000L, "Moi phat sinh giao dich"));
-        data.add(new CustomerProfile("KH107", "Hoang My Linh", "Viet Nam", "VIP", true, false, false, LocalDate.of(2025, 12, 20), 8, 40100000L, "Khach than thiet can giu chan"));
-        data.add(new CustomerProfile("KH108", "Sokha Chan", "Cambodia", "Nuoc ngoai", false, true, true, LocalDate.of(2026, 4, 1), 2, 6100000L, "Ti le quay lai co the tang"));
-        data.add(new CustomerProfile("KH109", "Vo Thanh Dat", "Viet Nam", "Doanh nghiep", false, false, false, LocalDate.of(2026, 2, 8), 4, 15800000L, "Cong tac theo thang"));
-        data.add(new CustomerProfile("KH110", "Mai Thu Trang", "Viet Nam", "Thuong", false, false, false, LocalDate.of(2026, 1, 5), 3, 8900000L, "Khach ca nhan on dinh"));
+        data.add(new CustomerProfile("KH101", "Nguyen Thi Minh", "Viet Năm", "Thường", false, false, true, LocalDate.of(2026, 4, 2), 2, 4200000L, "Khách mới, tiep can goi uu dai"));
+        data.add(new CustomerProfile("KH102", "Tran Quoc Bao", "Viet Năm", "VIP", true, false, false, LocalDate.of(2026, 2, 15), 7, 28600000L, "Khách quay lại thường xuyên"));
+        data.add(new CustomerProfile("KH103", "Anna Lee", "Singapore", "Nước ngoài", false, true, true, LocalDate.of(2026, 4, 4), 1, 5600000L, "Cần ưu tiên check-in nhanh"));
+        data.add(new CustomerProfile("KH104", "Pham Gia Han", "Viet Năm", "Doanh nghiệp", false, false, false, LocalDate.of(2026, 1, 28), 5, 17100000L, "Đặt phòng theo công tác"));
+        data.add(new CustomerProfile("KH105", "David Kim", "Korea", "VIP", true, true, false, LocalDate.of(2026, 1, 12), 6, 32400000L, "Khách VIP nước ngoài"));
+        data.add(new CustomerProfile("KH106", "Le Quang Hủy", "Viet Năm", "Thường", false, false, true, LocalDate.of(2026, 3, 30), 1, 2300000L, "Mới phát sinh giao dịch"));
+        data.add(new CustomerProfile("KH107", "Hoang My Linh", "Viet Năm", "VIP", true, false, false, LocalDate.of(2025, 12, 20), 8, 40100000L, "Khách thân thiết cần giữ chân"));
+        data.add(new CustomerProfile("KH108", "Sokha Chan", "Cambodia", "Nước ngoài", false, true, true, LocalDate.of(2026, 4, 1), 2, 6100000L, "Tỷ lệ quay lại có thể tăng"));
+        data.add(new CustomerProfile("KH109", "Vo Thanh Dat", "Viet Năm", "Doanh nghiệp", false, false, false, LocalDate.of(2026, 2, 8), 4, 15800000L, "Công tác theo tháng"));
+        data.add(new CustomerProfile("KH110", "Mai Thu Trang", "Viet Năm", "Thường", false, false, false, LocalDate.of(2026, 1, 5), 3, 8900000L, "Khách cá nhân ổn định"));
         return data;
     }
 
@@ -582,46 +582,46 @@ public class BaoCaoKhachHangGUI extends JFrame {
             return "VIP";
         }
         if (foreign) {
-            return "Nuoc ngoai";
+            return "Nước ngoài";
         }
         String normalizedType = normalize(customerType);
         if (normalizedType.contains("doanh nghiep") || normalizedType.contains("cong tac") || normalizedType.contains("doan")) {
-            return "Doanh nghiep";
+            return "Doanh nghiệp";
         }
-        return "Thuong";
+        return "Thường";
     }
 
     private String resolveGroupNote(String groupName) {
         if ("VIP".equalsIgnoreCase(groupName)) {
             return "Nen uu tien chuong trinh cham soc";
         }
-        if ("Nuoc ngoai".equalsIgnoreCase(groupName)) {
+        if ("Nước ngoài".equalsIgnoreCase(groupName)) {
             return "Can quy trinh ho tro ngon ngu";
         }
-        if ("Doanh nghiep".equalsIgnoreCase(groupName)) {
+        if ("Doanh nghiệp".equalsIgnoreCase(groupName)) {
             return "Phu hop goi hop dong va uu dai cong ty";
         }
-        return "Tap khach on dinh trong van hanh hang ngay";
+        return "Tập khách ổn định trong vận hành hằng ngày";
     }
 
     private boolean matchesGroup(CustomerProfile profile, String selectedGroup) {
-        if (selectedGroup == null || "Tat ca".equalsIgnoreCase(selectedGroup)) {
+        if (selectedGroup == null || "Tất cả".equalsIgnoreCase(selectedGroup)) {
             return true;
         }
         if ("VIP".equalsIgnoreCase(selectedGroup)) {
             return profile.isVip;
         }
-        if ("Thuong".equalsIgnoreCase(selectedGroup)) {
-            return !profile.isVip && !profile.isForeignCustomer && !"Doanh nghiep".equalsIgnoreCase(profile.customerGroup);
+        if ("Thường".equalsIgnoreCase(selectedGroup)) {
+            return !profile.isVip && !profile.isForeignCustomer && !"Doanh nghiệp".equalsIgnoreCase(profile.customerGroup);
         }
-        if ("Nuoc ngoai".equalsIgnoreCase(selectedGroup)) {
+        if ("Nước ngoài".equalsIgnoreCase(selectedGroup)) {
             return profile.isForeignCustomer;
         }
-        if ("Noi dia".equalsIgnoreCase(selectedGroup)) {
+        if ("Nội địa".equalsIgnoreCase(selectedGroup)) {
             return !profile.isForeignCustomer;
         }
-        if ("Doanh nghiep".equalsIgnoreCase(selectedGroup)) {
-            return "Doanh nghiep".equalsIgnoreCase(profile.customerGroup);
+        if ("Doanh nghiệp".equalsIgnoreCase(selectedGroup)) {
+            return "Doanh nghiệp".equalsIgnoreCase(profile.customerGroup);
         }
         return true;
     }
@@ -636,15 +636,15 @@ public class BaoCaoKhachHangGUI extends JFrame {
 
     private LocalDate resolveFromDate(String filterMode) {
         LocalDate today = LocalDate.of(2026, 4, 6);
-        if ("Theo ngay".equalsIgnoreCase(filterMode)) {
+        if ("Theo ngày".equalsIgnoreCase(filterMode)) {
             return parseDateOrFallback(txtTuNgay == null ? null : txtTuNgay.getText(), today);
         }
-        if ("Theo thang".equalsIgnoreCase(filterMode)) {
+        if ("Theo tháng".equalsIgnoreCase(filterMode)) {
             int month = cboThang == null ? today.getMonthValue() : Integer.parseInt(String.valueOf(cboThang.getSelectedItem()));
             int year = cboNam == null ? today.getYear() : Integer.parseInt(String.valueOf(cboNam.getSelectedItem()));
             return YearMonth.of(year, month).atDay(1);
         }
-        if ("Theo nam".equalsIgnoreCase(filterMode)) {
+        if ("Theo năm".equalsIgnoreCase(filterMode)) {
             int year = cboNam == null ? today.getYear() : Integer.parseInt(String.valueOf(cboNam.getSelectedItem()));
             return LocalDate.of(year, 1, 1);
         }
@@ -653,15 +653,15 @@ public class BaoCaoKhachHangGUI extends JFrame {
 
     private LocalDate resolveToDate(String filterMode) {
         LocalDate today = LocalDate.of(2026, 4, 6);
-        if ("Theo ngay".equalsIgnoreCase(filterMode)) {
+        if ("Theo ngày".equalsIgnoreCase(filterMode)) {
             return parseDateOrFallback(txtTuNgay == null ? null : txtTuNgay.getText(), today);
         }
-        if ("Theo thang".equalsIgnoreCase(filterMode)) {
+        if ("Theo tháng".equalsIgnoreCase(filterMode)) {
             int month = cboThang == null ? today.getMonthValue() : Integer.parseInt(String.valueOf(cboThang.getSelectedItem()));
             int year = cboNam == null ? today.getYear() : Integer.parseInt(String.valueOf(cboNam.getSelectedItem()));
             return YearMonth.of(year, month).atEndOfMonth();
         }
-        if ("Theo nam".equalsIgnoreCase(filterMode)) {
+        if ("Theo năm".equalsIgnoreCase(filterMode)) {
             int year = cboNam == null ? today.getYear() : Integer.parseInt(String.valueOf(cboNam.getSelectedItem()));
             return LocalDate.of(year, 12, 31);
         }
@@ -700,7 +700,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         ScreenUIHelper.registerShortcut(this, "F2", "bao_cao_khach_hang_export", new Runnable() {
             @Override
             public void run() {
-                showInfo("Da san sang xuat bao cao khach hang.");
+                showInfo("Đã sẵn sàng xuất báo cáo khách hàng.");
             }
         });
         ScreenUIHelper.registerShortcut(this, "F5", "bao_cao_khach_hang_refresh", new Runnable() {
@@ -841,14 +841,14 @@ public class BaoCaoKhachHangGUI extends JFrame {
     }
 
     private String formatSelectedPeriod() {
-        String filterMode = cboCheDoLoc == null ? "Khoang thoi gian" : String.valueOf(cboCheDoLoc.getSelectedItem());
-        if ("Theo ngay".equalsIgnoreCase(filterMode)) {
+        String filterMode = cboCheDoLoc == null ? "Khoảng thời gian" : String.valueOf(cboCheDoLoc.getSelectedItem());
+        if ("Theo ngày".equalsIgnoreCase(filterMode)) {
             return safeValue(txtTuNgay.getText(), "-");
         }
-        if ("Theo thang".equalsIgnoreCase(filterMode)) {
+        if ("Theo tháng".equalsIgnoreCase(filterMode)) {
             return String.valueOf(cboThang.getSelectedItem()) + "/" + String.valueOf(cboNam.getSelectedItem());
         }
-        if ("Theo nam".equalsIgnoreCase(filterMode)) {
+        if ("Theo năm".equalsIgnoreCase(filterMode)) {
             return String.valueOf(cboNam.getSelectedItem());
         }
         return safeValue(txtTuNgay.getText(), "-") + " - " + safeValue(txtDenNgay.getText(), "-");
@@ -881,7 +881,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
     }
 
     private void showInfo(String message) {
-        JOptionPane.showMessageDialog(this, message, "Bao cao khach hang", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(this, message, "Báo cáo khách hàng", JOptionPane.INFORMATION_MESSAGE);
     }
 
     public JPanel buildPanel() {
@@ -1065,7 +1065,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         private void drawEmptyState(Graphics2D g2, int width, int height) {
             g2.setColor(TEXT_MUTED);
             g2.setFont(BODY_FONT);
-            String message = "Chua co du lieu khach hang de hien thi.";
+            String message = "Chưa có dữ liệu khách hàng để hiển thị.";
             int textWidth = g2.getFontMetrics().stringWidth(message);
             g2.drawString(message, (width - textWidth) / 2, height / 2);
         }

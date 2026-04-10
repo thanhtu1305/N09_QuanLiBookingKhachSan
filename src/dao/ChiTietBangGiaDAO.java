@@ -163,7 +163,7 @@ public class ChiTietBangGiaDAO {
         stmt.setDouble(6, chiTietBangGia.getGiaTheoNgay());
         stmt.setDouble(7, chiTietBangGia.getGiaCuoiTuan());
         stmt.setDouble(8, chiTietBangGia.getGiaLe());
-        stmt.setDouble(9, chiTietBangGia.getPhuThu());
+        stmt.setDouble(9, 0d);
         if (includeId) {
             stmt.setInt(10, chiTietBangGia.getMaChiTietBangGia());
         }

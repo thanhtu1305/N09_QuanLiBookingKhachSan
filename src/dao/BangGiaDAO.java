@@ -648,7 +648,7 @@ public class BangGiaDAO {
             stmt.setDouble(6, chiTietBangGia.getGiaTheoNgay());
             stmt.setDouble(7, chiTietBangGia.getGiaCuoiTuan());
             stmt.setDouble(8, chiTietBangGia.getGiaLe());
-            stmt.setDouble(9, chiTietBangGia.getPhuThu());
+            stmt.setDouble(9, 0d);
             return stmt.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Loi them chi tiet bang gia theo giao dich.");
@@ -669,7 +669,7 @@ public class BangGiaDAO {
         copy.setGiaTheoNgay(source.getGiaTheoNgay());
         copy.setGiaCuoiTuan(source.getGiaCuoiTuan());
         copy.setGiaLe(source.getGiaLe());
-        copy.setPhuThu(source.getPhuThu());
+        copy.setPhuThu(0d);
         return copy;
     }
 

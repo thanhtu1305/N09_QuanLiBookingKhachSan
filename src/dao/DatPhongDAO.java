@@ -29,6 +29,19 @@ public class DatPhongDAO {
     private static final String LOAI_GIA_LE = "Giá lễ";
     private static final String LOAI_GIA_CUOI_TUAN = "Giá cuối tuần";
 
+    private static final String DAY_TYPE_NORMAL = "THUONG";
+    private static final String DAY_TYPE_WEEKEND = "CUOI_TUAN";
+    private static final String DAY_TYPE_HOLIDAY = "NGAY_LE";
+    private static final String STAY_TYPE_HOURLY = "THEO_GIO";
+    private static final String STAY_TYPE_DAILY = "THEO_NGAY";
+    private static final String STAY_TYPE_OVERNIGHT = "QUA_DEM";
+    private static final String DISPLAY_LOAI_NGAY_THUONG = "Ng\u00e0y th\u01b0\u1eddng";
+    private static final String DISPLAY_LOAI_NGAY_CUOI_TUAN = "Cu\u1ed1i tu\u1ea7n";
+    private static final String DISPLAY_LOAI_NGAY_LE = "Ng\u00e0y l\u1ec5";
+    private static final String DISPLAY_LOAI_GIA_THEO_NGAY = "Theo ng\u00e0y";
+    private static final String DISPLAY_LOAI_GIA_QUA_DEM = "Qua \u0111\u00eam";
+    private static final String DISPLAY_LOAI_GIA_THEO_GIO = "Theo gi\u1edd";
+
     private static final String SELECT_HEADER_BASE =
             "SELECT dp.maDatPhong, dp.maKhachHang, dp.maNhanVien, dp.maBangGia, dp.ngayDat, dp.ngayNhanPhong, dp.ngayTraPhong, "
                     + "dp.soLuongPhong, dp.soNguoi, dp.tienCoc, dp.trangThai, "
@@ -643,6 +656,9 @@ public class DatPhongDAO {
     }
 
     public String determineLoaiNgay(LocalDate date) {
+        if (Boolean.TRUE.booleanValue()) {
+            return toDayTypeDisplay(resolveDayTypeKey(date));
+        }
         if (date == null) {
             return "NgÃ y thÆ°á»ng";
         }
@@ -653,6 +669,9 @@ public class DatPhongDAO {
     }
 
     public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
+        if (Boolean.TRUE.booleanValue()) {
+            return resolveRoomRateWithSurcharge(maBangGia, checkIn, checkOut);
+        }
         RoomRateResolution resolution = new RoomRateResolution();
         resolution.setLoaiNgay(normalizeLoaiNgay(determineLoaiNgay(checkIn)));
         resolution.setLoaiGiaApDung("Theo ngÃ y");
@@ -714,10 +733,8 @@ public class DatPhongDAO {
         }
         LocalDate checkIn = detail.getCheckInDuKien() == null ? defaultCheckIn : detail.getCheckInDuKien();
         LocalDate checkOut = detail.getCheckOutDuKien() == null ? defaultCheckOut : detail.getCheckOutDuKien();
-        RoomRateResolution resolution = resolveRoomRate(maBangGia, checkIn, checkOut);
-        if (resolution.getGiaApDung() > 0d) {
-            detail.setGiaApDung(resolution.getGiaApDung());
-        }
+        RoomRateResolution resolution = resolveRoomRateWithSurcharge(maBangGia, checkIn, checkOut);
+        detail.setGiaApDung(resolution.getGiaApDung());
         detail.setMaBangGia(defaultIfEmpty(maBangGia, detail.getMaBangGia()));
         detail.setMaChiTietBangGia(resolution.getMaChiTietBangGia());
         detail.setGhiChu(buildRateNote(resolution));
@@ -727,7 +744,11 @@ public class DatPhongDAO {
         if (resolution == null) {
             return "";
         }
-        return resolution.getLoaiNgay() + " - " + resolution.getLoaiGiaApDung();
+        String note = resolution.getLoaiNgay() + " - " + resolution.getLoaiGiaApDung();
+        if (resolution.getTongPhuThuApDung() > 0d) {
+            note += " - phu thu " + Math.round(resolution.getTongPhuThuApDung());
+        }
+        return note;
     }
 
     private boolean isWeekend(LocalDate date) {
@@ -782,6 +803,137 @@ public class DatPhongDAO {
             return LOAI_GIA_THEO_GIO;
         }
         return LOAI_GIA_THEO_NGAY;
+    }
+
+    public RoomRateResolution resolveRoomRateWithSurcharge(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
+        RoomRateResolution resolution = new RoomRateResolution();
+        String dayType = resolveDayTypeKey(checkIn);
+        String stayType = resolveStayTypeKey(checkIn, checkOut);
+        resolution.setLoaiNgayKey(dayType);
+        resolution.setLoaiLuuTruKey(stayType);
+        resolution.setLoaiNgay(toDayTypeDisplay(dayType));
+        resolution.setLoaiGiaApDung(toStayTypeDisplay(stayType));
+        resolution.setGiaNenApDung(0d);
+        resolution.setPhuThuApDung(0d);
+        resolution.setTongPhuThuApDung(0d);
+        resolution.setGiaApDung(0d);
+        resolution.setThanhTienApDung(0d);
+        resolution.setMaChiTietBangGia("");
+
+        Integer bangGiaId = parseIntOrNull(maBangGia);
+        if (bangGiaId == null) {
+            return resolution;
+        }
+
+        ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(bangGiaId.intValue(), checkIn);
+        if (detail == null) {
+            List<ChiTietBangGia> details = bangGiaDAO.getChiTietBangGiaByMaBangGia(bangGiaId.intValue());
+            if (!details.isEmpty()) {
+                detail = details.get(0);
+            }
+        }
+        if (detail == null) {
+            return resolution;
+        }
+
+        double baseRate = Math.max(resolveBaseRate(detail, stayType), 0d);
+        double surcharge = Math.max(resolveSurcharge(detail, dayType), 0d);
+        long pricingUnits = resolvePricingUnits(stayType, checkIn, checkOut);
+        double appliedRate = baseRate + surcharge;
+
+        resolution.setMaChiTietBangGia(String.valueOf(detail.getMaChiTietBangGia()));
+        resolution.setGiaNenApDung(baseRate);
+        resolution.setPhuThuApDung(surcharge);
+        resolution.setTongPhuThuApDung(surcharge * pricingUnits);
+        resolution.setGiaApDung(appliedRate);
+        resolution.setThanhTienApDung(Math.max(appliedRate * pricingUnits, 0d));
+        return resolution;
+    }
+
+    private String resolveDayTypeKey(LocalDate date) {
+        if (date == null) {
+            return DAY_TYPE_NORMAL;
+        }
+        if (ngayLeDAO.isHoliday(date)) {
+            return DAY_TYPE_HOLIDAY;
+        }
+        return isWeekend(date) ? DAY_TYPE_WEEKEND : DAY_TYPE_NORMAL;
+    }
+
+    private String resolveStayTypeKey(LocalDate checkIn, LocalDate checkOut) {
+        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+            return STAY_TYPE_HOURLY;
+        }
+        long soDem = Math.max(1L, ChronoUnit.DAYS.between(checkIn, checkOut));
+        return soDem == 1L ? STAY_TYPE_OVERNIGHT : STAY_TYPE_DAILY;
+    }
+
+    private double resolveBaseRate(ChiTietBangGia detail, String stayType) {
+        if (detail == null) {
+            return 0d;
+        }
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return detail.getGiaTheoGio();
+        }
+        if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
+            return detail.getGiaQuaDem();
+        }
+        return detail.getGiaTheoNgay();
+    }
+
+    private double resolveSurcharge(ChiTietBangGia detail, String dayType) {
+        if (detail == null) {
+            return 0d;
+        }
+        if (DAY_TYPE_HOLIDAY.equals(dayType)) {
+            return detail.getPhuThuNgayLe();
+        }
+        if (DAY_TYPE_WEEKEND.equals(dayType)) {
+            return detail.getPhuThuCuoiTuan();
+        }
+        return 0d;
+    }
+
+    private long resolvePricingUnits(String stayType, LocalDate checkIn, LocalDate checkOut) {
+        if (!STAY_TYPE_DAILY.equals(stayType)) {
+            return 1L;
+        }
+        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+            return 1L;
+        }
+        return Math.max(1L, ChronoUnit.DAYS.between(checkIn, checkOut));
+    }
+
+    private double firstPositive(double... values) {
+        if (values == null) {
+            return 0d;
+        }
+        for (double value : values) {
+            if (value > 0d) {
+                return value;
+            }
+        }
+        return 0d;
+    }
+
+    private String toDayTypeDisplay(String dayType) {
+        if (DAY_TYPE_HOLIDAY.equals(dayType)) {
+            return DISPLAY_LOAI_NGAY_LE;
+        }
+        if (DAY_TYPE_WEEKEND.equals(dayType)) {
+            return DISPLAY_LOAI_NGAY_CUOI_TUAN;
+        }
+        return DISPLAY_LOAI_NGAY_THUONG;
+    }
+
+    private String toStayTypeDisplay(String stayType) {
+        if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
+            return DISPLAY_LOAI_GIA_QUA_DEM;
+        }
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return DISPLAY_LOAI_GIA_THEO_GIO;
+        }
+        return DISPLAY_LOAI_GIA_THEO_NGAY;
     }
 
     private String resolveRoomStatusForBooking(String bookingStatus) {
@@ -878,10 +1030,32 @@ public class DatPhongDAO {
     }
 
     public static final class RoomRateResolution {
+        private String loaiNgayKey;
+        private String loaiLuuTruKey;
         private String loaiNgay;
         private String loaiGiaApDung;
+        private double giaNenApDung;
+        private double phuThuApDung;
+        private double tongPhuThuApDung;
         private double giaApDung;
+        private double thanhTienApDung;
         private String maChiTietBangGia;
+
+        public String getLoaiNgayKey() {
+            return loaiNgayKey;
+        }
+
+        public void setLoaiNgayKey(String loaiNgayKey) {
+            this.loaiNgayKey = loaiNgayKey;
+        }
+
+        public String getLoaiLuuTruKey() {
+            return loaiLuuTruKey;
+        }
+
+        public void setLoaiLuuTruKey(String loaiLuuTruKey) {
+            this.loaiLuuTruKey = loaiLuuTruKey;
+        }
 
         public String getLoaiNgay() {
             return loaiNgay;
@@ -899,12 +1073,44 @@ public class DatPhongDAO {
             this.loaiGiaApDung = loaiGiaApDung;
         }
 
+        public double getGiaNenApDung() {
+            return giaNenApDung;
+        }
+
+        public void setGiaNenApDung(double giaNenApDung) {
+            this.giaNenApDung = giaNenApDung;
+        }
+
+        public double getPhuThuApDung() {
+            return phuThuApDung;
+        }
+
+        public void setPhuThuApDung(double phuThuApDung) {
+            this.phuThuApDung = phuThuApDung;
+        }
+
+        public double getTongPhuThuApDung() {
+            return tongPhuThuApDung;
+        }
+
+        public void setTongPhuThuApDung(double tongPhuThuApDung) {
+            this.tongPhuThuApDung = tongPhuThuApDung;
+        }
+
         public double getGiaApDung() {
             return giaApDung;
         }
 
         public void setGiaApDung(double giaApDung) {
             this.giaApDung = giaApDung;
+        }
+
+        public double getThanhTienApDung() {
+            return thanhTienApDung;
+        }
+
+        public void setThanhTienApDung(double thanhTienApDung) {
+            this.thanhTienApDung = thanhTienApDung;
         }
 
         public String getMaChiTietBangGia() {

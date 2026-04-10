@@ -786,7 +786,7 @@ public class DatPhongGUI extends JFrame {
                     detail.soNguoi,
                     normalizeAppliedRateText(detail.loaiNgayApDung),
                     normalizeAppliedRateText(detail.loaiGiaApDung),
-                    formatMoney(detail.giaApDung),
+                    formatAppliedRateValue(detail),
                     formatMoney(detail.tienDatCocChiTiet),
                     detail.trangThaiChiTiet
             });
@@ -961,6 +961,19 @@ public class DatPhongGUI extends JFrame {
 
     private String normalizeAppliedRateText(String value) {
         return safeValue(value, "-");
+    }
+
+    private String formatAppliedRateValue(BookingDetailRecord detail) {
+        if (detail == null) {
+            return "-";
+        }
+        double amount = detail.thanhTien > 0d ? detail.thanhTien : detail.giaApDung;
+        String formatted = formatMoney(amount);
+        double surcharge = detail.tongPhuThuApDung > 0d ? detail.tongPhuThuApDung : detail.phuThuApDung;
+        if (surcharge > 0d) {
+            formatted += " (gồm phụ thu " + formatMoney(surcharge) + ")";
+        }
+        return formatted;
     }
 
     private int countMojibakeMarkers(String value) {
@@ -1246,15 +1259,21 @@ public class DatPhongGUI extends JFrame {
         if (maBangGia == null) {
             return;
         }
-        DatPhongDAO.RoomRateResolution resolution = datPhongDAO.resolveRoomRate(
+        DatPhongDAO.RoomRateResolution resolution = datPhongDAO.resolveRoomRateWithSurcharge(
                 String.valueOf(maBangGia.intValue()),
                 detail.checkInDuKien,
                 detail.checkOutDuKien
         );
         detail.loaiNgayApDung = normalizeAppliedRateText(resolution.getLoaiNgay());
         detail.loaiGiaApDung = normalizeAppliedRateText(resolution.getLoaiGiaApDung());
+        detail.giaNenApDung = resolution.getGiaNenApDung();
+        detail.phuThuApDung = resolution.getPhuThuApDung();
+        detail.tongPhuThuApDung = resolution.getTongPhuThuApDung();
         if (resolution.getGiaApDung() > 0d) {
             detail.giaApDung = resolution.getGiaApDung();
+        }
+        if (resolution.getThanhTienApDung() > 0d) {
+            detail.thanhTien = resolution.getThanhTienApDung();
         }
     }
 
@@ -1691,7 +1710,7 @@ public class DatPhongGUI extends JFrame {
                         detail.soNguoi,
                         normalizeAppliedRateText(detail.loaiNgayApDung),
                         normalizeAppliedRateText(detail.loaiGiaApDung),
-                        formatMoney(detail.giaApDung),
+                        formatAppliedRateValue(detail),
                         formatMoney(detail.tienDatCocChiTiet),
                         getDetailStatusDisplay(detail)
                 });
@@ -2082,7 +2101,12 @@ public class DatPhongGUI extends JFrame {
             private final JTextArea txtGhiChuChiTietDialog;
             private final JPanel pnlInlineWarning;
             private final JLabel lblInlineWarning;
-            private final JLabel lblRatePreview;
+            private final JPanel lblRatePreview;
+            private final JLabel lblRateDayType;
+            private final JLabel lblRateStayType;
+            private final JLabel lblRateBasePrice;
+            private final JLabel lblRateSurcharge;
+            private final JLabel lblRateAppliedPrice;
             private final JButton btnPrimary;
             private final Border defaultRoomBorder;
             private final Border defaultCheckInBorder;
@@ -2119,8 +2143,18 @@ public class DatPhongGUI extends JFrame {
                 txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
                 txtDatCocDialog = createInputField(detail == null ? "0" : formatMoney(detail.tienDatCocChiTiet));
                 txtGhiChuChiTietDialog = createDialogTextArea(2);
-                lblRatePreview = createValueLabel();
-                lblRatePreview.setText(detail == null ? "-" : buildRatePreviewText(detail));
+                lblRatePreview = createRatePreviewPanel();
+                lblRateDayType = createRatePreviewLineLabel();
+                lblRateStayType = createRatePreviewLineLabel();
+                lblRateBasePrice = createRatePreviewLineLabel();
+                lblRateSurcharge = createRatePreviewLineLabel();
+                lblRateAppliedPrice = createRatePreviewLineLabel();
+                lblRatePreview.add(lblRateDayType);
+                lblRatePreview.add(lblRateStayType);
+                lblRatePreview.add(lblRateBasePrice);
+                lblRatePreview.add(lblRateSurcharge);
+                lblRatePreview.add(lblRateAppliedPrice);
+                updateRatePreviewDisplay(detail);
                 defaultRoomBorder = cboPhongDialog.getBorder();
                 defaultCheckInBorder = txtCheckInDialog.getBorder();
                 defaultCheckOutBorder = txtCheckOutDialog.getBorder();
@@ -2197,13 +2231,13 @@ public class DatPhongGUI extends JFrame {
                 LocalDate checkIn = parseDate(txtCheckInDialog.getText());
                 LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
                 if (option == null || checkIn == null) {
-                    lblRatePreview.setText("-");
+                    updateRatePreviewDisplay(null);
                     return;
                 }
                 try {
                     Connection con = ConnectDB.getConnection();
                     if (con == null) {
-                        lblRatePreview.setText("-");
+                        updateRatePreviewDisplay(null);
                         return;
                     }
                     BookingDetailRecord preview = new BookingDetailRecord();
@@ -2212,19 +2246,59 @@ public class DatPhongGUI extends JFrame {
                     preview.checkOutDuKien = checkOut == null ? checkIn.plusDays(1) : checkOut;
                     preview.giaApDung = option.giaMacDinh;
                     refreshResolvedRate(con, preview);
-                    lblRatePreview.setText(buildRatePreviewText(preview));
+                    updateRatePreviewDisplay(preview);
                 } catch (Exception ex) {
-                    lblRatePreview.setText("-");
+                    updateRatePreviewDisplay(null);
                 }
             }
 
-            private String buildRatePreviewText(BookingDetailRecord detail) {
+            private JPanel createRatePreviewPanel() {
+                JPanel panel = new JPanel(new GridLayout(5, 1, 0, 4));
+                panel.setBackground(PANEL_SOFT);
+                panel.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
+                        new EmptyBorder(8, 10, 8, 10)
+                ));
+                return panel;
+            }
+
+            private JLabel createRatePreviewLineLabel() {
+                JLabel label = new JLabel("-");
+                label.setFont(BODY_FONT);
+                label.setForeground(TEXT_PRIMARY);
+                label.setVerticalAlignment(SwingConstants.TOP);
+                return label;
+            }
+
+            private void updateRatePreviewDisplay(BookingDetailRecord detail) {
                 if (detail == null) {
-                    return "-";
+                    lblRateDayType.setText("Lo\u1ea1i ng\u00e0y: -");
+                    lblRateStayType.setText("Ki\u1ec3u t\u00ednh gi\u00e1: -");
+                    lblRateBasePrice.setText("Gi\u00e1 c\u01a1 b\u1ea3n: -");
+                    lblRateSurcharge.setText("Ph\u1ee5 thu: -");
+                    lblRateAppliedPrice.setText("Gi\u00e1 \u00e1p d\u1ee5ng: -");
+                    return;
                 }
-                return normalizeAppliedRateText(detail.loaiNgayApDung) + " | "
-                        + normalizeAppliedRateText(detail.loaiGiaApDung) + " | "
-                        + formatMoney(detail.giaApDung);
+                lblRateDayType.setText("Lo\u1ea1i ng\u00e0y: " + normalizeAppliedRateText(detail.loaiNgayApDung));
+                lblRateStayType.setText("Ki\u1ec3u t\u00ednh gi\u00e1: " + normalizeAppliedRateText(detail.loaiGiaApDung));
+                lblRateBasePrice.setText("Gi\u00e1 c\u01a1 b\u1ea3n: " + formatMoney(Math.max(detail.giaNenApDung, 0d)));
+                lblRateSurcharge.setText(resolveRateSurchargeText(detail));
+                lblRateAppliedPrice.setText("Gi\u00e1 \u00e1p d\u1ee5ng: " + formatMoney(Math.max(detail.giaApDung, 0d)));
+            }
+
+            private String resolveRateSurchargeText(BookingDetailRecord detail) {
+                double surcharge = detail == null ? 0d : Math.max(detail.phuThuApDung, 0d);
+                String dayType = detail == null ? "" : normalizeAppliedRateText(detail.loaiNgayApDung);
+                if (surcharge <= 0d) {
+                    return "Ph\u1ee5 thu: 0";
+                }
+                if ("Ng\u00e0y l\u1ec5".equalsIgnoreCase(dayType)) {
+                    return "Ph\u1ee5 thu ng\u00e0y l\u1ec5: " + formatMoney(surcharge);
+                }
+                if ("Cu\u1ed1i tu\u1ea7n".equalsIgnoreCase(dayType)) {
+                    return "Ph\u1ee5 thu cu\u1ed1i tu\u1ea7n: " + formatMoney(surcharge);
+                }
+                return "Ph\u1ee5 thu: " + formatMoney(surcharge);
             }
 
             private void reevaluateCurrentSelectionState() {
@@ -2353,6 +2427,10 @@ public class DatPhongGUI extends JFrame {
                 } catch (Exception ex) {
                     target.loaiNgayApDung = "-";
                     target.loaiGiaApDung = "-";
+                    target.giaNenApDung = 0d;
+                    target.phuThuApDung = 0d;
+                    target.tongPhuThuApDung = 0d;
+                    target.thanhTien = 0d;
                 }
                 target.tienDatCocChiTiet = tienCoc;
                 target.duplicateInBooking = isDuplicateRoomSelection(option.maPhongId);
@@ -2581,7 +2659,7 @@ public class DatPhongGUI extends JFrame {
                 builder.append("- ").append(detail.loaiPhong)
                         .append(" | ").append(detail.formatCheckIn()).append(" -> ").append(detail.formatCheckOut())
                         .append(" | ").append(detail.soNguoi).append(" khách")
-                        .append(" | ").append(formatMoney(detail.giaApDung)).append("\n");
+                        .append(" | ").append(formatAppliedRateValue(detail)).append("\n");
             }
             area.setText(builder.toString());
             area.setCaretPosition(0);
@@ -2746,6 +2824,9 @@ public class DatPhongGUI extends JFrame {
         private int soNguoi;
         private int sucChuaToiDa;
         private double giaApDung;
+        private double giaNenApDung;
+        private double phuThuApDung;
+        private double tongPhuThuApDung;
         private String loaiNgayApDung;
         private String loaiGiaApDung;
         private double tienDatCocChiTiet;
@@ -2768,6 +2849,9 @@ public class DatPhongGUI extends JFrame {
             detail.soNguoi = soNguoi;
             detail.sucChuaToiDa = sucChuaToiDa;
             detail.giaApDung = giaApDung;
+            detail.giaNenApDung = giaNenApDung;
+            detail.phuThuApDung = phuThuApDung;
+            detail.tongPhuThuApDung = tongPhuThuApDung;
             detail.loaiNgayApDung = loaiNgayApDung;
             detail.loaiGiaApDung = loaiGiaApDung;
             detail.tienDatCocChiTiet = tienDatCocChiTiet;
@@ -2781,6 +2865,9 @@ public class DatPhongGUI extends JFrame {
         }
 
         private double computeThanhTien() {
+            if (thanhTien > 0d) {
+                return thanhTien;
+            }
             long soDem = java.time.temporal.ChronoUnit.DAYS.between(checkInDuKien, checkOutDuKien);
             if (soDem <= 0) {
                 soDem = 1;

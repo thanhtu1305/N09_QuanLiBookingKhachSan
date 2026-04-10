@@ -94,12 +94,28 @@ public class ChiTietBangGia {
         this.giaCuoiTuan = giaCuoiTuan;
     }
 
+    public double getPhuThuCuoiTuan() {
+        return giaCuoiTuan;
+    }
+
+    public void setPhuThuCuoiTuan(double phuThuCuoiTuan) {
+        this.giaCuoiTuan = phuThuCuoiTuan;
+    }
+
     public double getGiaLe() {
         return giaLe;
     }
 
     public void setGiaLe(double giaLe) {
         this.giaLe = giaLe;
+    }
+
+    public double getPhuThuNgayLe() {
+        return giaLe;
+    }
+
+    public void setPhuThuNgayLe(double phuThuNgayLe) {
+        this.giaLe = phuThuNgayLe;
     }
 
     public double getPhuThu() {

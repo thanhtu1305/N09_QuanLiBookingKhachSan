@@ -31,6 +31,12 @@ public class ThanhToanDAO {
     private String lastErrorMessage = "";
     private static boolean schemaEnsured = false;
     private static boolean synchronizingInvoices = false;
+    private static final String DAY_TYPE_NORMAL = "THUONG";
+    private static final String DAY_TYPE_WEEKEND = "CUOI_TUAN";
+    private static final String DAY_TYPE_HOLIDAY = "NGAY_LE";
+    private static final String STAY_TYPE_HOURLY = "THEO_GIO";
+    private static final String STAY_TYPE_DAILY = "THEO_NGAY";
+    private static final String STAY_TYPE_OVERNIGHT = "QUA_DEM";
     private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
     private final NgayLeDAO ngayLeDAO = new NgayLeDAO();
 
@@ -788,6 +794,94 @@ public class ThanhToanDAO {
         return Math.max(1L, (long) Math.ceil(Duration.between(checkIn, checkOut).toMinutes() / 60.0d));
     }
 
+    private String resolveDayTypeKey(LocalDate date) {
+        if (date == null) {
+            return DAY_TYPE_NORMAL;
+        }
+        if (ngayLeDAO.isHoliday(date)) {
+            return DAY_TYPE_HOLIDAY;
+        }
+        return isWeekend(date) ? DAY_TYPE_WEEKEND : DAY_TYPE_NORMAL;
+    }
+
+    private String resolveStayTypeKey(LocalDateTime checkIn, LocalDateTime checkOut, long stayHours) {
+        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+            return STAY_TYPE_DAILY;
+        }
+        if (checkOut.toLocalDate().isAfter(checkIn.toLocalDate()) && stayHours <= 24L) {
+            return STAY_TYPE_OVERNIGHT;
+        }
+        if (!checkOut.toLocalDate().isAfter(checkIn.toLocalDate())) {
+            return STAY_TYPE_HOURLY;
+        }
+        return STAY_TYPE_DAILY;
+    }
+
+    private BigDecimal resolveBaseRate(ChiTietBangGia detail, String stayType) {
+        if (detail == null) {
+            return BigDecimal.ZERO;
+        }
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return toMoney(detail.getGiaTheoGio());
+        }
+        if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
+            return toMoney(detail.getGiaQuaDem());
+        }
+        return toMoney(detail.getGiaTheoNgay());
+    }
+
+    private BigDecimal resolveSurcharge(ChiTietBangGia detail, String dayType) {
+        if (detail == null) {
+            return BigDecimal.ZERO;
+        }
+        if (DAY_TYPE_HOLIDAY.equals(dayType)) {
+            return toMoney(detail.getPhuThuNgayLe());
+        }
+        if (DAY_TYPE_WEEKEND.equals(dayType)) {
+            return toMoney(detail.getPhuThuCuoiTuan());
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private long resolvePricingUnits(String stayType, long stayHours) {
+        if (!STAY_TYPE_DAILY.equals(stayType)) {
+            return 1L;
+        }
+        return Math.max(1L, (long) Math.ceil(stayHours / 24.0d));
+    }
+
+    private double firstPositive(double... values) {
+        if (values == null) {
+            return 0d;
+        }
+        for (double value : values) {
+            if (value > 0d) {
+                return value;
+            }
+        }
+        return 0d;
+    }
+
+    private String toDayTypeDisplay(String dayType) {
+        if (DAY_TYPE_HOLIDAY.equals(dayType)) {
+            return "Ng\u00e0y l\u1ec5";
+        }
+        if (DAY_TYPE_WEEKEND.equals(dayType)) {
+            return "Cu\u1ed1i tu\u1ea7n";
+        }
+        return "Ng\u00e0y th\u01b0\u1eddng";
+    }
+
+    private String toStayTypeDisplay(String stayType) {
+        if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
+            return "Qua \u0111\u00eam";
+        }
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return "Theo gi\u1edd";
+        }
+        return "Theo ng\u00e0y";
+    }
+
     private BigDecimal resolveAppliedRate(ChiTietBangGia detail, String loaiNgay) {
         if (detail == null) {
             return BigDecimal.ZERO;
@@ -812,7 +906,8 @@ public class ThanhToanDAO {
         LocalDateTime end = checkOut == null ? null : checkOut.toLocalDateTime();
         long soGio = calculateStayHours(start, end);
         LocalDate ngayApDung = start == null ? null : start.toLocalDate();
-        String loaiNgay = determineLoaiNgay(ngayApDung);
+        String dayType = resolveDayTypeKey(ngayApDung);
+        String stayType = resolveStayTypeKey(start, end, soGio);
         ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(maBangGia, ngayApDung);
         if (detail == null) {
             List<ChiTietBangGia> details = bangGiaDAO.getChiTietBangGiaByMaBangGia(maBangGia);
@@ -822,52 +917,32 @@ public class ThanhToanDAO {
         }
 
         RoomChargeBreakdown breakdown = new RoomChargeBreakdown();
-        breakdown.setLoaiNgay(loaiNgay);
+        breakdown.setLoaiNgay(toDayTypeDisplay(dayType));
         breakdown.setSoGioLuuTru(soGio);
-        breakdown.setLoaiGiaApDung("Theo ngay");
+        breakdown.setLoaiGiaApDung(toStayTypeDisplay(stayType));
 
         BigDecimal tienPhong = BigDecimal.ZERO;
         if (detail != null) {
-            BigDecimal giaNgayUuTien = resolveAppliedRate(detail, loaiNgay);
-            long soNgay = Math.max(1L, (long) Math.ceil(soGio / 24.0d));
-            boolean quaDem = start != null && end != null && end.toLocalDate().isAfter(start.toLocalDate());
-
-            if ("Ngay le".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
-                breakdown.setLoaiGiaApDung("Gia le");
-                tienPhong = toMoney(detail.getGiaLe()).multiply(BigDecimal.valueOf(soNgay));
-            } else if ("Cuoi tuan".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
-                breakdown.setLoaiGiaApDung("Gia cuoi tuan");
-                tienPhong = toMoney(detail.getGiaCuoiTuan()).multiply(BigDecimal.valueOf(soNgay));
-            } else if (quaDem && soGio <= 24L && detail.getGiaQuaDem() > 0d) {
-                breakdown.setLoaiGiaApDung("Qua dem");
-                tienPhong = toMoney(detail.getGiaQuaDem());
-            } else if (!quaDem && detail.getGiaTheoGio() > 0d) {
-                BigDecimal tienTheoGio = toMoney(detail.getGiaTheoGio()).multiply(BigDecimal.valueOf(soGio));
-                if (giaNgayUuTien.signum() > 0 && tienTheoGio.compareTo(giaNgayUuTien) > 0) {
-                    breakdown.setLoaiGiaApDung("Theo ngay");
-                    tienPhong = giaNgayUuTien;
-                } else {
-                    breakdown.setLoaiGiaApDung("Theo gio");
-                    tienPhong = tienTheoGio;
-                }
-            } else if (giaNgayUuTien.signum() > 0) {
-                breakdown.setLoaiGiaApDung("Theo ngay");
-                tienPhong = giaNgayUuTien.multiply(BigDecimal.valueOf(soNgay));
+            BigDecimal baseRate = resolveBaseRate(detail, stayType);
+            BigDecimal surcharge = resolveSurcharge(detail, dayType);
+            long pricingUnits = resolvePricingUnits(stayType, soGio);
+            if (baseRate.signum() > 0 || surcharge.signum() > 0) {
+                tienPhong = baseRate.add(surcharge).multiply(BigDecimal.valueOf(pricingUnits));
             }
         }
 
         if (tienPhong.signum() <= 0 && thanhTienDatPhong > 0d) {
-            breakdown.setLoaiGiaApDung("Theo ngay");
+            breakdown.setLoaiGiaApDung(toStayTypeDisplay(STAY_TYPE_DAILY));
             tienPhong = toMoney(thanhTienDatPhong);
         }
         if (tienPhong.signum() <= 0 && giaPhongDatPhong > 0d) {
             long soDem = Math.max(1L, soDemDatPhong);
-            breakdown.setLoaiGiaApDung("Theo ngay");
+            breakdown.setLoaiGiaApDung(toStayTypeDisplay(STAY_TYPE_DAILY));
             tienPhong = toMoney(giaPhongDatPhong).multiply(BigDecimal.valueOf(soDem));
         }
         if (tienPhong.signum() <= 0 && giaPhongLuuTru > 0d) {
             long soNgay = Math.max(1L, (long) Math.ceil(soGio / 24.0d));
-            breakdown.setLoaiGiaApDung("Theo ngay");
+            breakdown.setLoaiGiaApDung(toStayTypeDisplay(STAY_TYPE_DAILY));
             tienPhong = toMoney(giaPhongLuuTru).multiply(BigDecimal.valueOf(soNgay));
         }
 

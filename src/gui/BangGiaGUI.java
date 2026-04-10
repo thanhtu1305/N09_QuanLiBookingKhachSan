@@ -104,10 +104,10 @@ public class BangGiaGUI extends JFrame {
     private JLabel lblLoaiPhongChiTiet;
     private JLabel lblLoaiNgayChiTiet;
     private JLabel lblGiaTheoGio;
+    private JLabel lblGiaQuaDem;
     private JLabel lblGiaTheoNgay;
-    private JLabel lblGiaCuoiTuan;
-    private JLabel lblGiaLe;
-    private JLabel lblPhuThu;
+    private JLabel lblPhuThuCuoiTuan;
+    private JLabel lblPhuThuNgayLe;
     private JLabel lblTrangThaiChiTiet;
     private Integer highlightedConflictBangGiaId;
 
@@ -303,10 +303,10 @@ public class BangGiaGUI extends JFrame {
         lblLoaiPhongChiTiet = createValueLabel();
         lblLoaiNgayChiTiet = createValueLabel();
         lblGiaTheoGio = createValueLabel();
+        lblGiaQuaDem = createValueLabel();
         lblGiaTheoNgay = createValueLabel();
-        lblGiaCuoiTuan = createValueLabel();
-        lblGiaLe = createValueLabel();
-        lblPhuThu = createValueLabel();
+        lblPhuThuCuoiTuan = createValueLabel();
+        lblPhuThuNgayLe = createValueLabel();
         lblTrangThaiChiTiet = createValueLabel();
 
         addDetailRow(body, "Mã bảng giá", lblMaBangGia);
@@ -314,14 +314,14 @@ public class BangGiaGUI extends JFrame {
         addDetailRow(body, "Loại phòng", lblLoaiPhongChiTiet);
         addDetailRow(body, "Loại ngày", lblLoaiNgayChiTiet);
         addDetailRow(body, "Giá theo giờ", lblGiaTheoGio);
+        addDetailRow(body, "Giá qua đêm", lblGiaQuaDem);
         addDetailRow(body, "Giá theo ngày", lblGiaTheoNgay);
-        addDetailRow(body, "Giá cuối tuần", lblGiaCuoiTuan);
-        addDetailRow(body, "Giá lễ", lblGiaLe);
-        addDetailRow(body, "Phụ thu", lblPhuThu);
+        addDetailRow(body, "Phụ thu cuối tuần", lblPhuThuCuoiTuan);
+        addDetailRow(body, "Phụ thu ngày lễ", lblPhuThuNgayLe);
         addDetailRow(body, "Trạng thái", lblTrangThaiChiTiet);
 
         chiTietModel = new DefaultTableModel(new String[]{
-                "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+                "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Phụ thu cuối tuần", "Phụ thu ngày lễ"
         }, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -489,10 +489,10 @@ public class BangGiaGUI extends JFrame {
         lblLoaiPhongChiTiet.setText(safeValue(bangGia.getTenLoaiPhong(), "-"));
         lblLoaiNgayChiTiet.setText(safeValue(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()), "-"));
         lblGiaTheoGio.setText(formatCurrency(findFirstPositive(displayedChiTiet, 0)));
-        lblGiaTheoNgay.setText(formatCurrency(findFirstPositive(displayedChiTiet, 1)));
-        lblGiaCuoiTuan.setText(formatCurrency(findFirstPositive(displayedChiTiet, 2)));
-        lblGiaLe.setText(formatCurrency(findFirstPositive(displayedChiTiet, 3)));
-        lblPhuThu.setText(formatCurrency(findFirstPositive(displayedChiTiet, 4)));
+        lblGiaQuaDem.setText(formatCurrency(findFirstPositive(displayedChiTiet, 1)));
+        lblGiaTheoNgay.setText(formatCurrency(findFirstPositive(displayedChiTiet, 2)));
+        lblPhuThuCuoiTuan.setText(formatCurrency(findFirstPositive(displayedChiTiet, 3)));
+        lblPhuThuNgayLe.setText(formatCurrency(findFirstPositive(displayedChiTiet, 4)));
         lblTrangThaiChiTiet.setText(safeValue(bangGia.getTrangThai(), "-"));
         refillChiTietTable();
         refreshCurrentView();
@@ -508,9 +508,8 @@ public class BangGiaGUI extends JFrame {
                     formatCurrency(chiTiet.getGiaTheoGio()),
                     formatCurrency(chiTiet.getGiaQuaDem()),
                     formatCurrency(chiTiet.getGiaTheoNgay()),
-                    formatCurrency(chiTiet.getGiaCuoiTuan()),
-                    formatCurrency(chiTiet.getGiaLe()),
-                    formatCurrency(chiTiet.getPhuThu())
+                    formatCurrency(chiTiet.getPhuThuCuoiTuan()),
+                    formatCurrency(chiTiet.getPhuThuNgayLe())
             });
         }
         refreshCurrentView();
@@ -522,10 +521,10 @@ public class BangGiaGUI extends JFrame {
         lblLoaiPhongChiTiet.setText("-");
         lblLoaiNgayChiTiet.setText("-");
         lblGiaTheoGio.setText("-");
+        lblGiaQuaDem.setText("-");
         lblGiaTheoNgay.setText("-");
-        lblGiaCuoiTuan.setText("-");
-        lblGiaLe.setText("-");
-        lblPhuThu.setText("-");
+        lblPhuThuCuoiTuan.setText("-");
+        lblPhuThuNgayLe.setText("-");
         lblTrangThaiChiTiet.setText("-");
         displayedChiTiet.clear();
         refillChiTietTable();
@@ -699,13 +698,13 @@ public class BangGiaGUI extends JFrame {
             if (type == 0) {
                 value = chiTiet.getGiaTheoGio();
             } else if (type == 1) {
-                value = chiTiet.getGiaTheoNgay();
+                value = chiTiet.getGiaQuaDem();
             } else if (type == 2) {
-                value = chiTiet.getGiaCuoiTuan();
+                value = chiTiet.getGiaTheoNgay();
             } else if (type == 3) {
-                value = chiTiet.getGiaLe();
+                value = chiTiet.getPhuThuCuoiTuan();
             } else {
-                value = chiTiet.getPhuThu();
+                value = chiTiet.getPhuThuNgayLe();
             }
             if (value > 0) {
                 return value;
@@ -1102,7 +1101,7 @@ public class BangGiaGUI extends JFrame {
             detailCard.add(lblDetailTitle, BorderLayout.NORTH);
 
             draftChiTietModel = new DefaultTableModel(new String[]{
-                    "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+                    "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Phụ thu cuối tuần", "Phụ thu ngày lễ"
             }, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
@@ -1352,9 +1351,8 @@ public class BangGiaGUI extends JFrame {
                         formatCurrency(chiTietBangGia.getGiaTheoGio()),
                         formatCurrency(chiTietBangGia.getGiaQuaDem()),
                         formatCurrency(chiTietBangGia.getGiaTheoNgay()),
-                        formatCurrency(chiTietBangGia.getGiaCuoiTuan()),
-                        formatCurrency(chiTietBangGia.getGiaLe()),
-                        formatCurrency(chiTietBangGia.getPhuThu())
+                        formatCurrency(chiTietBangGia.getPhuThuCuoiTuan()),
+                        formatCurrency(chiTietBangGia.getPhuThuNgayLe())
                 });
             }
         }
@@ -1379,7 +1377,7 @@ public class BangGiaGUI extends JFrame {
                     return "Dong chi tiet " + (i + 1) + " dang thieu khung gio.";
                 }
                 if (chiTietBangGia.getGiaTheoGio() < 0 || chiTietBangGia.getGiaQuaDem() < 0 || chiTietBangGia.getGiaTheoNgay() < 0
-                        || chiTietBangGia.getGiaCuoiTuan() < 0 || chiTietBangGia.getGiaLe() < 0 || chiTietBangGia.getPhuThu() < 0) {
+                        || chiTietBangGia.getPhuThuCuoiTuan() < 0 || chiTietBangGia.getPhuThuNgayLe() < 0) {
                     showDetailErrorState(i);
                     return "Dong chi tiet " + (i + 1) + " co gia tri tien không hợp lệ.";
                 }
@@ -1427,9 +1425,9 @@ public class BangGiaGUI extends JFrame {
             copy.setGiaTheoGio(source.getGiaTheoGio());
             copy.setGiaQuaDem(source.getGiaQuaDem());
             copy.setGiaTheoNgay(source.getGiaTheoNgay());
-            copy.setGiaCuoiTuan(source.getGiaCuoiTuan());
-            copy.setGiaLe(source.getGiaLe());
-            copy.setPhuThu(source.getPhuThu());
+            copy.setPhuThuCuoiTuan(source.getPhuThuCuoiTuan());
+            copy.setPhuThuNgayLe(source.getPhuThuNgayLe());
+            copy.setPhuThu(0d);
             return copy;
         }
     }
@@ -1443,9 +1441,8 @@ public class BangGiaGUI extends JFrame {
         private final JTextField txtGiaTheoGio;
         private final JTextField txtGiaQuaDem;
         private final JTextField txtGiaTheoNgay;
-        private final JTextField txtGiaCuoiTuan;
-        private final JTextField txtGiaLe;
-        private final JTextField txtPhuThu;
+        private final JTextField txtPhuThuCuoiTuan;
+        private final JTextField txtPhuThuNgayLe;
 
         private DraftChiTietBangGiaFormDialog(Frame owner, BangGiaFormDialog parentDialog, ChiTietBangGia chiTiet, int rowIndex) {
             super(owner, chiTiet == null ? "Thêm chi tiết bảng giá" : "Cập nhật chi tiết bảng giá", 620, 520);
@@ -1468,9 +1465,8 @@ public class BangGiaGUI extends JFrame {
             txtGiaTheoGio = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoGio()));
             txtGiaQuaDem = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaQuaDem()));
             txtGiaTheoNgay = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoNgay()));
-            txtGiaCuoiTuan = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaCuoiTuan()));
-            txtGiaLe = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaLe()));
-            txtPhuThu = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThu()));
+            txtPhuThuCuoiTuan = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThuCuoiTuan()));
+            txtPhuThuNgayLe = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThuNgayLe()));
             if (chiTiet != null) {
                 cboLoaiNgayDialog.setSelectedItem(chiTiet.getLoaiNgay());
             }
@@ -1480,9 +1476,8 @@ public class BangGiaGUI extends JFrame {
             addFormRow(form, gbc, 2, "Giá theo giờ", txtGiaTheoGio);
             addFormRow(form, gbc, 3, "Giá qua đêm", txtGiaQuaDem);
             addFormRow(form, gbc, 4, "Giá theo ngày", txtGiaTheoNgay);
-            addFormRow(form, gbc, 5, "Giá cuối tuần", txtGiaCuoiTuan);
-            addFormRow(form, gbc, 6, "Giá lễ", txtGiaLe);
-            addFormRow(form, gbc, 7, "Phụ thu", txtPhuThu);
+            addFormRow(form, gbc, 5, "Phụ thu cuối tuần", txtPhuThuCuoiTuan);
+            addFormRow(form, gbc, 6, "Phụ thu ngày lễ", txtPhuThuNgayLe);
 
             card.add(form, BorderLayout.CENTER);
             add(card, BorderLayout.CENTER);
@@ -1509,10 +1504,9 @@ public class BangGiaGUI extends JFrame {
             double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Giá theo giờ");
             double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "Giá qua đêm");
             double giaTheoNgay = parseMoney(txtGiaTheoNgay.getText().trim(), "Giá theo ngày");
-            double giaCuoiTuan = parseMoney(txtGiaCuoiTuan.getText().trim(), "Giá cuối tuần");
-            double giaLe = parseMoney(txtGiaLe.getText().trim(), "Giá lễ");
-            double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phụ thu");
-            if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || giaCuoiTuan < 0 || giaLe < 0 || phuThu < 0) {
+            double phuThuCuoiTuan = parseMoney(txtPhuThuCuoiTuan.getText().trim(), "Phụ thu cuối tuần");
+            double phuThuNgayLe = parseMoney(txtPhuThuNgayLe.getText().trim(), "Phụ thu ngày lễ");
+            if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || phuThuCuoiTuan < 0 || phuThuNgayLe < 0) {
                 return;
             }
 
@@ -1522,9 +1516,9 @@ public class BangGiaGUI extends JFrame {
             chiTietBangGia.setGiaTheoGio(giaTheoGio);
             chiTietBangGia.setGiaQuaDem(giaQuaDem);
             chiTietBangGia.setGiaTheoNgay(giaTheoNgay);
-            chiTietBangGia.setGiaCuoiTuan(giaCuoiTuan);
-            chiTietBangGia.setGiaLe(giaLe);
-            chiTietBangGia.setPhuThu(phuThu);
+            chiTietBangGia.setPhuThuCuoiTuan(phuThuCuoiTuan);
+            chiTietBangGia.setPhuThuNgayLe(phuThuNgayLe);
+            chiTietBangGia.setPhuThu(0d);
 
             if (editingRowIndex >= 0 && editingRowIndex < parentDialog.draftChiTietList.size()) {
                 parentDialog.draftChiTietList.set(editingRowIndex, chiTietBangGia);
@@ -1545,9 +1539,9 @@ public class BangGiaGUI extends JFrame {
             copy.setGiaTheoGio(source.getGiaTheoGio());
             copy.setGiaQuaDem(source.getGiaQuaDem());
             copy.setGiaTheoNgay(source.getGiaTheoNgay());
-            copy.setGiaCuoiTuan(source.getGiaCuoiTuan());
-            copy.setGiaLe(source.getGiaLe());
-            copy.setPhuThu(source.getPhuThu());
+            copy.setPhuThuCuoiTuan(source.getPhuThuCuoiTuan());
+            copy.setPhuThuNgayLe(source.getPhuThuNgayLe());
+            copy.setPhuThu(0d);
             return copy;
         }
     }
@@ -1560,9 +1554,8 @@ public class BangGiaGUI extends JFrame {
         private final JTextField txtGiaTheoGio;
         private final JTextField txtGiaQuaDem;
         private final JTextField txtGiaTheoNgay;
-        private final JTextField txtGiaCuoiTuan;
-        private final JTextField txtGiaLe;
-        private final JTextField txtPhuThu;
+        private final JTextField txtPhuThuCuoiTuan;
+        private final JTextField txtPhuThuNgayLe;
 
         private ChiTietBangGiaFormDialog(Frame owner, BangGia bangGia, ChiTietBangGia chiTiet) {
             super(owner, chiTiet == null ? "Thêm chi tiết bảng giá" : "Cập nhật chi tiết bảng giá", 620, 520);
@@ -1584,9 +1577,8 @@ public class BangGiaGUI extends JFrame {
             txtGiaTheoGio = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoGio()));
             txtGiaQuaDem = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaQuaDem()));
             txtGiaTheoNgay = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaTheoNgay()));
-            txtGiaCuoiTuan = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaCuoiTuan()));
-            txtGiaLe = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getGiaLe()));
-            txtPhuThu = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThu()));
+            txtPhuThuCuoiTuan = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThuCuoiTuan()));
+            txtPhuThuNgayLe = createInputField(chiTiet == null ? "" : String.valueOf((long) chiTiet.getPhuThuNgayLe()));
             if (chiTiet != null) {
                 cboLoaiNgayDialog.setSelectedItem(chiTiet.getLoaiNgay());
             }
@@ -1596,9 +1588,8 @@ public class BangGiaGUI extends JFrame {
             addFormRow(form, gbc, 2, "Giá theo giờ", txtGiaTheoGio);
             addFormRow(form, gbc, 3, "Giá qua đêm", txtGiaQuaDem);
             addFormRow(form, gbc, 4, "Giá theo ngày", txtGiaTheoNgay);
-            addFormRow(form, gbc, 5, "Giá cuối tuần", txtGiaCuoiTuan);
-            addFormRow(form, gbc, 6, "Giá lễ", txtGiaLe);
-            addFormRow(form, gbc, 7, "Phụ thu", txtPhuThu);
+            addFormRow(form, gbc, 5, "Phụ thu cuối tuần", txtPhuThuCuoiTuan);
+            addFormRow(form, gbc, 6, "Phụ thu ngày lễ", txtPhuThuNgayLe);
 
             card.add(form, BorderLayout.CENTER);
             add(card, BorderLayout.CENTER);
@@ -1624,10 +1615,9 @@ public class BangGiaGUI extends JFrame {
             double giaTheoGio = parseMoney(txtGiaTheoGio.getText().trim(), "Giá theo giờ");
             double giaQuaDem = parseMoney(txtGiaQuaDem.getText().trim(), "Giá qua đêm");
             double giaTheoNgay = parseMoney(txtGiaTheoNgay.getText().trim(), "Giá theo ngày");
-            double giaCuoiTuan = parseMoney(txtGiaCuoiTuan.getText().trim(), "Giá cuối tuần");
-            double giaLe = parseMoney(txtGiaLe.getText().trim(), "Giá lễ");
-            double phuThu = parseMoney(txtPhuThu.getText().trim(), "Phụ thu");
-            if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || giaCuoiTuan < 0 || giaLe < 0 || phuThu < 0) {
+            double phuThuCuoiTuan = parseMoney(txtPhuThuCuoiTuan.getText().trim(), "Phụ thu cuối tuần");
+            double phuThuNgayLe = parseMoney(txtPhuThuNgayLe.getText().trim(), "Phụ thu ngày lễ");
+            if (giaTheoGio < 0 || giaQuaDem < 0 || giaTheoNgay < 0 || phuThuCuoiTuan < 0 || phuThuNgayLe < 0) {
                 return;
             }
 
@@ -1638,9 +1628,9 @@ public class BangGiaGUI extends JFrame {
             chiTiet.setGiaTheoGio(giaTheoGio);
             chiTiet.setGiaQuaDem(giaQuaDem);
             chiTiet.setGiaTheoNgay(giaTheoNgay);
-            chiTiet.setGiaCuoiTuan(giaCuoiTuan);
-            chiTiet.setGiaLe(giaLe);
-            chiTiet.setPhuThu(phuThu);
+            chiTiet.setPhuThuCuoiTuan(phuThuCuoiTuan);
+            chiTiet.setPhuThuNgayLe(phuThuNgayLe);
+            chiTiet.setPhuThu(0d);
 
             boolean success = editingChiTiet == null ? chiTietBangGiaDAO.insert(chiTiet) : chiTietBangGiaDAO.update(chiTiet);
             if (!success) {
@@ -1676,7 +1666,7 @@ public class BangGiaGUI extends JFrame {
             headerCard.add(form, BorderLayout.CENTER);
 
             DefaultTableModel model = new DefaultTableModel(new String[]{
-                    "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Giá cuối tuần", "Giá lễ", "Phụ thu"
+                    "Mã CT", "Loại ngày", "Khung giờ", "Giá giờ", "Giá qua đêm", "Giá ngày", "Phụ thu cuối tuần", "Phụ thu ngày lễ"
             }, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
@@ -1694,8 +1684,8 @@ public class BangGiaGUI extends JFrame {
                 model.addRow(new Object[]{
                         "CT" + chiTiet.getMaChiTietBangGia(), chiTiet.getLoaiNgay(), chiTiet.getKhungGio(),
                         formatCurrency(chiTiet.getGiaTheoGio()), formatCurrency(chiTiet.getGiaQuaDem()),
-                        formatCurrency(chiTiet.getGiaTheoNgay()), formatCurrency(chiTiet.getGiaCuoiTuan()),
-                        formatCurrency(chiTiet.getGiaLe()), formatCurrency(chiTiet.getPhuThu())
+                        formatCurrency(chiTiet.getGiaTheoNgay()), formatCurrency(chiTiet.getPhuThuCuoiTuan()),
+                        formatCurrency(chiTiet.getPhuThuNgayLe())
                 });
             }
             JPanel detailCard = createCardPanel(new BorderLayout());

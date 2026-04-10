@@ -409,7 +409,7 @@ public class BangGiaDAO {
         List<ChiTietBangGia> details = new ArrayList<ChiTietBangGia>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("KhÃ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
             return details;
         }
 
@@ -438,7 +438,7 @@ public class BangGiaDAO {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("KhÃ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
             return null;
         }
 

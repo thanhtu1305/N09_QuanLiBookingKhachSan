@@ -4,6 +4,7 @@ import dao.DichVuDAO;
 import db.ConnectDB;
 import entity.DichVu;
 import gui.common.AppBranding;
+import gui.common.AppFonts;
 import gui.common.AppDatePickerField;
 import gui.common.AppTimePickerField;
 import gui.common.ScreenUIHelper;
@@ -66,10 +67,10 @@ public class CheckInOutGUI extends JFrame {
     private static final Color TEXT_PRIMARY = new Color(31, 41, 55);
     private static final Color TEXT_MUTED = new Color(107, 114, 128);
     private static final Color BORDER_SOFT = new Color(229, 231, 235);
-    private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
-    private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
-    private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
-    private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final Font TITLE_FONT = AppFonts.title(24);
+    private static final Font SECTION_FONT = AppFonts.section(16);
+    private static final Font BODY_FONT = AppFonts.body(13);
+    private static final Font LABEL_FONT = AppFonts.label(12);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -173,7 +174,7 @@ public class CheckInOutGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
 
         JLabel lblSub = new JLabel("Lấy dữ liệu từ Đặt phòng, chọn phòng trống theo tầng và cập nhật sơ đồ phòng thời gian thực.");
-        lblSub.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        lblSub.setFont(AppFonts.body(14));
         lblSub.setForeground(TEXT_MUTED);
 
         JLabel lblMeta = new JLabel("Người dùng: " + username + " | Vai trò: " + role);
@@ -589,7 +590,7 @@ public class CheckInOutGUI extends JFrame {
 
     private JLabel createValueLabel() {
         JLabel label = new JLabel("-");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setFont(AppFonts.ui(Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
         label.setVerticalAlignment(SwingConstants.TOP);
         return label;
@@ -1130,7 +1131,7 @@ public class CheckInOutGUI extends JFrame {
             content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
             JLabel lblTitle = new JLabel(title);
-            lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
+            lblTitle.setFont(AppFonts.title(18));
             lblTitle.setForeground(TEXT_PRIMARY);
 
             JLabel lblSub = new JLabel("<html>" + subtitle + "</html>");
@@ -1687,7 +1688,7 @@ public class CheckInOutGUI extends JFrame {
             } catch (Exception e) {
                 try { con.rollback(); } catch (Exception ignore) {}
                 e.printStackTrace();
-                showInfo("Không thể check-out.");
+                showInfo("Không thể check-out hoặc mở màn Thanh toán. Vui lòng kiểm tra cấu trúc dữ liệu hóa đơn.");
             } finally {
                 try { con.setAutoCommit(true); } catch (Exception ignore) {}
             }
@@ -1750,7 +1751,7 @@ public class CheckInOutGUI extends JFrame {
 
     private JLabel createValueLabel(String value) {
         JLabel label = new JLabel(value);
-        label.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        label.setFont(AppFonts.ui(Font.BOLD, 13));
         label.setForeground(TEXT_PRIMARY);
         return label;
     }

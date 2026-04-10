@@ -540,10 +540,10 @@ public class ThanhToanDAO {
         }
 
         if (invoice.getPhuThu() > 0d) {
-            insertInvoiceLine(con, maHoaDon, "PHU_THU", 1, invoice.getPhuThu());
+            insertInvoiceLine(con, maHoaDon, "Phụ thu", 1, invoice.getPhuThu());
         }
         if (invoice.getGiamGia() > 0d) {
-            insertInvoiceLine(con, maHoaDon, "GIAM_GIA", 1, -invoice.getGiamGia());
+            insertInvoiceLine(con, maHoaDon, "Giảm giá", 1, -invoice.getGiamGia());
         }
     }
 
@@ -575,29 +575,60 @@ public class ThanhToanDAO {
                     if (roomCharge.getThanhTien().doubleValue() <= 0d) {
                         continue;
                     }
-                    String roomLine = "Tien phong - " + safeTrim(rs.getString("soPhong"))
-                            + " | " + roomCharge.getLoaiNgay()
-                            + " | " + roomCharge.getLoaiGiaApDung()
-                            + " | " + roomCharge.getSoGioLuuTru() + " gio";
+                    String roomLine = buildRoomInvoiceLine(
+                            safeTrim(rs.getString("soPhong")),
+                            roomCharge.getLoaiNgay(),
+                            roomCharge.getLoaiGiaApDung(),
+                            roomCharge.getSoGioLuuTru());
                     insertInvoiceLine(con, maHoaDon, roomLine, 1, roomCharge.getThanhTien().doubleValue());
                     insertedRoomLine = true;
                 }
                 if (!insertedRoomLine && invoice.getTienPhong() > 0d) {
-                    insertInvoiceLine(con, maHoaDon, "Tien phong", 1, invoice.getTienPhong());
+                    insertInvoiceLine(con, maHoaDon, "Tiền phòng", 1, invoice.getTienPhong());
                 }
             }
         }
     }
 
     private void insertInvoiceLine(Connection con, int maHoaDon, String loaiChiPhi, int soLuong, double donGia) throws Exception {
+        String normalizedLabel = normalizeInvoiceLineLabel(loaiChiPhi);
         try (PreparedStatement ps = con.prepareStatement(
                 "INSERT INTO ChiTietHoaDon(maHoaDon, loaiChiPhi, soLuong, donGia) VALUES (?, ?, ?, ?)")) {
             ps.setInt(1, maHoaDon);
-            ps.setString(2, loaiChiPhi);
+            ps.setString(2, normalizedLabel);
             ps.setInt(3, soLuong);
             ps.setDouble(4, donGia);
             ps.executeUpdate();
         }
+    }
+
+    private String buildRoomInvoiceLine(String soPhong, String loaiNgay, String loaiGiaApDung, long soGioLuuTru) {
+        StringBuilder builder = new StringBuilder("Tiền phòng");
+        if (!isBlank(soPhong)) {
+            builder.append(" - P").append(soPhong);
+        }
+        if (!isBlank(loaiGiaApDung)) {
+            builder.append(" - ").append(loaiGiaApDung);
+        }
+        if (!isBlank(loaiNgay)) {
+            builder.append(" - ").append(loaiNgay);
+        }
+        if (soGioLuuTru > 0) {
+            builder.append(" - ").append(soGioLuuTru).append(" giờ");
+        }
+        return builder.toString();
+    }
+
+    private String normalizeInvoiceLineLabel(String value) {
+        String normalized = safeTrim(value);
+        if (normalized.isEmpty()) {
+            normalized = "Chi phí";
+        }
+        final int maxLength = 120;
+        if (normalized.length() > maxLength) {
+            normalized = normalized.substring(0, maxLength - 1).trim() + "…";
+        }
+        return normalized;
     }
 
     private void loadInvoiceLines(Connection con, ThanhToan invoice) throws Exception {
@@ -1137,6 +1168,7 @@ public class ThanhToanDAO {
         executeSql(con, "IF COL_LENGTH('ThanhToan', 'loaiGiaoDich') IS NULL ALTER TABLE ThanhToan ADD loaiGiaoDich NVARCHAR(30) NULL");
         executeSql(con, "UPDATE ThanhToan SET phuongThuc = ISNULL(phuongThuc,N'Tiền mặt'), soThamChieu = ISNULL(soThamChieu,N''), " +
                 "ghiChu = ISNULL(ghiChu,N''), loaiGiaoDich = ISNULL(loaiGiaoDich,N'THANH_TOAN')");
+        executeSql(con, "IF COL_LENGTH('ChiTietHoaDon', 'loaiChiPhi') IS NOT NULL AND COL_LENGTH('ChiTietHoaDon', 'loaiChiPhi') < 240 ALTER TABLE ChiTietHoaDon ALTER COLUMN loaiChiPhi NVARCHAR(255) NULL");
         schemaEnsured = true;
     }
 

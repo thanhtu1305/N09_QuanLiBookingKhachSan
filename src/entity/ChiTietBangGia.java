@@ -1,6 +1,8 @@
 package entity;
 
 public class ChiTietBangGia {
+    public static final String DEFAULT_LOAI_NGAY = "Thường";
+
     private int maChiTietBangGia;
     private int maBangGia;
     private String loaiNgay;
@@ -47,11 +49,11 @@ public class ChiTietBangGia {
     }
 
     public String getLoaiNgay() {
-        return loaiNgay;
+        return loaiNgay == null || loaiNgay.trim().isEmpty() ? DEFAULT_LOAI_NGAY : loaiNgay;
     }
 
     public void setLoaiNgay(String loaiNgay) {
-        this.loaiNgay = loaiNgay;
+        this.loaiNgay = loaiNgay == null || loaiNgay.trim().isEmpty() ? DEFAULT_LOAI_NGAY : loaiNgay.trim();
     }
 
     public String getKhungGio() {

@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Map;
 
 public class BangGiaDAO {
+    public static final String DEFAULT_LOAI_NGAY = ChiTietBangGia.DEFAULT_LOAI_NGAY;
+
     private static final String SELECT_BASE =
             "SELECT bg.maBangGia, bg.tenBangGia, bg.maLoaiPhong, bg.ngayBatDau, bg.ngayKetThuc, "
                     + "bg.loaiNgay, bg.trangThai, lp.tenLoaiPhong "
@@ -92,7 +94,6 @@ public class BangGiaDAO {
 
         String tenSearch = tenBangGia == null ? "" : tenBangGia.trim();
         String maLoaiSearch = maLoaiPhong == null ? "" : maLoaiPhong.trim();
-        String loaiNgaySearch = loaiNgay == null ? "" : loaiNgay.trim();
 
         String sql = "SELECT bg.maBangGia, bg.tenBangGia, bg.maLoaiPhong, bg.ngayBatDau, bg.ngayKetThuc, "
                 + "bg.loaiNgay, bg.trangThai, lp.tenLoaiPhong "
@@ -102,7 +103,6 @@ public class BangGiaDAO {
                 + "AND (? = '' OR CAST(bg.maLoaiPhong AS NVARCHAR(20)) = ?) "
                 + "AND (? IS NULL OR bg.ngayBatDau >= ?) "
                 + "AND (? IS NULL OR bg.ngayKetThuc <= ?) "
-                + "AND (? = '' OR bg.loaiNgay = ?) "
                 + "ORDER BY bg.maBangGia DESC";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -114,8 +114,6 @@ public class BangGiaDAO {
             stmt.setDate(6, from);
             stmt.setDate(7, to);
             stmt.setDate(8, to);
-            stmt.setString(9, loaiNgaySearch);
-            stmt.setString(10, loaiNgaySearch);
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     dsBangGia.add(mapBangGia(rs));
@@ -136,7 +134,8 @@ public class BangGiaDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
             return false;
         }
-        if (!validateBangGia(bangGia, loaiNgay, false)) {
+        String normalizedLoaiNgay = normalizeLoaiNgay(loaiNgay);
+        if (!validateBangGia(bangGia, normalizedLoaiNgay, false)) {
             return false;
         }
 
@@ -147,7 +146,7 @@ public class BangGiaDAO {
             stmt.setInt(2, bangGia.getMaLoaiPhong());
             stmt.setDate(3, bangGia.getTuNgay());
             stmt.setDate(4, bangGia.getDenNgay());
-            stmt.setString(5, loaiNgay);
+            stmt.setString(5, normalizedLoaiNgay);
             stmt.setString(6, bangGia.getTrangThai());
             boolean inserted = stmt.executeUpdate() > 0;
             if (inserted) {
@@ -155,7 +154,7 @@ public class BangGiaDAO {
                     if (rs.next()) {
                         int maBangGia = rs.getInt(1);
                         bangGia.setMaBangGia(maBangGia);
-                        loaiNgayCache.put(maBangGia, loaiNgay);
+                        loaiNgayCache.put(maBangGia, normalizedLoaiNgay);
                     }
                 }
             }
@@ -175,7 +174,8 @@ public class BangGiaDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
             return false;
         }
-        if (!validateBangGia(bangGia, loaiNgay, true)) {
+        String normalizedLoaiNgay = normalizeLoaiNgay(loaiNgay);
+        if (!validateBangGia(bangGia, normalizedLoaiNgay, true)) {
             return false;
         }
 
@@ -186,12 +186,12 @@ public class BangGiaDAO {
             stmt.setInt(2, bangGia.getMaLoaiPhong());
             stmt.setDate(3, bangGia.getTuNgay());
             stmt.setDate(4, bangGia.getDenNgay());
-            stmt.setString(5, loaiNgay);
+            stmt.setString(5, normalizedLoaiNgay);
             stmt.setString(6, bangGia.getTrangThai());
             stmt.setInt(7, bangGia.getMaBangGia());
             boolean updated = stmt.executeUpdate() > 0;
             if (updated) {
-                loaiNgayCache.put(bangGia.getMaBangGia(), loaiNgay);
+                loaiNgayCache.put(bangGia.getMaBangGia(), normalizedLoaiNgay);
             }
             return updated;
         } catch (SQLException e) {
@@ -265,7 +265,8 @@ public class BangGiaDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
             return false;
         }
-        if (!validateBangGia(bangGia, loaiNgay, bangGia.getMaBangGia() > 0)) {
+        String normalizedLoaiNgay = normalizeLoaiNgay(loaiNgay);
+        if (!validateBangGia(bangGia, normalizedLoaiNgay, bangGia.getMaBangGia() > 0)) {
             return false;
         }
         if (!validateChiTietList(chiTietBangGiaList)) {
@@ -289,7 +290,7 @@ public class BangGiaDAO {
             con.setAutoCommit(false);
 
             if (bangGia.getMaBangGia() > 0) {
-                if (!updateBangGiaTransaction(con, bangGia, loaiNgay)) {
+                if (!updateBangGiaTransaction(con, bangGia, normalizedLoaiNgay)) {
                     con.rollback();
                     return false;
                 }
@@ -298,7 +299,7 @@ public class BangGiaDAO {
                     return false;
                 }
             } else {
-                if (!insertBangGiaTransaction(con, bangGia, loaiNgay)) {
+                if (!insertBangGiaTransaction(con, bangGia, normalizedLoaiNgay)) {
                     con.rollback();
                     return false;
                 }
@@ -314,7 +315,7 @@ public class BangGiaDAO {
             }
 
             con.commit();
-            loaiNgayCache.put(bangGia.getMaBangGia(), loaiNgay);
+            loaiNgayCache.put(bangGia.getMaBangGia(), normalizedLoaiNgay);
             return true;
         } catch (SQLException e) {
             try {
@@ -383,7 +384,7 @@ public class BangGiaDAO {
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             setLastError("Không thể kết nối cơ sở dữ liệu.");
-            return "";
+            return DEFAULT_LOAI_NGAY;
         }
 
         String sql = "SELECT loaiNgay FROM BangGia WHERE maBangGia = ?";
@@ -391,9 +392,9 @@ public class BangGiaDAO {
             stmt.setInt(1, maBangGia);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    String loaiNgay = rs.getString("loaiNgay");
+                    String loaiNgay = normalizeLoaiNgay(rs.getString("loaiNgay"));
                     loaiNgayCache.put(maBangGia, loaiNgay);
-                    return loaiNgay == null ? "" : loaiNgay;
+                    return loaiNgay;
                 }
             }
         } catch (SQLException e) {
@@ -401,7 +402,7 @@ public class BangGiaDAO {
             e.printStackTrace();
             setLastError(e.getMessage());
         }
-        return "";
+        return DEFAULT_LOAI_NGAY;
     }
 
     public List<ChiTietBangGia> getChiTietBangGiaByMaBangGia(int maBangGia) {
@@ -413,8 +414,8 @@ public class BangGiaDAO {
             return details;
         }
 
-        String sql = "SELECT maChiTietBangGia, maBangGia, loaiNgay, khungGio, giaTheoGio, giaQuaDem, giaTheoNgay, giaCuoiTuan, giaLe, phuThu " +
-                "FROM ChiTietBangGia WHERE maBangGia = ? ORDER BY maChiTietBangGia ASC";
+        String sql = "SELECT maChiTietBangGia, maBangGia, loaiNgay, khungGio, giaTheoGio, giaQuaDem, giaTheoNgay, giaCuoiTuan, giaLe, phuThu "
+                + "FROM ChiTietBangGia WHERE maBangGia = ? ORDER BY maChiTietBangGia ASC";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maBangGia);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -442,13 +443,13 @@ public class BangGiaDAO {
             return null;
         }
 
-        String sql = "SELECT TOP 1 ct.maChiTietBangGia, ct.maBangGia, ct.loaiNgay, ct.khungGio, ct.giaTheoGio, ct.giaQuaDem, ct.giaTheoNgay, ct.giaCuoiTuan, ct.giaLe, ct.phuThu " +
-                "FROM ChiTietBangGia ct " +
-                "JOIN BangGia bg ON ct.maBangGia = bg.maBangGia " +
-                "WHERE ct.maBangGia = ? " +
-                "AND bg.trangThai = N'Đang áp dụng' " +
-                "AND (? IS NULL OR ? BETWEEN bg.ngayBatDau AND bg.ngayKetThuc) " +
-                "ORDER BY ct.maChiTietBangGia ASC";
+        String sql = "SELECT TOP 1 ct.maChiTietBangGia, ct.maBangGia, ct.loaiNgay, ct.khungGio, ct.giaTheoGio, ct.giaQuaDem, ct.giaTheoNgay, ct.giaCuoiTuan, ct.giaLe, ct.phuThu "
+                + "FROM ChiTietBangGia ct "
+                + "JOIN BangGia bg ON ct.maBangGia = bg.maBangGia "
+                + "WHERE ct.maBangGia = ? "
+                + "AND bg.trangThai = N'Đang áp dụng' "
+                + "AND (? IS NULL OR ? BETWEEN bg.ngayBatDau AND bg.ngayKetThuc) "
+                + "ORDER BY ct.maChiTietBangGia ASC";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maBangGia);
             if (ngayApDung == null) {
@@ -474,7 +475,7 @@ public class BangGiaDAO {
 
     private BangGia mapBangGia(ResultSet rs) throws SQLException {
         int maBangGia = rs.getInt("maBangGia");
-        loaiNgayCache.put(maBangGia, rs.getString("loaiNgay"));
+        loaiNgayCache.put(maBangGia, normalizeLoaiNgay(rs.getString("loaiNgay")));
         return new BangGia(
                 maBangGia,
                 rs.getString("tenBangGia"),
@@ -491,7 +492,7 @@ public class BangGiaDAO {
         return new ChiTietBangGia(
                 rs.getInt("maChiTietBangGia"),
                 rs.getInt("maBangGia"),
-                rs.getString("loaiNgay"),
+                normalizeLoaiNgay(rs.getString("loaiNgay")),
                 rs.getString("khungGio"),
                 rs.getDouble("giaTheoGio"),
                 rs.getDouble("giaQuaDem"),
@@ -519,10 +520,6 @@ public class BangGiaDAO {
             setLastError("Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.");
             return false;
         }
-        if (loaiNgay == null || loaiNgay.trim().isEmpty()) {
-            setLastError("Loại ngày không được rỗng.");
-            return false;
-        }
         if (bangGia.getTrangThai() == null || bangGia.getTrangThai().trim().isEmpty()) {
             setLastError("Trạng thái không được rỗng.");
             return false;
@@ -547,10 +544,7 @@ public class BangGiaDAO {
                 setLastError(prefix + "Dữ liệu không hợp lệ.");
                 return false;
             }
-            if (chiTietBangGia.getLoaiNgay() == null || chiTietBangGia.getLoaiNgay().trim().isEmpty()) {
-                setLastError(prefix + "Loại ngày không được rỗng.");
-                return false;
-            }
+            chiTietBangGia.setLoaiNgay(normalizeLoaiNgay(chiTietBangGia.getLoaiNgay()));
             if (chiTietBangGia.getKhungGio() == null || chiTietBangGia.getKhungGio().trim().isEmpty()) {
                 setLastError(prefix + "Khung giờ không được rỗng.");
                 return false;
@@ -576,7 +570,7 @@ public class BangGiaDAO {
             stmt.setInt(2, bangGia.getMaLoaiPhong());
             stmt.setDate(3, bangGia.getTuNgay());
             stmt.setDate(4, bangGia.getDenNgay());
-            stmt.setString(5, loaiNgay);
+            stmt.setString(5, normalizeLoaiNgay(loaiNgay));
             stmt.setString(6, bangGia.getTrangThai());
             if (stmt.executeUpdate() <= 0) {
                 setLastError("Không thể thêm bảng giá.");
@@ -606,7 +600,7 @@ public class BangGiaDAO {
             stmt.setInt(2, bangGia.getMaLoaiPhong());
             stmt.setDate(3, bangGia.getTuNgay());
             stmt.setDate(4, bangGia.getDenNgay());
-            stmt.setString(5, loaiNgay);
+            stmt.setString(5, normalizeLoaiNgay(loaiNgay));
             stmt.setString(6, bangGia.getTrangThai());
             stmt.setInt(7, bangGia.getMaBangGia());
             if (stmt.executeUpdate() <= 0) {
@@ -641,7 +635,7 @@ public class BangGiaDAO {
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, chiTietBangGia.getMaBangGia());
-            stmt.setString(2, chiTietBangGia.getLoaiNgay());
+            stmt.setString(2, normalizeLoaiNgay(chiTietBangGia.getLoaiNgay()));
             stmt.setString(3, chiTietBangGia.getKhungGio());
             stmt.setDouble(4, chiTietBangGia.getGiaTheoGio());
             stmt.setDouble(5, chiTietBangGia.getGiaQuaDem());
@@ -662,7 +656,7 @@ public class BangGiaDAO {
         ChiTietBangGia copy = new ChiTietBangGia();
         copy.setMaChiTietBangGia(source.getMaChiTietBangGia());
         copy.setMaBangGia(source.getMaBangGia());
-        copy.setLoaiNgay(source.getLoaiNgay());
+        copy.setLoaiNgay(normalizeLoaiNgay(source.getLoaiNgay()));
         copy.setKhungGio(source.getKhungGio());
         copy.setGiaTheoGio(source.getGiaTheoGio());
         copy.setGiaQuaDem(source.getGiaQuaDem());
@@ -707,6 +701,10 @@ public class BangGiaDAO {
 
     private boolean isNonNegative(double value) {
         return value >= 0;
+    }
+
+    private String normalizeLoaiNgay(String loaiNgay) {
+        return loaiNgay == null || loaiNgay.trim().isEmpty() ? DEFAULT_LOAI_NGAY : loaiNgay.trim();
     }
 
     private String formatDate(Date date) {

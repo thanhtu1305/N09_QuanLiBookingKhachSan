@@ -1010,7 +1010,6 @@ public class BangGiaGUI extends JFrame {
         private final JComboBox<String> cboLoaiPhongDialog;
         private final AppDatePickerField txtNgayBatDau;
         private final AppDatePickerField txtNgayKetThuc;
-        private final JComboBox<String> cboLoaiNgayDialog;
         private final JComboBox<String> cboTrangThaiDialog;
         private final List<ChiTietBangGia> draftChiTietList = new ArrayList<ChiTietBangGia>();
         private final DefaultTableModel draftChiTietModel;
@@ -1056,10 +1055,6 @@ public class BangGiaGUI extends JFrame {
 
             txtNgayBatDau = new AppDatePickerField(bangGia == null ? "" : formatDate(bangGia.getTuNgay()), true);
             txtNgayKetThuc = new AppDatePickerField(bangGia == null ? "" : formatDate(bangGia.getDenNgay()), true);
-            cboLoaiNgayDialog = createComboBox(LOAI_NGAY_OPTIONS);
-            if (bangGia != null) {
-                cboLoaiNgayDialog.setSelectedItem(bangGiaDAO.getLoaiNgayByMaBangGia(bangGia.getMaBangGia()));
-            }
             cboTrangThaiDialog = createComboBox(TRANG_THAI_OPTIONS);
             if (bangGia != null) {
                 cboTrangThaiDialog.setSelectedItem(bangGia.getTrangThai());
@@ -1076,8 +1071,7 @@ public class BangGiaGUI extends JFrame {
             addFormRow(form, gbc, 1, "Loại phòng", cboLoaiPhongDialog);
             addFormRow(form, gbc, 2, "Ngày bắt đầu", txtNgayBatDau);
             addFormRow(form, gbc, 3, "Ngày kết thúc", txtNgayKetThuc);
-            addFormRow(form, gbc, 4, "Loại ngày", cboLoaiNgayDialog);
-            addFormRow(form, gbc, 5, "Trạng thái", cboTrangThaiDialog);
+            addFormRow(form, gbc, 4, "Trạng thái", cboTrangThaiDialog);
 
             pnlConflictWarning = new JPanel(new BorderLayout());
             pnlConflictWarning.setBackground(CONFLICT_BG);
@@ -1174,11 +1168,6 @@ public class BangGiaGUI extends JFrame {
                 JOptionPane.showMessageDialog(this, "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            String loaiNgay = valueOf(cboLoaiNgayDialog.getSelectedItem());
-            if (loaiNgay.trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Loại ngày không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
             String trangThai = valueOf(cboTrangThaiDialog.getSelectedItem());
             if (trangThai.trim().isEmpty()) {
                 JOptionPane.showMessageDialog(this, "Trạng thái không được để trống.", "Dữ liệu không hợp lệ", JOptionPane.WARNING_MESSAGE);
@@ -1211,7 +1200,7 @@ public class BangGiaGUI extends JFrame {
             bangGia.setDenNgay(ngayKetThuc);
             bangGia.setTrangThai(trangThai);
 
-            boolean success = bangGiaDAO.saveWithDetails(bangGia, loaiNgay, draftChiTietList);
+            boolean success = bangGiaDAO.saveWithDetails(bangGia, BangGiaDAO.DEFAULT_LOAI_NGAY, draftChiTietList);
             if (!success) {
                 JOptionPane.showMessageDialog(this, "Không thể lưu bảng giá.\nChi tiết: " + safeValue(bangGiaDAO.getLastErrorMessage(), "Không xác định."), "Lỗi", JOptionPane.ERROR_MESSAGE);
                 return;

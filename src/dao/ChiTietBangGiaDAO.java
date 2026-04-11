@@ -156,7 +156,7 @@ public class ChiTietBangGiaDAO {
 
     private void fillStatement(PreparedStatement stmt, ChiTietBangGia chiTietBangGia, boolean includeId) throws SQLException {
         stmt.setInt(1, chiTietBangGia.getMaBangGia());
-        stmt.setString(2, chiTietBangGia.getLoaiNgay());
+        stmt.setString(2, normalizeLoaiNgay(chiTietBangGia.getLoaiNgay()));
         stmt.setString(3, chiTietBangGia.getKhungGio());
         stmt.setDouble(4, chiTietBangGia.getGiaTheoGio());
         stmt.setDouble(5, chiTietBangGia.getGiaQuaDem());
@@ -193,10 +193,7 @@ public class ChiTietBangGiaDAO {
             setLastError("Ma bang gia khong hop le.");
             return false;
         }
-        if (chiTietBangGia.getLoaiNgay() == null || chiTietBangGia.getLoaiNgay().trim().isEmpty()) {
-            setLastError("Loai ngay khong duoc rong.");
-            return false;
-        }
+        chiTietBangGia.setLoaiNgay(normalizeLoaiNgay(chiTietBangGia.getLoaiNgay()));
         if (chiTietBangGia.getKhungGio() == null || chiTietBangGia.getKhungGio().trim().isEmpty()) {
             setLastError("Khung gio khong duoc rong.");
             return false;
@@ -215,6 +212,10 @@ public class ChiTietBangGiaDAO {
 
     private boolean isNonNegative(double value) {
         return value >= 0;
+    }
+
+    private String normalizeLoaiNgay(String loaiNgay) {
+        return loaiNgay == null || loaiNgay.trim().isEmpty() ? ChiTietBangGia.DEFAULT_LOAI_NGAY : loaiNgay.trim();
     }
 
     private void clearLastError() {

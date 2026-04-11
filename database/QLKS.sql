@@ -46,24 +46,6 @@ CREATE TABLE TaiKhoan (
                           FOREIGN KEY (maNhanVien) REFERENCES NhanVien(maNhanVien)
 );
 
-CREATE TABLE TaiKhoanQuyen (
-                               maTaiKhoan INT PRIMARY KEY,
-                               permDashboard BIT NOT NULL DEFAULT 0,
-                               permDatPhong BIT NOT NULL DEFAULT 0,
-                               permCheckInOut BIT NOT NULL DEFAULT 0,
-                               permThanhToan BIT NOT NULL DEFAULT 0,
-                               permKhachHang BIT NOT NULL DEFAULT 0,
-                               permPhong BIT NOT NULL DEFAULT 0,
-                               permLoaiPhong BIT NOT NULL DEFAULT 0,
-                               permBangGia BIT NOT NULL DEFAULT 0,
-                               permDichVu BIT NOT NULL DEFAULT 0,
-                               permTienNghi BIT NOT NULL DEFAULT 0,
-                               permTaiKhoan BIT NOT NULL DEFAULT 0,
-                               permNhanVien BIT NOT NULL DEFAULT 0,
-                               permBaoCao BIT NOT NULL DEFAULT 0,
-                               FOREIGN KEY (maTaiKhoan) REFERENCES TaiKhoan(maTaiKhoan)
-);
-
 CREATE TABLE KhachHang (
                            maKhachHang INT IDENTITY(1,1) PRIMARY KEY,
                            hoTen NVARCHAR(100),
@@ -147,116 +129,6 @@ CREATE TABLE ChiTietBangGia (
                                 FOREIGN KEY (maBangGia) REFERENCES BangGia(maBangGia)
 );
 
-
-
-/* =====================
-   HOTFIX NGAY LE V2 - KHOP DAO JAVA
-   ===================== */
-
-/* =====================
-   HOTFIX NGAY LE V2 - KHOP DAO JAVA
-   Sua loi: Invalid column name 'loaiNgay' / 'heSoPhuThu'
-   ===================== */
-
-IF OBJECT_ID('dbo.NgayLe', 'U') IS NULL
-BEGIN
-CREATE TABLE dbo.NgayLe (
-                            maNgayLe INT IDENTITY(1,1) PRIMARY KEY,
-                            tenNgayLe NVARCHAR(100) NOT NULL,
-                            ngayBatDau DATE NULL,
-                            ngayKetThuc DATE NULL,
-                            loaiNgay NVARCHAR(30) NOT NULL DEFAULT N'Ngày lễ',
-                            heSoPhuThu DECIMAL(5,2) NOT NULL DEFAULT 1.00,
-                            trangThai NVARCHAR(30) NOT NULL DEFAULT N'Đang áp dụng',
-                            ghiChu NVARCHAR(MAX) NULL,
-    /* cot tuong thich voi cac ban SQL cu */
-                            ngayLe DATE NULL,
-    [ngay] DATE NULL,
-                            tuNgay DATE NULL,
-                            denNgay DATE NULL,
-                            heSoGia DECIMAL(5,2) NULL,
-                            phuThu DECIMAL(15,0) NULL,
-                            phanTramPhuThu DECIMAL(5,2) NULL,
-                            moTa NVARCHAR(255) NULL
-);
-END
-GO
-
-IF COL_LENGTH('dbo.NgayLe', 'ngayBatDau') IS NULL
-ALTER TABLE dbo.NgayLe ADD ngayBatDau DATE NULL;
-IF COL_LENGTH('dbo.NgayLe', 'ngayKetThuc') IS NULL
-ALTER TABLE dbo.NgayLe ADD ngayKetThuc DATE NULL;
-IF COL_LENGTH('dbo.NgayLe', 'loaiNgay') IS NULL
-ALTER TABLE dbo.NgayLe ADD loaiNgay NVARCHAR(30) NULL;
-IF COL_LENGTH('dbo.NgayLe', 'heSoPhuThu') IS NULL
-ALTER TABLE dbo.NgayLe ADD heSoPhuThu DECIMAL(5,2) NULL;
-IF COL_LENGTH('dbo.NgayLe', 'trangThai') IS NULL
-ALTER TABLE dbo.NgayLe ADD trangThai NVARCHAR(30) NULL;
-IF COL_LENGTH('dbo.NgayLe', 'ghiChu') IS NULL
-ALTER TABLE dbo.NgayLe ADD ghiChu NVARCHAR(MAX) NULL;
-
-/* cot tuong thich neu DB dang o schema cu */
-IF COL_LENGTH('dbo.NgayLe', 'ngayLe') IS NULL
-ALTER TABLE dbo.NgayLe ADD ngayLe DATE NULL;
-IF COL_LENGTH('dbo.NgayLe', 'ngay') IS NULL
-ALTER TABLE dbo.NgayLe ADD [ngay] DATE NULL;
-IF COL_LENGTH('dbo.NgayLe', 'tuNgay') IS NULL
-ALTER TABLE dbo.NgayLe ADD tuNgay DATE NULL;
-IF COL_LENGTH('dbo.NgayLe', 'denNgay') IS NULL
-ALTER TABLE dbo.NgayLe ADD denNgay DATE NULL;
-IF COL_LENGTH('dbo.NgayLe', 'heSoGia') IS NULL
-ALTER TABLE dbo.NgayLe ADD heSoGia DECIMAL(5,2) NULL;
-IF COL_LENGTH('dbo.NgayLe', 'phuThu') IS NULL
-ALTER TABLE dbo.NgayLe ADD phuThu DECIMAL(15,0) NULL;
-IF COL_LENGTH('dbo.NgayLe', 'phanTramPhuThu') IS NULL
-ALTER TABLE dbo.NgayLe ADD phanTramPhuThu DECIMAL(5,2) NULL;
-IF COL_LENGTH('dbo.NgayLe', 'moTa') IS NULL
-ALTER TABLE dbo.NgayLe ADD moTa NVARCHAR(255) NULL;
-GO
-
-/* dong bo du lieu ve dung schema ma DAO dang doc */
-UPDATE dbo.NgayLe
-SET ngayBatDau = COALESCE(ngayBatDau, tuNgay, ngayLe, [ngay]),
-    ngayKetThuc = COALESCE(ngayKetThuc, denNgay, ngayLe, [ngay], ngayBatDau),
-    loaiNgay = ISNULL(NULLIF(loaiNgay, N''), N'Ngày lễ'),
-    heSoPhuThu = COALESCE(
-            heSoPhuThu,
-            heSoGia,
-            CASE
-                WHEN phanTramPhuThu IS NOT NULL THEN CAST(1 + (phanTramPhuThu / 100.0) AS DECIMAL(5,2))
-                ELSE CAST(1.00 AS DECIMAL(5,2))
-                END
-                 ),
-    trangThai = ISNULL(NULLIF(trangThai, N''), N'Đang áp dụng'),
-    ghiChu = ISNULL(ghiChu, N'');
-GO
-
-/* seed neu bang chua co du lieu */
-IF NOT EXISTS (SELECT 1 FROM dbo.NgayLe)
-BEGIN
-INSERT INTO dbo.NgayLe
-(tenNgayLe, ngayBatDau, ngayKetThuc, loaiNgay, heSoPhuThu, trangThai, ghiChu,
- ngayLe, [ngay], tuNgay, denNgay, heSoGia, phuThu, phanTramPhuThu, moTa)
-VALUES
-    (N'Tết Dương lịch 2026', '2026-01-01', '2026-01-01', N'Ngày lễ', 1.20, N'Đang áp dụng', N'', '2026-01-01', '2026-01-01', '2026-01-01', '2026-01-01', 1.20, 0, 20, N'Nghỉ lễ đầu năm'),
-    (N'Giỗ Tổ Hùng Vương 2026', '2026-04-25', '2026-04-25', N'Ngày lễ', 1.20, N'Đang áp dụng', N'', '2026-04-25', '2026-04-25', '2026-04-25', '2026-04-25', 1.20, 0, 20, N'Ngày lễ truyền thống'),
-    (N'Ngày Giải phóng miền Nam 2026', '2026-04-30', '2026-04-30', N'Ngày lễ', 1.30, N'Đang áp dụng', N'', '2026-04-30', '2026-04-30', '2026-04-30', '2026-04-30', 1.30, 0, 30, N'Lễ 30/4'),
-    (N'Quốc tế Lao động 2026', '2026-05-01', '2026-05-01', N'Ngày lễ', 1.30, N'Đang áp dụng', N'', '2026-05-01', '2026-05-01', '2026-05-01', '2026-05-01', 1.30, 0, 30, N'Lễ 1/5'),
-    (N'Quốc khánh 2026', '2026-09-02', '2026-09-02', N'Ngày lễ', 1.30, N'Đang áp dụng', N'', '2026-09-02', '2026-09-02', '2026-09-02', '2026-09-02', 1.30, 0, 30, N'Lễ 2/9');
-END
-GO
-
-/* dam bao cac dong cu co ngayBatDau/ngayKetThuc hop le */
-DELETE FROM dbo.NgayLe
-WHERE ngayBatDau IS NULL OR ngayKetThuc IS NULL;
-GO
-
-/* kiem tra nhanh */
-SELECT maNgayLe, tenNgayLe, ngayBatDau, ngayKetThuc, loaiNgay, heSoPhuThu, trangThai
-FROM dbo.NgayLe
-ORDER BY ngayBatDau, maNgayLe;
-GO
-
 CREATE TABLE DatPhong (
                           maDatPhong INT IDENTITY(1,1) PRIMARY KEY,
                           maKhachHang INT,
@@ -325,15 +197,9 @@ CREATE TABLE HoaDon (
                         maDatPhong INT,
                         maKhachHang INT,
                         ngayLap DATETIME DEFAULT GETDATE(),
-                        tienPhong DECIMAL(15,0) DEFAULT 0,
-                        tienDichVu DECIMAL(15,0) DEFAULT 0,
-                        phuThu DECIMAL(15,0) DEFAULT 0,
-                        giamGia DECIMAL(15,0) DEFAULT 0,
-                        tienCocTru DECIMAL(15,0) DEFAULT 0,
-                        trangThai NVARCHAR(30) DEFAULT N'Chờ thanh toán',
-                        ghiChu NVARCHAR(MAX) NULL,
-                        ngayThanhToan DATETIME NULL,
-                        tongTien AS (ISNULL(tienPhong,0) + ISNULL(tienDichVu,0) + ISNULL(phuThu,0) - ISNULL(giamGia,0)) PERSISTED,
+                        tienPhong DECIMAL(15,0),
+                        tienDichVu DECIMAL(15,0),
+                        tongTien AS (tienPhong + tienDichVu) PERSISTED,
                         FOREIGN KEY (maLuuTru) REFERENCES LuuTru(maLuuTru)
 );
 
@@ -352,11 +218,7 @@ CREATE TABLE ThanhToan (
                            maHoaDon INT,
                            maNhanVien INT,
                            ngayThanhToan DATETIME DEFAULT GETDATE(),
-                           soTien DECIMAL(15,0) DEFAULT 0,
-                           phuongThuc NVARCHAR(30) DEFAULT N'Tiền mặt',
-                           soThamChieu NVARCHAR(100) DEFAULT N'',
-                           ghiChu NVARCHAR(MAX) NULL,
-                           loaiGiaoDich NVARCHAR(30) DEFAULT N'THANH_TOAN',
+                           soTien DECIMAL(15,0),
                            FOREIGN KEY (maHoaDon) REFERENCES HoaDon(maHoaDon),
                            FOREIGN KEY (maNhanVien) REFERENCES NhanVien(maNhanVien)
 );

@@ -1483,9 +1483,8 @@ public class DatPhongGUI extends JFrame {
         private final List<JButton> submitButtons = new ArrayList<JButton>();
         private Border defaultDetailTableBorder;
         private BookingDetailRecord highlightedConflictRow;
-
         private BookingEditorDialog(Window owner, BookingRecord booking) {
-            super(owner, booking == null ? "Tạo booking" : "Cập nhật booking", 980, 760);
+            super(owner, booking == null ? "T?o booking" : "C?p nh?t booking", 1340, 820);
             this.editingBooking = booking;
             this.editing = booking != null;
             if (editing) {
@@ -1507,9 +1506,8 @@ public class DatPhongGUI extends JFrame {
             body.setOpaque(false);
             JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildHeaderSection(), buildDetailSection());
             splitPane.setBorder(null);
-            splitPane.setOpaque(false);
-            splitPane.setResizeWeight(0.38d);
-            splitPane.setDividerLocation(360);
+            splitPane.setResizeWeight(0.31d);
+            splitPane.setDividerLocation(400);
             splitPane.setContinuousLayout(true);
             body.add(splitPane, BorderLayout.CENTER);
             content.add(body, BorderLayout.CENTER);
@@ -1582,8 +1580,7 @@ public class DatPhongGUI extends JFrame {
             addFormRow(form, gbc, 9, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             wrapper.add(lblSection, BorderLayout.NORTH);
-            wrapper.add(form, BorderLayout.CENTER);
-            card.setPreferredSize(new Dimension(360, 0));
+            card.setPreferredSize(new Dimension(400, 0));
             card.add(wrapper, BorderLayout.CENTER);
             return card;
         }
@@ -1633,6 +1630,8 @@ public class DatPhongGUI extends JFrame {
             tblBookingDetailDialog.setFont(BODY_FONT);
             tblBookingDetailDialog.setRowHeight(30);
             tblBookingDetailDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+            tblBookingDetailDialog.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+            applyBookingDetailColumnWidths();
             ScreenUIHelper.styleTableHeader(tblBookingDetailDialog);
             tblBookingDetailDialog.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
                 @Override
@@ -1695,6 +1694,17 @@ public class DatPhongGUI extends JFrame {
             card.add(wrapper, BorderLayout.CENTER);
             refillBookingDetailDialogTable();
             return card;
+        }
+
+
+        private void applyBookingDetailColumnWidths() {
+            if (tblBookingDetailDialog == null || tblBookingDetailDialog.getColumnModel().getColumnCount() < 11) {
+                return;
+            }
+            int[] widths = {55, 85, 140, 105, 105, 90, 105, 105, 145, 120, 120};
+            for (int i = 0; i < widths.length; i++) {
+                tblBookingDetailDialog.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+            }
         }
 
         private void refillBookingDetailDialogTable() {

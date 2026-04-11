@@ -338,8 +338,8 @@ public class DatPhongDAO {
                 .append("ISNULL(lt.maLuuTru, 0) AS maLuuTru, ")
                 .append("ISNULL(kh.hoTen, N'Khách chưa xác định') AS tenKhachHang, ")
                 .append("ISNULL(p.soPhong, CAST(ctdp.maPhong AS NVARCHAR(20))) AS soPhong, ")
-                .append("CAST(dp.ngayNhanPhong AS DATE) AS ngayNhanPhong, ")
-                .append("CAST(dp.ngayTraPhong AS DATE) AS ngayTraPhong, ")
+                .append("CAST(COALESCE(lt.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS DATE) AS ngayNhanPhong, ")
+                .append("CAST(COALESCE(lt.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS DATE) AS ngayTraPhong, ")
                 .append("CASE ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang lưu trú' ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang lưu trú' ")
@@ -351,8 +351,8 @@ public class DatPhongDAO {
                 .append("LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong ")
                 .append("LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong ")
                 .append("WHERE ctdp.maPhong = ? ")
-                .append("AND dp.ngayNhanPhong < ? ")
-                .append("AND dp.ngayTraPhong > ? ");
+                .append("AND CAST(COALESCE(lt.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS DATE) < ? ")
+                .append("AND CAST(COALESCE(lt.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS DATE) > ? ");
         if (excludeMaDatPhong != null && excludeMaDatPhong.intValue() > 0) {
             sql.append("AND dp.maDatPhong <> ? ");
         }

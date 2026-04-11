@@ -366,8 +366,8 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(current.getMaDatPhong()), "Đã check-out");
-            updateCustomerStatusByBooking(con, parseIntOrNull(current.getMaDatPhong()), "Ngừng giao dịch");
+            refreshBookingStatusAfterCheckout(con, parseIntOrNull(current.getMaDatPhong()));
+            updateRoomStatus(con, parseIntOrNull(current.getMaPhong()), "Hoạt động");
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -423,7 +423,10 @@ public class CheckInOutDAO {
         try (PreparedStatement ps = con.prepareStatement(
                 "UPDATE p SET p.trangThai = N'\u0110\u00e3 \u0111\u1eb7t' FROM Phong p WHERE EXISTS (" +
                         "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in'))")) {
+                        "OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                        "ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) lt " +
+                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in') " +
+                        "AND lt.maLuuTru IS NULL)")) {
             ps.executeUpdate();
         }
         try (PreparedStatement ps = con.prepareStatement(
@@ -474,7 +477,7 @@ public class CheckInOutDAO {
         if (maPhong == null) {
             return;
         }
-        try (PreparedStatement stmt = con.prepareStatement("UPDATE Phong SET trangThai = ? WHERE maPhong = ?")) {
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE Phong SET trangThai = ? WHERE maPhong = ? AND trangThai <> N'Bảo trì'")) {
             stmt.setString(1, trangThai);
             stmt.setInt(2, maPhong.intValue());
             stmt.executeUpdate();
@@ -490,6 +493,31 @@ public class CheckInOutDAO {
             stmt.setInt(2, maDatPhong.intValue());
             stmt.executeUpdate();
         }
+    }
+
+    private void refreshBookingStatusAfterCheckout(Connection con, Integer maDatPhong) throws SQLException {
+        if (maDatPhong == null) {
+            return;
+        }
+        boolean stillActive = hasActiveStay(con, maDatPhong);
+        updateBookingStatus(con, maDatPhong, stillActive ? "Đang lưu trú" : "Đã check-out");
+        updateCustomerStatusByBooking(con, maDatPhong, stillActive ? "Hoạt động" : "Ngừng giao dịch");
+    }
+
+    private boolean hasActiveStay(Connection con, Integer maDatPhong) throws SQLException {
+        if (maDatPhong == null) {
+            return false;
+        }
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT COUNT(1) FROM LuuTru WHERE maDatPhong = ? AND checkOut IS NULL")) {
+            stmt.setInt(1, maDatPhong.intValue());
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1) > 0;
+                }
+            }
+        }
+        return false;
     }
 
     private void updateCustomerStatusByBooking(Connection con, Integer maDatPhong, String trangThai) throws SQLException {

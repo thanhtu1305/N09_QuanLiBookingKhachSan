@@ -1506,8 +1506,8 @@ public class DatPhongGUI extends JFrame {
             body.setOpaque(false);
             JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildHeaderSection(), buildDetailSection());
             splitPane.setBorder(null);
-            splitPane.setResizeWeight(0.31d);
-            splitPane.setDividerLocation(400);
+            splitPane.setResizeWeight(0.35d);
+            splitPane.setDividerLocation(430);
             splitPane.setContinuousLayout(true);
             body.add(splitPane, BorderLayout.CENTER);
             content.add(body, BorderLayout.CENTER);
@@ -1580,7 +1580,9 @@ public class DatPhongGUI extends JFrame {
             addFormRow(form, gbc, 9, "Ghi chú", new JScrollPane(txtGhiChuDialog));
 
             wrapper.add(lblSection, BorderLayout.NORTH);
-            card.setPreferredSize(new Dimension(400, 0));
+            wrapper.add(form, BorderLayout.CENTER);
+            card.setPreferredSize(new Dimension(430, 0));
+            card.setMinimumSize(new Dimension(400, 0));
             card.add(wrapper, BorderLayout.CENTER);
             return card;
         }

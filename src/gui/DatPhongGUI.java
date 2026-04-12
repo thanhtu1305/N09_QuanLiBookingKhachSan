@@ -2284,33 +2284,27 @@ public class DatPhongGUI extends JFrame {
 
             private void updateRatePreviewDisplay(BookingDetailRecord detail) {
                 if (detail == null) {
-                    lblRateDayType.setText("Lo\u1ea1i ng\u00e0y: -");
+                    lblRateDayType.setText("Lo\u1ea1i ng\u00e0y trong kho\u1ea3ng: -");
                     lblRateStayType.setText("Ki\u1ec3u t\u00ednh gi\u00e1: -");
                     lblRateBasePrice.setText("Gi\u00e1 c\u01a1 b\u1ea3n: -");
                     lblRateSurcharge.setText("Ph\u1ee5 thu: -");
                     lblRateAppliedPrice.setText("Gi\u00e1 \u00e1p d\u1ee5ng: -");
                     return;
                 }
-                lblRateDayType.setText("Lo\u1ea1i ng\u00e0y: " + normalizeAppliedRateText(detail.loaiNgayApDung));
+                double appliedAmount = detail.thanhTien > 0d ? detail.thanhTien : detail.giaApDung;
+                lblRateDayType.setText("Lo\u1ea1i ng\u00e0y trong kho\u1ea3ng: " + normalizeAppliedRateText(detail.loaiNgayApDung));
                 lblRateStayType.setText("Ki\u1ec3u t\u00ednh gi\u00e1: " + normalizeAppliedRateText(detail.loaiGiaApDung));
                 lblRateBasePrice.setText("Gi\u00e1 c\u01a1 b\u1ea3n: " + formatMoney(Math.max(detail.giaNenApDung, 0d)));
                 lblRateSurcharge.setText(resolveRateSurchargeText(detail));
-                lblRateAppliedPrice.setText("Gi\u00e1 \u00e1p d\u1ee5ng: " + formatMoney(Math.max(detail.giaApDung, 0d)));
+                lblRateAppliedPrice.setText("Gi\u00e1 \u00e1p d\u1ee5ng: " + formatMoney(Math.max(appliedAmount, 0d)));
             }
 
             private String resolveRateSurchargeText(BookingDetailRecord detail) {
-                double surcharge = detail == null ? 0d : Math.max(detail.phuThuApDung, 0d);
-                String dayType = detail == null ? "" : normalizeAppliedRateText(detail.loaiNgayApDung);
+                double surcharge = detail == null ? 0d : Math.max(detail.tongPhuThuApDung > 0d ? detail.tongPhuThuApDung : detail.phuThuApDung, 0d);
                 if (surcharge <= 0d) {
                     return "Ph\u1ee5 thu: 0";
                 }
-                if ("Ng\u00e0y l\u1ec5".equalsIgnoreCase(dayType)) {
-                    return "Ph\u1ee5 thu ng\u00e0y l\u1ec5: " + formatMoney(surcharge);
-                }
-                if ("Cu\u1ed1i tu\u1ea7n".equalsIgnoreCase(dayType)) {
-                    return "Ph\u1ee5 thu cu\u1ed1i tu\u1ea7n: " + formatMoney(surcharge);
-                }
-                return "Ph\u1ee5 thu: " + formatMoney(surcharge);
+                return "T\u1ed5ng ph\u1ee5 thu: " + formatMoney(surcharge);
             }
 
             private void reevaluateCurrentSelectionState() {

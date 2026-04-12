@@ -10,7 +10,7 @@ import java.net.URL;
 
 public final class AppBranding {
     public static final String APP_DISPLAY_NAME = "HOTEL VTTTT";
-    public static final String APP_DESCRIPTION = "Hệ thống quản lý đặt phòng khách sạn";
+    public static final String APP_DESCRIPTION = "H\u1ec7 th\u1ed1ng qu\u1ea3n l\u00fd \u0111\u1eb7t ph\u00f2ng kh\u00e1ch s\u1ea1n";
     public static final String LOGO_RESOURCE_PATH = "/images/logos/logo2.png";
 
     private AppBranding() {

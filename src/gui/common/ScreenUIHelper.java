@@ -449,8 +449,8 @@ public final class ScreenUIHelper {
     private static void closeWindow(String screenName) {
         int confirm = JOptionPane.showConfirmDialog(
                 AppFrame.get(),
-                "Bạn có chắc muốn đóng " + screenName + "?",
-                "Xác nhận",
+                "B\u1ea1n c\u00f3 ch\u1eafc mu\u1ed1n \u0111\u00f3ng " + screenName + "?",
+                "X\u00e1c nh\u1eadn",
                 JOptionPane.YES_NO_OPTION,
                 JOptionPane.QUESTION_MESSAGE
         );
@@ -467,10 +467,10 @@ public final class ScreenUIHelper {
 
         UIManager.put("OptionPane.messageFont", BODY_FONT);
         UIManager.put("OptionPane.buttonFont", BODY_FONT);
-        UIManager.put("OptionPane.yesButtonText", "Có");
-        UIManager.put("OptionPane.noButtonText", "Không");
-        UIManager.put("OptionPane.cancelButtonText", "Hủy");
-        UIManager.put("OptionPane.okButtonText", "Đồng ý");
+        UIManager.put("OptionPane.yesButtonText", "C\u00f3");
+        UIManager.put("OptionPane.noButtonText", "Kh\u00f4ng");
+        UIManager.put("OptionPane.cancelButtonText", "H\u1ee7y");
+        UIManager.put("OptionPane.okButtonText", "\u0110\u1ed3ng \u00fd");
         UIManager.put("ToolTip.font", LABEL_FONT);
         UIManager.put("TitledBorder.font", TABLE_HEADER_FONT);
         UIManager.put("TitledBorder.titleColor", new Color(31, 41, 55));

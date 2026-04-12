@@ -13,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -403,7 +404,7 @@ public class DatPhongDAO {
         int detailCount = countDetails(con, bookingId.intValue());
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, ctdp.thanhTien, "
                 + "dp.ngayNhanPhong, dp.ngayTraPhong, dp.maBangGia, dp.tienCoc AS tienCocHeader, dp.trangThai AS trangThaiDatPhong, "
-                + "p.soPhong, p.tang, "
+                + "p.soPhong, p.tang, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, "
                 + "COALESCE(CAST(p.maLoaiPhong AS NVARCHAR(20)), CAST(bg.maLoaiPhong AS NVARCHAR(20))) AS maLoaiPhongResolved, "
                 + "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhongResolved "
                 + "FROM ChiTietDatPhong ctdp "
@@ -412,6 +413,10 @@ public class DatPhongDAO {
                 + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
                 + "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia "
                 + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong "
+                + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut "
+                + "             FROM LuuTru lt "
+                + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt "
                 + "WHERE ctdp.maDatPhong = ? "
                 + "ORDER BY ctdp.maChiTietDatPhong ASC";
 
@@ -431,7 +436,7 @@ public class DatPhongDAO {
                     detail.setSoNguoi(rs.getInt("soNguoi"));
                     detail.setGiaApDung(rs.getDouble("giaPhong"));
                     detail.setTienDatCocChiTiet(detailCount <= 0 ? 0d : rs.getDouble("tienCocHeader") / detailCount);
-                    detail.setTrangThaiChiTiet(resolveDetailStatus(rs.getString("trangThaiDatPhong"), rs.getString("soPhong")));
+                    detail.setTrangThaiChiTiet(resolveDetailStatus(rs.getString("trangThaiDatPhong"), rs.getString("soPhong"), rs.getObject("maLuuTruGanNhat") == null ? null : Integer.valueOf(rs.getInt("maLuuTruGanNhat")), rs.getTimestamp("checkOutGanNhat")));
                     detail.setYeuCauKhac("");
                     detail.setGhiChu("");
                     detail.setSoPhong(safeTrim(rs.getString("soPhong")));
@@ -668,12 +673,16 @@ public class DatPhongDAO {
         return isWeekend(date) ? "Cuá»‘i tuáº§n" : "NgÃ y thÆ°á»ng";
     }
 
+    public String determineLoaiNgay(LocalDate checkIn, LocalDate checkOut) {
+        return toDayTypeDisplay(resolveDayTypeKey(checkIn, checkOut));
+    }
+
     public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
         if (Boolean.TRUE.booleanValue()) {
             return resolveRoomRateWithSurcharge(maBangGia, checkIn, checkOut);
         }
         RoomRateResolution resolution = new RoomRateResolution();
-        resolution.setLoaiNgay(normalizeLoaiNgay(determineLoaiNgay(checkIn)));
+        resolution.setLoaiNgay(normalizeLoaiNgay(determineLoaiNgay(checkIn, checkOut)));
         resolution.setLoaiGiaApDung("Theo ngÃ y");
         resolution.setGiaApDung(0d);
         resolution.setMaChiTietBangGia("");
@@ -745,8 +754,14 @@ public class DatPhongDAO {
             return "";
         }
         String note = resolution.getLoaiNgay() + " - " + resolution.getLoaiGiaApDung();
+        if (resolution.getGiaNenApDung() > 0d) {
+            note += " - gia co ban " + Math.round(resolution.getGiaNenApDung());
+        }
         if (resolution.getTongPhuThuApDung() > 0d) {
             note += " - phu thu " + Math.round(resolution.getTongPhuThuApDung());
+        }
+        if (resolution.getThanhTienApDung() > 0d) {
+            note += " - thanh tien " + Math.round(resolution.getThanhTienApDung());
         }
         return note;
     }
@@ -807,11 +822,11 @@ public class DatPhongDAO {
 
     public RoomRateResolution resolveRoomRateWithSurcharge(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
         RoomRateResolution resolution = new RoomRateResolution();
-        String dayType = resolveDayTypeKey(checkIn);
+        String dayType = resolveDayTypeKey(checkIn, checkOut);
         String stayType = resolveStayTypeKey(checkIn, checkOut);
         resolution.setLoaiNgayKey(dayType);
         resolution.setLoaiLuuTruKey(stayType);
-        resolution.setLoaiNgay(toDayTypeDisplay(dayType));
+        resolution.setLoaiNgay(buildDayTypeSummary(checkIn, checkOut));
         resolution.setLoaiGiaApDung(toStayTypeDisplay(stayType));
         resolution.setGiaNenApDung(0d);
         resolution.setPhuThuApDung(0d);
@@ -836,17 +851,18 @@ public class DatPhongDAO {
             return resolution;
         }
 
-        double baseRate = Math.max(resolveBaseRate(detail, stayType), 0d);
-        double surcharge = Math.max(resolveSurcharge(detail, dayType), 0d);
         long pricingUnits = resolvePricingUnits(stayType, checkIn, checkOut);
-        double appliedRate = baseRate + surcharge;
+        double baseTotal = Math.max(resolveBaseAmount(detail, stayType, checkIn, checkOut, pricingUnits), 0d);
+        double surchargeTotal = Math.max(resolveSurchargeAmount(detail, stayType, checkIn, checkOut), 0d);
+        double appliedTotal = baseTotal + surchargeTotal;
+        double appliedRate = pricingUnits <= 0L ? appliedTotal : appliedTotal / pricingUnits;
 
         resolution.setMaChiTietBangGia(String.valueOf(detail.getMaChiTietBangGia()));
-        resolution.setGiaNenApDung(baseRate);
-        resolution.setPhuThuApDung(surcharge);
-        resolution.setTongPhuThuApDung(surcharge * pricingUnits);
+        resolution.setGiaNenApDung(baseTotal);
+        resolution.setPhuThuApDung(pricingUnits <= 0L ? surchargeTotal : surchargeTotal / pricingUnits);
+        resolution.setTongPhuThuApDung(surchargeTotal);
         resolution.setGiaApDung(appliedRate);
-        resolution.setThanhTienApDung(Math.max(appliedRate * pricingUnits, 0d));
+        resolution.setThanhTienApDung(Math.max(appliedTotal, 0d));
         return resolution;
     }
 
@@ -860,12 +876,108 @@ public class DatPhongDAO {
         return isWeekend(date) ? DAY_TYPE_WEEKEND : DAY_TYPE_NORMAL;
     }
 
+    private String resolveDayTypeKey(LocalDate checkIn, LocalDate checkOut) {
+        LocalDate start = checkIn != null ? checkIn : checkOut;
+        LocalDate end = checkOut != null ? checkOut : checkIn;
+        if (start == null) {
+            return DAY_TYPE_NORMAL;
+        }
+        if (end == null || end.isBefore(start)) {
+            end = start;
+        }
+
+        boolean hasWeekend = false;
+        for (LocalDate current = start; !current.isAfter(end); current = current.plusDays(1)) {
+            if (ngayLeDAO.isHoliday(current)) {
+                return DAY_TYPE_HOLIDAY;
+            }
+            if (isWeekend(current)) {
+                hasWeekend = true;
+            }
+        }
+        return hasWeekend ? DAY_TYPE_WEEKEND : DAY_TYPE_NORMAL;
+    }
+
+    private String buildDayTypeSummary(LocalDate checkIn, LocalDate checkOut) {
+        LocalDate start = checkIn != null ? checkIn : checkOut;
+        LocalDate end = checkOut != null ? checkOut : checkIn;
+        if (start == null) {
+            return DISPLAY_LOAI_NGAY_THUONG;
+        }
+        if (end == null || end.isBefore(start)) {
+            end = start;
+        }
+
+        boolean hasHoliday = false;
+        boolean hasWeekend = false;
+        boolean hasNormal = false;
+        for (LocalDate current = start; !current.isAfter(end); current = current.plusDays(1)) {
+            if (ngayLeDAO.isHoliday(current)) {
+                hasHoliday = true;
+            } else if (isWeekend(current)) {
+                hasWeekend = true;
+            } else {
+                hasNormal = true;
+            }
+        }
+
+        if (!hasHoliday && !hasWeekend) {
+            return DISPLAY_LOAI_NGAY_THUONG;
+        }
+        if (hasHoliday && !hasWeekend && !hasNormal) {
+            return DISPLAY_LOAI_NGAY_LE;
+        }
+        if (!hasHoliday && hasWeekend && !hasNormal) {
+            return DISPLAY_LOAI_NGAY_CUOI_TUAN;
+        }
+
+        StringBuilder summary = new StringBuilder("Kho\u1ea3ng l\u01b0u tr\u00fa g\u1ed3m ");
+        boolean appended = false;
+        if (hasNormal) {
+            summary.append("ng\u00e0y th\u01b0\u1eddng");
+            appended = true;
+        }
+        if (hasWeekend) {
+            if (appended) {
+                summary.append(" / ");
+            }
+            summary.append("cu\u1ed1i tu\u1ea7n");
+            appended = true;
+        }
+        if (hasHoliday) {
+            if (appended) {
+                summary.append(" / ");
+            }
+            summary.append("l\u1ec5");
+        }
+        return summary.toString();
+    }
+
     private String resolveStayTypeKey(LocalDate checkIn, LocalDate checkOut) {
         if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
             return STAY_TYPE_HOURLY;
         }
         long soDem = Math.max(1L, ChronoUnit.DAYS.between(checkIn, checkOut));
         return soDem == 1L ? STAY_TYPE_OVERNIGHT : STAY_TYPE_DAILY;
+    }
+
+    private List<LocalDate> resolvePricingDates(LocalDate checkIn, LocalDate checkOut) {
+        List<LocalDate> pricingDates = new ArrayList<LocalDate>();
+        LocalDate start = checkIn != null ? checkIn : checkOut;
+        if (start == null) {
+            return pricingDates;
+        }
+        if (checkOut == null || !checkOut.isAfter(start)) {
+            pricingDates.add(start);
+            return pricingDates;
+        }
+        for (LocalDate current = start; current.isBefore(checkOut); current = current.plusDays(1)) {
+            pricingDates.add(current);
+        }
+        if (pricingDates.isEmpty()) {
+            pricingDates.add(start);
+        }
+        return pricingDates;
     }
 
     private double resolveBaseRate(ChiTietBangGia detail, String stayType) {
@@ -881,6 +993,14 @@ public class DatPhongDAO {
         return detail.getGiaTheoNgay();
     }
 
+    private double resolveBaseAmount(ChiTietBangGia detail, String stayType, LocalDate checkIn, LocalDate checkOut, long pricingUnits) {
+        double baseRate = Math.max(resolveBaseRate(detail, stayType), 0d);
+        if (STAY_TYPE_DAILY.equals(stayType)) {
+            return baseRate * Math.max(pricingUnits, 1L);
+        }
+        return baseRate * Math.max(pricingUnits, 1L);
+    }
+
     private double resolveSurcharge(ChiTietBangGia detail, String dayType) {
         if (detail == null) {
             return 0d;
@@ -892,6 +1012,20 @@ public class DatPhongDAO {
             return detail.getPhuThuCuoiTuan();
         }
         return 0d;
+    }
+
+    private double resolveSurchargeAmount(ChiTietBangGia detail, String stayType, LocalDate checkIn, LocalDate checkOut) {
+        if (detail == null) {
+            return 0d;
+        }
+        if (STAY_TYPE_DAILY.equals(stayType)) {
+            double total = 0d;
+            for (LocalDate pricingDate : resolvePricingDates(checkIn, checkOut)) {
+                total += Math.max(resolveSurcharge(detail, resolveDayTypeKey(pricingDate)), 0d);
+            }
+            return total;
+        }
+        return Math.max(resolveSurcharge(detail, resolveDayTypeKey(checkIn, checkOut)), 0d);
     }
 
     private long resolvePricingUnits(String stayType, LocalDate checkIn, LocalDate checkOut) {
@@ -944,21 +1078,39 @@ public class DatPhongDAO {
         if ("Đã hủy".equalsIgnoreCase(status) || "Hủy booking".equalsIgnoreCase(status)) {
             return "Hoạt động";
         }
-        if ("Đã đặt".equalsIgnoreCase(status) || "Đã xác nhận".equalsIgnoreCase(status) || "Chờ check-in".equalsIgnoreCase(status)) {
+        if ("Đã đặt".equalsIgnoreCase(status)
+                || "Đã xác nhận".equalsIgnoreCase(status)
+                || "Đã cọc".equalsIgnoreCase(status)
+                || "Chờ check-in".equalsIgnoreCase(status)) {
             return "Đã đặt";
         }
         return "Đã đặt";
     }
 
-    private String resolveDetailStatus(String bookingStatus, String soPhong) {
+    private String resolveDetailStatus(String bookingStatus, String soPhong, Integer latestStayId, Timestamp latestCheckOut) {
         String status = safeTrim(bookingStatus);
-        if ("Đang lưu trú".equalsIgnoreCase(status)) {
-            return "Đang ở";
+        if ("Đã hủy".equalsIgnoreCase(status) || "Hủy booking".equalsIgnoreCase(status)) {
+            return "Đã hủy";
         }
-        if (status.isEmpty()) {
-            return safeTrim(soPhong).isEmpty() ? "Mới tạo" : "Đã gán phòng";
+        if (latestStayId != null) {
+            return latestCheckOut == null ? "Đang ở" : "Đã check-out";
         }
-        return status;
+        if (safeTrim(soPhong).isEmpty()) {
+            return "Chưa gán phòng";
+        }
+        if ("Đang lưu trú".equalsIgnoreCase(status) || "Đã check-in".equalsIgnoreCase(status)) {
+            return "Chờ check-in";
+        }
+        if ("Đã đặt".equalsIgnoreCase(status)
+                || "Đã xác nhận".equalsIgnoreCase(status)
+                || "Đã cọc".equalsIgnoreCase(status)
+                || "Chờ check-in".equalsIgnoreCase(status)) {
+            return "Chờ check-in";
+        }
+        if ("Đã check-out".equalsIgnoreCase(status) || "Đã thanh toán".equalsIgnoreCase(status)) {
+            return "Đã check-out";
+        }
+        return status.isEmpty() ? "Đã gán phòng" : status;
     }
 
     private void setNullableInt(PreparedStatement stmt, int index, String value) throws SQLException {
@@ -1122,3 +1274,4 @@ public class DatPhongDAO {
         }
     }
 }
+

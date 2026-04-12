@@ -30,6 +30,17 @@ public class CheckInOutDAO {
                     + "LEFT JOIN DatPhong dp2 ON ctdp.maDatPhong = dp2.maDatPhong "
                     + "LEFT JOIN BangGia bg ON dp2.maBangGia = bg.maBangGia "
                     + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong";
+    private static final String STATUS_BOOKED = "\u0110\u00e3 \u0111\u1eb7t";
+    private static final String STATUS_CONFIRMED = "\u0110\u00e3 x\u00e1c nh\u1eadn";
+    private static final String STATUS_DEPOSITED = "\u0110\u00e3 c\u1ecdc";
+    private static final String STATUS_PENDING_CHECKIN = "Ch\u1edd check-in";
+    private static final String STATUS_ACTIVE = "\u0110ang l\u01b0u tr\u00fa";
+    private static final String STATUS_CHECKED_IN = "\u0110\u00e3 check-in";
+    private static final String STATUS_CHECKED_OUT = "\u0110\u00e3 check-out";
+    private static final String STATUS_CANCELLED = "\u0110\u00e3 h\u1ee7y";
+    private static final String STATUS_CANCELLED_BOOKING = "H\u1ee7y booking";
+    private static final String STATUS_ROOM_ACTIVE = "Ho\u1ea1t \u0111\u1ed9ng";
+    private static final String STATUS_ROOM_OCCUPIED = "\u0110ang \u1edf";
 
     private String lastErrorMessage = "";
 
@@ -42,7 +53,7 @@ public class CheckInOutDAO {
         List<LuuTru> result = new ArrayList<LuuTru>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("Không thể kết nối cơ sở dữ liệu.");
+            setLastError("KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
             return result;
         }
 
@@ -64,7 +75,7 @@ public class CheckInOutDAO {
         List<LuuTru> result = new ArrayList<LuuTru>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("Không thể kết nối cơ sở dữ liệu.");
+            setLastError("KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
             return result;
         }
 
@@ -90,7 +101,7 @@ public class CheckInOutDAO {
         Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maLuuTru);
         if (con == null || id == null) {
-            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
+            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
             return null;
         }
 
@@ -113,7 +124,7 @@ public class CheckInOutDAO {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         if (con == null || luuTru == null) {
-            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu lưu trú không hợp lệ.");
+            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "Dá»¯ liá»‡u lÆ°u trĂº khĂ´ng há»£p lá»‡.");
             return false;
         }
 
@@ -125,7 +136,7 @@ public class CheckInOutDAO {
                 boolean inserted = stmt.executeUpdate() > 0;
                 if (!inserted) {
                     con.rollback();
-                    setLastError("Không thể thêm lưu trú.");
+                    setLastError("KhĂ´ng thá»ƒ thĂªm lÆ°u trĂº.");
                     return false;
                 }
                 try (ResultSet rs = stmt.getGeneratedKeys()) {
@@ -135,7 +146,7 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "Đã check-out" : "Đang lưu trú");
+            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "ÄĂ£ check-out" : "Äang lÆ°u trĂº");
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -154,7 +165,7 @@ public class CheckInOutDAO {
         Connection con = ConnectDB.getConnection();
         Integer id = luuTru == null ? null : parseIntOrNull(luuTru.getMaLuuTru());
         if (con == null || luuTru == null || id == null) {
-            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
+            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
             return false;
         }
 
@@ -166,12 +177,12 @@ public class CheckInOutDAO {
                 stmt.setInt(9, id.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
-                    setLastError("Không tìm thấy lưu trú để cập nhật.");
+                    setLastError("KhĂ´ng tĂ¬m tháº¥y lÆ°u trĂº Ä‘á»ƒ cáº­p nháº­t.");
                     return false;
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "Đã check-out" : "Đang lưu trú");
+            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "ÄĂ£ check-out" : "Äang lÆ°u trĂº");
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -190,7 +201,7 @@ public class CheckInOutDAO {
         Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maLuuTru);
         if (con == null || id == null) {
-            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
+            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
             return false;
         }
 
@@ -205,12 +216,12 @@ public class CheckInOutDAO {
                 stmt.setInt(1, id.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
-                    setLastError("Không tìm thấy lưu trú để xóa.");
+                    setLastError("KhĂ´ng tĂ¬m tháº¥y lÆ°u trĂº Ä‘á»ƒ xĂ³a.");
                     return false;
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(existing.getMaDatPhong()), "Đã xác nhận");
+            updateBookingStatus(con, parseIntOrNull(existing.getMaDatPhong()), "ÄĂ£ xĂ¡c nháº­n");
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -229,15 +240,15 @@ public class CheckInOutDAO {
         List<Phong> result = new ArrayList<Phong>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("Không thể kết nối cơ sở dữ liệu.");
+            setLastError("KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
             return result;
         }
 
         String sql = "SELECT p.maPhong, p.maLoaiPhong, p.soPhong, p.tang, p.khuVuc, p.sucChuaChuan, p.sucChuaToiDa, p.trangThai, lp.tenLoaiPhong "
                 + "FROM Phong p "
                 + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
-                + "WHERE p.trangThai = N'Trống' AND (? = '' OR CAST(p.maLoaiPhong AS NVARCHAR(20)) = ?) "
-                + "ORDER BY TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong ASC";
+                + "WHERE p.trangThai = N'Trá»‘ng' AND (? = '' OR CAST(p.maLoaiPhong AS NVARCHAR(20)) = ?) "
+                + "ORDER BY TRY_CAST(REPLACE(p.tang, N'Táº§ng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong ASC";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             String loaiPhong = safeTrim(maLoaiPhong);
             stmt.setString(1, loaiPhong);
@@ -265,77 +276,180 @@ public class CheckInOutDAO {
         return result;
     }
 
-    public boolean checkInFromBooking(String maDatPhong, String maPhong, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
+    public List<CheckInBookingItem> getBookingCheckInItems(String maDatPhong) {
+        clearLastError();
+        List<CheckInBookingItem> items = new ArrayList<CheckInBookingItem>();
+        Connection con = ConnectDB.getConnection();
+        Integer bookingId = parseIntOrNull(maDatPhong);
+        if (con == null || bookingId == null) {
+            setLastError(con == null ? "KhÄ‚Â´ng thĂ¡Â»Æ’ kĂ¡ÂºÂ¿t nĂ¡Â»â€˜i cĂ†Â¡ sĂ¡Â»Å¸ dĂ¡Â»Â¯ liĂ¡Â»â€¡u." : "MÄ‚Â£ Ă„â€˜Ă¡ÂºÂ·t phÄ‚Â²ng khÄ‚Â´ng hĂ¡Â»Â£p lĂ¡Â»â€¡.");
+            return items;
+        }
+
+        String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, " +
+                "ISNULL(p.soPhong, N'ChĂ†Â°a gÄ‚Â¡n') AS soPhong, " +
+                "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong, N'-') AS tenLoaiPhong, " +
+                "dp.trangThai AS trangThaiDatPhong, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat " +
+                "FROM ChiTietDatPhong ctdp " +
+                "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong " +
+                "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong " +
+                "LEFT JOIN BangGia bg ON bg.maBangGia = dp.maBangGia " +
+                "LEFT JOIN LoaiPhong lp2 ON lp2.maLoaiPhong = bg.maLoaiPhong " +
+                "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut FROM LuuTru lt " +
+                "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt " +
+                "WHERE ctdp.maDatPhong = ? " +
+                "ORDER BY CASE WHEN TRY_CAST(p.soPhong AS INT) IS NULL THEN 1 ELSE 0 END, TRY_CAST(p.soPhong AS INT), p.soPhong, ctdp.maChiTietDatPhong";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, bookingId.intValue());
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    CheckInBookingItem item = new CheckInBookingItem();
+                    item.setMaChiTietDatPhong(rs.getInt("maChiTietDatPhong"));
+                    item.setMaPhong(rs.getObject("maPhong") == null ? 0 : rs.getInt("maPhong"));
+                    item.setSoPhong(safeTrim(rs.getString("soPhong")));
+                    item.setTenLoaiPhong(safeTrim(rs.getString("tenLoaiPhong")));
+                    item.setSoNguoi(rs.getInt("soNguoi"));
+                    item.setGiaPhong(rs.getDouble("giaPhong"));
+                    item.setTienCoc(rs.getDouble("tienCoc"));
+                    item.setTrangThai(resolveCheckInItemStatus(
+                            item.getMaPhong(),
+                            safeTrim(rs.getString("trangThaiDatPhong")),
+                            rs.getObject("maLuuTruGanNhat") == null ? null : Integer.valueOf(rs.getInt("maLuuTruGanNhat")),
+                            rs.getTimestamp("checkOutGanNhat")
+                    ));
+                    items.add(item);
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return items;
+    }
+
+    public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        Integer bookingId = parseIntOrNull(maDatPhong);
+        if (con == null || bookingId == null) {
+            setLastError(con == null ? "KhÄ‚Â´ng thĂ¡Â»Æ’ kĂ¡ÂºÂ¿t nĂ¡Â»â€˜i cĂ†Â¡ sĂ¡Â»Å¸ dĂ¡Â»Â¯ liĂ¡Â»â€¡u." : "MÄ‚Â£ Ă„â€˜Ă¡ÂºÂ·t phÄ‚Â²ng khÄ‚Â´ng hĂ¡Â»Â£p lĂ¡Â»â€¡.");
+            return 0;
+        }
+        List<Integer> detailIds = sanitizeDetailIds(maChiTietDatPhongIds);
+        if (detailIds.isEmpty()) {
+            setLastError("KhÄ‚Â´ng cÄ‚Â³ phÄ‚Â²ng nÄ‚Â o Ă„â€˜Ă†Â°Ă¡Â»Â£c chĂ¡Â»Ân Ă„â€˜Ă¡Â»Æ’ check-in.");
+            return 0;
+        }
+
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, latestLt.maLuuTru AS maLuuTruGanNhat ")
+                .append("FROM ChiTietDatPhong ctdp ")
+                .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
+                .append("OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt ")
+                .append("             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong ")
+                .append("             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt ")
+                .append("WHERE ctdp.maDatPhong = ? AND ctdp.maChiTietDatPhong IN (");
+        for (int i = 0; i < detailIds.size(); i++) {
+            if (i > 0) {
+                sql.append(", ");
+            }
+            sql.append("?");
+        }
+        sql.append(")");
+
+        try {
+            con.setAutoCommit(false);
+            int affected = 0;
+            try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
+                 PreparedStatement insertStmt = con.prepareStatement(
+                         "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                 PreparedStatement roomStmt = con.prepareStatement("UPDATE Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? AND trangThai <> N'B\u1ea3o tr\u00ec'")) {
+                int index = 1;
+                selectStmt.setInt(index++, bookingId.intValue());
+                for (Integer detailId : detailIds) {
+                    selectStmt.setInt(index++, detailId.intValue());
+                }
+                try (ResultSet rs = selectStmt.executeQuery()) {
+                    while (rs.next()) {
+                        if (rs.getObject("maLuuTruGanNhat") != null || rs.getObject("maPhong") == null) {
+                            continue;
+                        }
+
+                        int maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
+                        int maPhong = rs.getInt("maPhong");
+                        insertStmt.setInt(1, maChiTietDatPhong);
+                        insertStmt.setInt(2, bookingId.intValue());
+                        insertStmt.setInt(3, maPhong);
+                        insertStmt.setTimestamp(4, toTimestamp(thoiGianCheckIn));
+                        insertStmt.setTimestamp(5, toTimestamp(thoiGianCheckOutDuKien));
+                        insertStmt.setInt(6, rs.getInt("soNguoi"));
+                        insertStmt.setDouble(7, rs.getDouble("giaPhong"));
+                        insertStmt.setDouble(8, rs.getDouble("tienCoc"));
+                        affected += insertStmt.executeUpdate();
+
+                        roomStmt.setInt(1, maPhong);
+                        roomStmt.executeUpdate();
+                    }
+                }
+            }
+
+            if (affected <= 0) {
+                con.rollback();
+                setLastError("KhÄ‚Â´ng cÄ‚Â³ phÄ‚Â²ng nÄ‚Â o sĂ¡ÂºÂµn sÄ‚Â ng Ă„â€˜Ă¡Â»Æ’ check-in.");
+                return 0;
+            }
+
+            refreshBookingStatusAfterCheckIn(con, bookingId.intValue());
+            synchronizeOperationalStatuses(con);
+            con.commit();
+            return affected;
+        } catch (Exception e) {
+            rollbackQuietly(con);
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return 0;
+        } finally {
+            resetAutoCommit(con);
+        }
+    }
+
+        public boolean checkInFromBooking(String maDatPhong, String maPhong, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
         Integer roomId = parseIntOrNull(maPhong);
         if (con == null || bookingId == null || roomId == null) {
-            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng hoặc mã phòng không hợp lệ.");
+            setLastError(con == null ? "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u." : "M\u00e3 \u0111\u1eb7t ph\u00f2ng ho\u1eb7c m\u00e3 ph\u00f2ng kh\u00f4ng h\u1ee3p l\u1ec7.");
             return false;
         }
 
-        String findDetailSql = "SELECT TOP 1 ctdp.maChiTietDatPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc "
+        String findDetailSql = "SELECT TOP 1 ctdp.maChiTietDatPhong "
                 + "FROM ChiTietDatPhong ctdp "
-                + "JOIN DatPhong dp ON ctdp.maDatPhong = dp.maDatPhong "
-                + "LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
-                + "WHERE ctdp.maDatPhong = ? AND lt.maChiTietDatPhong IS NULL "
+                + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru "
+                + "             FROM LuuTru lt "
+                + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt "
+                + "WHERE ctdp.maDatPhong = ? AND ctdp.maPhong = ? AND latestLt.maLuuTru IS NULL "
                 + "ORDER BY ctdp.maChiTietDatPhong ASC";
 
-        try {
-            con.setAutoCommit(false);
-
-            int maChiTietDatPhong;
-            int soNguoi;
-            double giaPhong;
-            double tienCoc;
-
-            try (PreparedStatement stmt = con.prepareStatement(findDetailSql)) {
-                stmt.setInt(1, bookingId.intValue());
-                try (ResultSet rs = stmt.executeQuery()) {
-                    if (!rs.next()) {
-                        con.rollback();
-                        setLastError("Booking không còn dòng chi tiết nào sẵn sàng check-in.");
-                        return false;
-                    }
-                    maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
-                    soNguoi = rs.getInt("soNguoi");
-                    giaPhong = rs.getDouble("giaPhong");
-                    tienCoc = rs.getDouble("tienCoc");
+        try (PreparedStatement stmt = con.prepareStatement(findDetailSql)) {
+            stmt.setInt(1, bookingId.intValue());
+            stmt.setInt(2, roomId.intValue());
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    setLastError("Ph\u00f2ng \u0111\u01b0\u1ee3c ch\u1ecdn kh\u00f4ng c\u00f2n s\u1eb5n s\u00e0ng check-in.");
+                    return false;
                 }
+                List<Integer> detailIds = new ArrayList<Integer>();
+                detailIds.add(Integer.valueOf(rs.getInt("maChiTietDatPhong")));
+                return checkInBookingDetails(maDatPhong, detailIds, thoiGianCheckIn, thoiGianCheckOutDuKien) > 0;
             }
-
-            try (PreparedStatement stmt = con.prepareStatement("UPDATE ChiTietDatPhong SET maPhong = ? WHERE maChiTietDatPhong = ?")) {
-                stmt.setInt(1, roomId.intValue());
-                stmt.setInt(2, maChiTietDatPhong);
-                stmt.executeUpdate();
-            }
-
-            try (PreparedStatement stmt = con.prepareStatement(
-                    "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    Statement.RETURN_GENERATED_KEYS)) {
-                stmt.setInt(1, maChiTietDatPhong);
-                stmt.setInt(2, bookingId.intValue());
-                stmt.setInt(3, roomId.intValue());
-                stmt.setTimestamp(4, toTimestamp(thoiGianCheckIn));
-                stmt.setTimestamp(5, toTimestamp(thoiGianCheckOutDuKien));
-                stmt.setInt(6, soNguoi);
-                stmt.setDouble(7, giaPhong);
-                stmt.setDouble(8, tienCoc);
-                stmt.executeUpdate();
-            }
-
-            updateBookingStatus(con, bookingId, "Đang lưu trú");
-            synchronizeOperationalStatuses(con);
-            con.commit();
-            return true;
         } catch (Exception e) {
-            rollbackQuietly(con);
             setLastError(e.getMessage());
             e.printStackTrace();
             return false;
-        } finally {
-            resetAutoCommit(con);
         }
     }
 
@@ -344,13 +458,13 @@ public class CheckInOutDAO {
         Connection con = ConnectDB.getConnection();
         Integer stayId = parseIntOrNull(maLuuTru);
         if (con == null || stayId == null) {
-            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
+            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
             return false;
         }
 
         LuuTru current = findById(maLuuTru);
         if (current == null) {
-            setLastError("Không tìm thấy hồ sơ lưu trú.");
+            setLastError("KhĂ´ng tĂ¬m tháº¥y há»“ sÆ¡ lÆ°u trĂº.");
             return false;
         }
 
@@ -361,13 +475,13 @@ public class CheckInOutDAO {
                 stmt.setInt(2, stayId.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
-                    setLastError("Không thể cập nhật thời gian check-out.");
+                    setLastError("KhĂ´ng thá»ƒ cáº­p nháº­t thá»i gian check-out.");
                     return false;
                 }
             }
 
             refreshBookingStatusAfterCheckout(con, parseIntOrNull(current.getMaDatPhong()));
-            updateRoomStatus(con, parseIntOrNull(current.getMaPhong()), "Hoạt động");
+            updateRoomStatus(con, parseIntOrNull(current.getMaPhong()), STATUS_ROOM_ACTIVE);
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -391,25 +505,28 @@ public class CheckInOutDAO {
         }
 
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở')")) {
+                "UPDATE Phong SET trangThai = N'Hoáº¡t Ä‘á»™ng' WHERE trangThai IN (N'Hoáº¡t Ä‘á»™ng', N'Trá»‘ng', N'ÄĂ£ Ä‘áº·t', N'Äang á»Ÿ')")) {
             ps.executeUpdate();
         }
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'Đã đặt' FROM Phong p WHERE EXISTS (" +
+                "UPDATE p SET p.trangThai = N'\u0110\u00e3 \u0111\u1eb7t' FROM Phong p WHERE EXISTS (" +
                         "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in'))")) {
+                        "OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                        "ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) lt " +
+                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang l\u01b0u tr\u00fa') " +
+                        "AND lt.maLuuTru IS NULL)")) {
             ps.executeUpdate();
         }
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'Hoạt động' FROM Phong p WHERE EXISTS (" +
+                "UPDATE p SET p.trangThai = N'Hoáº¡t Ä‘á»™ng' FROM Phong p WHERE EXISTS (" +
                         "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đã check-out')")) {
+                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'ÄĂ£ check-out')")) {
             ps.executeUpdate();
         }
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'Đang ở' FROM Phong p WHERE EXISTS (" +
+                "UPDATE p SET p.trangThai = N'Äang á»Ÿ' FROM Phong p WHERE EXISTS (" +
                         "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đang lưu trú')")) {
+                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Äang lÆ°u trĂº')")) {
             ps.executeUpdate();
         }
     }
@@ -425,7 +542,7 @@ public class CheckInOutDAO {
                         "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
                         "OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                         "ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) lt " +
-                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in') " +
+                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang l\u01b0u tr\u00fa') " +
                         "AND lt.maLuuTru IS NULL)")) {
             ps.executeUpdate();
         }
@@ -495,13 +612,38 @@ public class CheckInOutDAO {
         }
     }
 
+    private void refreshBookingStatusAfterCheckIn(Connection con, int maDatPhong) throws SQLException {
+        boolean hasActive = hasActiveStay(con, Integer.valueOf(maDatPhong));
+        boolean hasPending = hasPendingCheckInDetails(con, maDatPhong);
+        if (hasActive) {
+            updateBookingStatus(con, Integer.valueOf(maDatPhong), STATUS_ACTIVE);
+            updateCustomerStatusByBooking(con, Integer.valueOf(maDatPhong), STATUS_ROOM_ACTIVE);
+            return;
+        }
+        if (hasPending) {
+            updateBookingStatus(con, Integer.valueOf(maDatPhong), STATUS_PENDING_CHECKIN);
+            updateCustomerStatusByBooking(con, Integer.valueOf(maDatPhong), STATUS_ROOM_ACTIVE);
+        }
+    }
+
     private void refreshBookingStatusAfterCheckout(Connection con, Integer maDatPhong) throws SQLException {
         if (maDatPhong == null) {
             return;
         }
         boolean stillActive = hasActiveStay(con, maDatPhong);
-        updateBookingStatus(con, maDatPhong, stillActive ? "Đang lưu trú" : "Đã check-out");
-        updateCustomerStatusByBooking(con, maDatPhong, stillActive ? "Hoạt động" : "Ngừng giao dịch");
+        boolean stillPending = hasPendingCheckInDetails(con, maDatPhong.intValue());
+        if (stillActive) {
+            updateBookingStatus(con, maDatPhong, STATUS_ACTIVE);
+            updateCustomerStatusByBooking(con, maDatPhong, STATUS_ROOM_ACTIVE);
+            return;
+        }
+        if (stillPending) {
+            updateBookingStatus(con, maDatPhong, STATUS_PENDING_CHECKIN);
+            updateCustomerStatusByBooking(con, maDatPhong, STATUS_ROOM_ACTIVE);
+            return;
+        }
+        updateBookingStatus(con, maDatPhong, STATUS_CHECKED_OUT);
+        updateCustomerStatusByBooking(con, maDatPhong, "Ngừng giao dịch");
     }
 
     private boolean hasActiveStay(Connection con, Integer maDatPhong) throws SQLException {
@@ -520,6 +662,22 @@ public class CheckInOutDAO {
         return false;
     }
 
+    private boolean hasPendingCheckInDetails(Connection con, int maDatPhong) throws SQLException {
+        String sql = "SELECT COUNT(1) "
+                + "FROM ChiTietDatPhong ctdp "
+                + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru "
+                + "             FROM LuuTru lt "
+                + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt "
+                + "WHERE ctdp.maDatPhong = ? AND latestLt.maLuuTru IS NULL";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
     private void updateCustomerStatusByBooking(Connection con, Integer maDatPhong, String trangThai) throws SQLException {
         if (maDatPhong == null || trangThai == null || trangThai.trim().isEmpty()) {
             return;
@@ -535,30 +693,46 @@ public class CheckInOutDAO {
 
     private boolean shouldMoveToCleaning(LuuTru luuTru) {
         String status = safeTrim(luuTru.getTrangThai());
-        return "Đã check-out".equalsIgnoreCase(status) || "Check-out".equalsIgnoreCase(status);
+        return STATUS_CHECKED_OUT.equalsIgnoreCase(status) || "Check-out".equalsIgnoreCase(status);
     }
 
     private String resolveStayStatus(String trangThaiDatPhong, LocalDateTime checkIn, LocalDateTime checkOut) {
         String bookingStatus = safeTrim(trangThaiDatPhong);
         if (!bookingStatus.isEmpty()) {
-            if ("Đang lưu trú".equalsIgnoreCase(bookingStatus)) {
-                return "Đang ở";
+            if (STATUS_ACTIVE.equalsIgnoreCase(bookingStatus) || STATUS_CHECKED_IN.equalsIgnoreCase(bookingStatus)) {
+                return STATUS_ROOM_OCCUPIED;
             }
-            if ("Chờ check-in".equalsIgnoreCase(bookingStatus) || "Đã xác nhận".equalsIgnoreCase(bookingStatus)) {
-                return "Chờ check-in";
+            if (STATUS_PENDING_CHECKIN.equalsIgnoreCase(bookingStatus)
+                    || STATUS_CONFIRMED.equalsIgnoreCase(bookingStatus)
+                    || STATUS_BOOKED.equalsIgnoreCase(bookingStatus)
+                    || STATUS_DEPOSITED.equalsIgnoreCase(bookingStatus)) {
+                return STATUS_PENDING_CHECKIN;
             }
-            if ("Đã check-out".equalsIgnoreCase(bookingStatus)) {
-                return "Đã check-out";
+            if (STATUS_CHECKED_OUT.equalsIgnoreCase(bookingStatus)) {
+                return STATUS_CHECKED_OUT;
             }
             return bookingStatus;
         }
         if (checkIn == null) {
-            return "Chờ check-in";
+            return STATUS_PENDING_CHECKIN;
         }
         if (checkOut == null) {
-            return "Đang ở";
+            return STATUS_ROOM_OCCUPIED;
         }
-        return "Đã check-out";
+        return STATUS_CHECKED_OUT;
+    }
+
+    private String resolveCheckInItemStatus(int maPhong, String bookingStatus, Integer latestStayId, Timestamp latestCheckOut) {
+        if (STATUS_CANCELLED.equalsIgnoreCase(bookingStatus) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(bookingStatus)) {
+            return STATUS_CANCELLED;
+        }
+        if (maPhong <= 0) {
+            return "Chưa gán phòng";
+        }
+        if (latestStayId != null) {
+            return latestCheckOut == null ? STATUS_CHECKED_IN : STATUS_CHECKED_OUT;
+        }
+        return STATUS_PENDING_CHECKIN;
     }
 
     private void setNullableInt(PreparedStatement stmt, int index, String value) throws SQLException {
@@ -618,4 +792,99 @@ public class CheckInOutDAO {
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
     }
+
+    private List<Integer> sanitizeDetailIds(List<Integer> maChiTietDatPhongIds) {
+        List<Integer> detailIds = new ArrayList<Integer>();
+        if (maChiTietDatPhongIds == null) {
+            return detailIds;
+        }
+        for (Integer value : maChiTietDatPhongIds) {
+            if (value != null && value.intValue() > 0 && !detailIds.contains(value)) {
+                detailIds.add(value);
+            }
+        }
+        return detailIds;
+    }
+
+    public static final class CheckInBookingItem {
+        private int maChiTietDatPhong;
+        private int maPhong;
+        private String soPhong;
+        private String tenLoaiPhong;
+        private int soNguoi;
+        private double giaPhong;
+        private double tienCoc;
+        private String trangThai;
+
+        public int getMaChiTietDatPhong() {
+            return maChiTietDatPhong;
+        }
+
+        public void setMaChiTietDatPhong(int maChiTietDatPhong) {
+            this.maChiTietDatPhong = maChiTietDatPhong;
+        }
+
+        public int getMaPhong() {
+            return maPhong;
+        }
+
+        public void setMaPhong(int maPhong) {
+            this.maPhong = maPhong;
+        }
+
+        public String getSoPhong() {
+            return soPhong;
+        }
+
+        public void setSoPhong(String soPhong) {
+            this.soPhong = soPhong;
+        }
+
+        public String getTenLoaiPhong() {
+            return tenLoaiPhong;
+        }
+
+        public void setTenLoaiPhong(String tenLoaiPhong) {
+            this.tenLoaiPhong = tenLoaiPhong;
+        }
+
+        public int getSoNguoi() {
+            return soNguoi;
+        }
+
+        public void setSoNguoi(int soNguoi) {
+            this.soNguoi = soNguoi;
+        }
+
+        public double getGiaPhong() {
+            return giaPhong;
+        }
+
+        public void setGiaPhong(double giaPhong) {
+            this.giaPhong = giaPhong;
+        }
+
+        public double getTienCoc() {
+            return tienCoc;
+        }
+
+        public void setTienCoc(double tienCoc) {
+            this.tienCoc = tienCoc;
+        }
+
+        public String getTrangThai() {
+            return trangThai;
+        }
+
+        public void setTrangThai(String trangThai) {
+            this.trangThai = trangThai;
+        }
+
+        public boolean canCheckIn() {
+            return maChiTietDatPhong > 0 && maPhong > 0 && "Ch\u1edd check-in".equalsIgnoreCase(trangThai);
+        }
+    }
 }
+
+
+

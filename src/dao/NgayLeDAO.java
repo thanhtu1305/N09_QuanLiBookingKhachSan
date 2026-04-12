@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class NgayLeDAO {
-    private static final String ACTIVE_STATUS = "Đang áp dụng";
+    private static final String ACTIVE_STATUS = "\u0110ang \u00e1p d\u1ee5ng";
 
     public boolean isHoliday(LocalDate date) {
         return findHolidayByDate(date) != null;
@@ -29,12 +29,13 @@ public class NgayLeDAO {
             return null;
         }
 
-        String sql = "SELECT TOP 1 maNgayLe, tenNgayLe, ngayBatDau, ngayKetThuc, loaiNgay, heSoPhuThu, trangThai, ghiChu " +
-                "FROM dbo.NgayLe " +
-                "WHERE trangThai = N'Đang áp dụng' AND ? BETWEEN ngayBatDau AND ngayKetThuc " +
-                "ORDER BY ngayBatDau ASC, maNgayLe ASC";
+        String sql = "SELECT TOP 1 maNgayLe, tenNgayLe, ngayBatDau, ngayKetThuc, loaiNgay, heSoPhuThu, trangThai, ghiChu "
+                + "FROM dbo.NgayLe "
+                + "WHERE trangThai = ? AND ? BETWEEN ngayBatDau AND ngayKetThuc "
+                + "ORDER BY ngayBatDau ASC, maNgayLe ASC";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setDate(1, Date.valueOf(date));
+            ps.setString(1, ACTIVE_STATUS);
+            ps.setDate(2, Date.valueOf(date));
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return mapNgayLe(rs);
@@ -53,14 +54,16 @@ public class NgayLeDAO {
             return holidays;
         }
 
-        String sql = "SELECT maNgayLe, tenNgayLe, ngayBatDau, ngayKetThuc, loaiNgay, heSoPhuThu, trangThai, ghiChu " +
-                "FROM dbo.NgayLe " +
-                "WHERE trangThai = N'Đang áp dụng' " +
-                "ORDER BY ngayBatDau ASC, maNgayLe ASC";
-        try (PreparedStatement ps = con.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
-            while (rs.next()) {
-                holidays.add(mapNgayLe(rs));
+        String sql = "SELECT maNgayLe, tenNgayLe, ngayBatDau, ngayKetThuc, loaiNgay, heSoPhuThu, trangThai, ghiChu "
+                + "FROM dbo.NgayLe "
+                + "WHERE trangThai = ? "
+                + "ORDER BY ngayBatDau ASC, maNgayLe ASC";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, ACTIVE_STATUS);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    holidays.add(mapNgayLe(rs));
+                }
             }
         } catch (SQLException e) {
             e.printStackTrace();

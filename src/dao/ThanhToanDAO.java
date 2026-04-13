@@ -1,6 +1,5 @@
 package dao;
 
-import dao.KhachHangDAO;
 import db.ConnectDB;
 import entity.ChiTietBangGia;
 import entity.NgayLe;
@@ -21,6 +20,7 @@ import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,12 +31,14 @@ public class ThanhToanDAO {
     private String lastErrorMessage = "";
     private static boolean schemaEnsured = false;
     private static boolean synchronizingInvoices = false;
+    private static final String INCOMPLETE_CHECKOUT_MESSAGE = "Đơn này vẫn còn phòng chưa check-out, chưa thể thanh toán toàn bộ.";
     private static final String DAY_TYPE_NORMAL = "THUONG";
     private static final String DAY_TYPE_WEEKEND = "CUOI_TUAN";
     private static final String DAY_TYPE_HOLIDAY = "NGAY_LE";
     private static final String STAY_TYPE_HOURLY = "THEO_GIO";
     private static final String STAY_TYPE_DAILY = "THEO_NGAY";
     private static final String STAY_TYPE_OVERNIGHT = "QUA_DEM";
+    private static final LocalTime LEGACY_EXPECTED_CHECKOUT_TIME = LocalTime.of(12, 0);
     private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
     private final NgayLeDAO ngayLeDAO = new NgayLeDAO();
 
@@ -56,6 +58,7 @@ public class ThanhToanDAO {
         try {
             ensureExtendedSchema(con);
             synchronizeInvoices(con);
+            String readyForPaymentClause = buildBookingReadyForPaymentClause("hd.maDatPhong");
 
             String sql = "WITH ranked AS (" +
                     "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.ngayLap, hd.ngayThanhToan, " +
@@ -65,7 +68,7 @@ public class ThanhToanDAO {
                     "ROW_NUMBER() OVER (PARTITION BY hd.maDatPhong ORDER BY hd.maHoaDon DESC) AS rn " +
                     "FROM HoaDon hd " +
                     "LEFT JOIN DatPhong dp ON hd.maDatPhong = dp.maDatPhong " +
-                    "WHERE ISNULL(dp.trangThai, N'') IN (N'Đã check-out', N'Đã thanh toán')" +
+                    "WHERE " + readyForPaymentClause +
                     ") " +
                     "SELECT ranked.maHoaDon, ranked.maLuuTru, ranked.maDatPhong, ranked.maKhachHang, ranked.ngayLap, ranked.ngayThanhToan, " +
                     "ranked.tienPhong, ranked.tienDichVu, ranked.phuThu, ranked.giamGia, ranked.tienCocTru, ranked.trangThai, ranked.ghiChu, " +
@@ -261,6 +264,9 @@ public class ThanhToanDAO {
                 setLastError("Không tìm thấy hóa đơn.");
                 return false;
             }
+            if (!validateInvoiceReadyForPayment(con, invoice)) {
+                return false;
+            }
 
             double baseAmount = invoice.getTienPhong() + invoice.getTienDichVu() + invoice.getPhuThu();
             double discountAmount = percentage ? baseAmount * (value / 100.0) : value;
@@ -306,6 +312,9 @@ public class ThanhToanDAO {
             ThanhToan invoice = findById(maHoaDon);
             if (invoice == null) {
                 setLastError("Không tìm thấy hóa đơn.");
+                return false;
+            }
+            if (!validateInvoiceReadyForPayment(con, invoice)) {
                 return false;
             }
 
@@ -373,6 +382,9 @@ public class ThanhToanDAO {
                 setLastError("Không tìm thấy hóa đơn.");
                 return false;
             }
+            if (!validateInvoiceReadyForPayment(con, invoice)) {
+                return false;
+            }
             double maxRefund = invoice.getSoTienCoTheHoanCoc();
             if (amount <= 0d || amount - maxRefund > 0.1d) {
                 setLastError("Số tiền hoàn cọc không hợp lệ.");
@@ -411,12 +423,19 @@ public class ThanhToanDAO {
         }
         synchronizingInvoices = true;
         try {
-            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, lt.maChiTietDatPhong, dp.maKhachHang, dp.maBangGia, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+            String readyForPaymentClause = buildBookingReadyForPaymentClause("lt.maDatPhong");
+            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, lt.maChiTietDatPhong, dp.maKhachHang, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS ngayTraPhong, " +
                     "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, " +
                     "ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
                     "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong " +
                     "FROM LuuTru lt " +
                     "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
+                    "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
+                    "LEFT JOIN BangGia bgHeader ON dp.maBangGia = bgHeader.maBangGia " +
+                    "OUTER APPLY (SELECT TOP 1 bgRoom.maBangGia FROM BangGia bgRoom " +
+                    "             WHERE bgRoom.maLoaiPhong = COALESCE(p.maLoaiPhong, bgHeader.maLoaiPhong) " +
+                    "               AND bgRoom.trangThai = N'Đang áp dụng' " +
+                    "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved " +
                     "OUTER APPLY ( " +
                     "   SELECT TOP 1 " +
                     "       ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
@@ -425,7 +444,7 @@ public class ThanhToanDAO {
                     "   FROM ChiTietDatPhong ctdp " +
                     "   WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong " +
                     ") ct " +
-                    "WHERE dp.trangThai IN (N'Đã check-out', N'Đã thanh toán')";
+                    "WHERE " + readyForPaymentClause;
 
             Map<Integer, InvoiceAggregate> aggregates = new LinkedHashMap<Integer, InvoiceAggregate>();
             try (PreparedStatement ps = con.prepareStatement(sql);
@@ -442,14 +461,16 @@ public class ThanhToanDAO {
                         aggregates.put(Integer.valueOf(maDatPhong), aggregate);
                     }
                     RoomChargeBreakdown roomCharge = calculateRoomCharge(
-                            rs.getInt("maBangGia"),
+                            rs.getInt("maBangGiaResolved"),
                             rs.getDouble("giaPhong"),
                             rs.getTimestamp("checkIn"),
+                            rs.getTimestamp("ngayTraPhong"),
                             rs.getTimestamp("checkOut"),
                             rs.getLong("soDemDatPhong"),
                             rs.getDouble("giaPhongDatPhong"),
                             rs.getDouble("thanhTienDatPhong"));
                     aggregate.tienPhong += roomCharge.getThanhTien().doubleValue();
+                    aggregate.phuThu += roomCharge.getLateCheckoutCharge().doubleValue();
                     aggregate.tienDichVu += loadServiceCharge(con, rs.getInt("maLuuTru"));
                 }
             }
@@ -458,22 +479,24 @@ public class ThanhToanDAO {
                 Integer maHoaDon = findLatestInvoiceIdByBooking(con, aggregate.maDatPhong);
                 if (maHoaDon == null) {
                     maHoaDon = insertInvoiceHeader(con, aggregate.maLuuTruDaiDien, aggregate.maDatPhong, aggregate.maKhachHang,
-                            aggregate.tienPhong, aggregate.tienDichVu, aggregate.tienCoc);
+                            aggregate.tienPhong, aggregate.tienDichVu, aggregate.phuThu, aggregate.tienCoc);
                 } else {
                     try (PreparedStatement update = con.prepareStatement(
-                            "UPDATE HoaDon SET maLuuTru = ?, maKhachHang = ?, tienPhong = ?, tienDichVu = ?, tienCocTru = CASE " +
+                            "UPDATE HoaDon SET maLuuTru = ?, maKhachHang = ?, tienPhong = ?, tienDichVu = ?, phuThu = ?, tienCocTru = CASE " +
                                     "WHEN tienCocTru IS NULL THEN ? " +
                                     "WHEN tienCocTru > ? THEN ? ELSE tienCocTru END " +
                                     "WHERE maHoaDon = ?")) {
-                        double tienCocTru = Math.min(aggregate.tienCoc, Math.max(0d, aggregate.tienPhong + aggregate.tienDichVu));
+                        double tongTruocDatCoc = Math.max(0d, aggregate.tienPhong + aggregate.tienDichVu + aggregate.phuThu);
+                        double tienCocTru = Math.min(aggregate.tienCoc, tongTruocDatCoc);
                         update.setInt(1, aggregate.maLuuTruDaiDien);
                         update.setInt(2, aggregate.maKhachHang);
                         update.setDouble(3, aggregate.tienPhong);
                         update.setDouble(4, aggregate.tienDichVu);
-                        update.setDouble(5, tienCocTru);
-                        update.setDouble(6, aggregate.tienCoc);
-                        update.setDouble(7, tienCocTru);
-                        update.setInt(8, maHoaDon.intValue());
+                        update.setDouble(5, aggregate.phuThu);
+                        update.setDouble(6, tienCocTru);
+                        update.setDouble(7, aggregate.tienCoc);
+                        update.setDouble(8, tienCocTru);
+                        update.setInt(9, maHoaDon.intValue());
                         update.executeUpdate();
                     }
                 }
@@ -482,22 +505,24 @@ public class ThanhToanDAO {
                 rebuildInvoiceLines(con, maHoaDon.intValue(), aggregate.maDatPhong);
                 refreshInvoiceStatus(con, maHoaDon.intValue());
             }
+            removeInvoicesForBookingsNotReady(con);
         } finally {
             synchronizingInvoices = false;
         }
     }
 
     private Integer insertInvoiceHeader(Connection con, int maLuuTru, int maDatPhong, int maKhachHang,
-                                        double tienPhong, double tienDichVu, double tienCoc) throws Exception {
+                                        double tienPhong, double tienDichVu, double phuThu, double tienCoc) throws Exception {
         String sql = "INSERT INTO HoaDon(maLuuTru, maDatPhong, maKhachHang, ngayLap, tienPhong, tienDichVu, phuThu, giamGia, tienCocTru, trangThai, ghiChu) " +
-                "VALUES (?, ?, ?, GETDATE(), ?, ?, 0, 0, ?, N'Chờ thanh toán', N'')";
+                "VALUES (?, ?, ?, GETDATE(), ?, ?, ?, 0, ?, N'Chờ thanh toán', N'')";
         try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, maLuuTru);
             ps.setInt(2, maDatPhong);
             ps.setInt(3, maKhachHang);
             ps.setDouble(4, tienPhong);
             ps.setDouble(5, tienDichVu);
-            ps.setDouble(6, Math.min(tienCoc, Math.max(0d, tienPhong + tienDichVu)));
+            ps.setDouble(6, phuThu);
+            ps.setDouble(7, Math.min(tienCoc, Math.max(0d, tienPhong + tienDichVu + phuThu)));
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
@@ -518,7 +543,7 @@ public class ThanhToanDAO {
         if (invoice == null) {
             return;
         }
-        insertRoomChargeLines(con, maHoaDon, maDatPhong, invoice);
+        double lateCheckoutCharge = insertRoomChargeLines(con, maHoaDon, maDatPhong, invoice);
         String serviceSql = "SELECT dv.tenDichVu, SUM(sddv.soLuong) AS soLuong, MAX(sddv.donGia) AS donGia " +
                 "FROM SuDungDichVu sddv " +
                 "JOIN DichVu dv ON sddv.maDichVu = dv.maDichVu " +
@@ -539,16 +564,17 @@ public class ThanhToanDAO {
             }
         }
 
-        if (invoice.getPhuThu() > 0d) {
-            insertInvoiceLine(con, maHoaDon, "Phụ thu", 1, invoice.getPhuThu());
+        double otherSurcharge = invoice.getPhuThu() - lateCheckoutCharge;
+        if (otherSurcharge > 0.1d) {
+            insertInvoiceLine(con, maHoaDon, "Phụ thu", 1, otherSurcharge);
         }
         if (invoice.getGiamGia() > 0d) {
             insertInvoiceLine(con, maHoaDon, "Giảm giá", 1, -invoice.getGiamGia());
         }
     }
 
-    private void insertRoomChargeLines(Connection con, int maHoaDon, int maDatPhong, ThanhToan invoice) throws Exception {
-        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.maBangGia, " +
+    private double insertRoomChargeLines(Connection con, int maHoaDon, int maDatPhong, ThanhToan invoice) throws Exception {
+        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS checkOutDuKien, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, " +
                 "ISNULL(p.soPhong, N'Phong') AS soPhong, " +
                 "ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
                 "ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
@@ -556,6 +582,11 @@ public class ThanhToanDAO {
                 "FROM LuuTru lt " +
                 "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
                 "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
+                "LEFT JOIN BangGia bgHeader ON dp.maBangGia = bgHeader.maBangGia " +
+                "OUTER APPLY (SELECT TOP 1 bgRoom.maBangGia FROM BangGia bgRoom " +
+                "             WHERE bgRoom.maLoaiPhong = COALESCE(p.maLoaiPhong, bgHeader.maLoaiPhong) " +
+                "               AND bgRoom.trangThai = N'Đang áp dụng' " +
+                "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved " +
                 "LEFT JOIN ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "WHERE lt.maDatPhong = ? " +
                 "ORDER BY lt.maLuuTru ASC";
@@ -563,11 +594,13 @@ public class ThanhToanDAO {
             ps.setInt(1, maDatPhong);
             try (ResultSet rs = ps.executeQuery()) {
                 boolean insertedRoomLine = false;
+                double totalLateCheckoutCharge = 0d;
                 while (rs.next()) {
                     RoomChargeBreakdown roomCharge = calculateRoomCharge(
-                            rs.getInt("maBangGia"),
+                            rs.getInt("maBangGiaResolved"),
                             rs.getDouble("giaPhong"),
                             rs.getTimestamp("checkIn"),
+                            rs.getTimestamp("checkOutDuKien"),
                             rs.getTimestamp("checkOut"),
                             rs.getLong("soDemDatPhong"),
                             rs.getDouble("giaPhongDatPhong"),
@@ -577,15 +610,25 @@ public class ThanhToanDAO {
                     }
                     String roomLine = buildRoomInvoiceLine(
                             safeTrim(rs.getString("soPhong")),
-                            roomCharge.getLoaiNgay(),
-                            roomCharge.getLoaiGiaApDung(),
-                            roomCharge.getSoGioLuuTru());
+                            roomCharge.getDurationLabel(),
+                            roomCharge.getLoaiNgay());
                     insertInvoiceLine(con, maHoaDon, roomLine, 1, roomCharge.getThanhTien().doubleValue());
+                    if (roomCharge.getLateCheckoutCharge().doubleValue() > 0d) {
+                        insertInvoiceLine(
+                                con,
+                                maHoaDon,
+                                buildLateCheckoutInvoiceLine(safeTrim(rs.getString("soPhong")), roomCharge.getLateCheckoutHours()),
+                                1,
+                                roomCharge.getLateCheckoutCharge().doubleValue()
+                        );
+                        totalLateCheckoutCharge += roomCharge.getLateCheckoutCharge().doubleValue();
+                    }
                     insertedRoomLine = true;
                 }
                 if (!insertedRoomLine && invoice.getTienPhong() > 0d) {
                     insertInvoiceLine(con, maHoaDon, "Tiền phòng", 1, invoice.getTienPhong());
                 }
+                return totalLateCheckoutCharge;
             }
         }
     }
@@ -602,20 +645,26 @@ public class ThanhToanDAO {
         }
     }
 
-    private String buildRoomInvoiceLine(String soPhong, String loaiNgay, String loaiGiaApDung, long soGioLuuTru) {
+    private String buildRoomInvoiceLine(String soPhong, String durationLabel, String loaiNgay) {
         StringBuilder builder = new StringBuilder("Tiền phòng");
         if (!isBlank(soPhong)) {
             builder.append(" - P").append(soPhong);
         }
-        if (!isBlank(loaiGiaApDung)) {
-            builder.append(" - ").append(loaiGiaApDung);
+        if (!isBlank(durationLabel)) {
+            builder.append(" - ").append(durationLabel);
         }
         if (!isBlank(loaiNgay)) {
             builder.append(" - ").append(loaiNgay);
         }
-        if (soGioLuuTru > 0) {
-            builder.append(" - ").append(soGioLuuTru).append(" giờ");
+        return builder.toString();
+    }
+
+    private String buildLateCheckoutInvoiceLine(String soPhong, long lateHours) {
+        StringBuilder builder = new StringBuilder("Phụ thu trả phòng trễ");
+        if (!isBlank(soPhong)) {
+            builder.append(" - P").append(soPhong);
         }
+        builder.append(" - ").append(Math.max(0L, lateHours)).append(" giờ");
         return builder.toString();
     }
 
@@ -839,6 +888,9 @@ public class ThanhToanDAO {
         if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
             return STAY_TYPE_DAILY;
         }
+        if (stayHours >= 24L) {
+            return STAY_TYPE_DAILY;
+        }
         if (checkOut.toLocalDate().isAfter(checkIn.toLocalDate()) && stayHours <= 24L) {
             return STAY_TYPE_OVERNIGHT;
         }
@@ -866,15 +918,18 @@ public class ThanhToanDAO {
             return BigDecimal.ZERO;
         }
         if (DAY_TYPE_HOLIDAY.equals(dayType)) {
-            return toMoney(detail.getPhuThuNgayLe());
+            return toMoney(detail.getHolidaySurcharge());
         }
         if (DAY_TYPE_WEEKEND.equals(dayType)) {
-            return toMoney(detail.getPhuThuCuoiTuan());
+            return toMoney(detail.getWeekendSurcharge());
         }
         return BigDecimal.ZERO;
     }
 
     private long resolvePricingUnits(String stayType, long stayHours) {
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return Math.max(1L, stayHours);
+        }
         if (!STAY_TYPE_DAILY.equals(stayType)) {
             return 1L;
         }
@@ -913,15 +968,81 @@ public class ThanhToanDAO {
         return "Theo ng\u00e0y";
     }
 
+    private String buildDayTypeSummary(LocalDateTime checkIn, LocalDateTime checkOut) {
+        LocalDate start = checkIn == null ? null : checkIn.toLocalDate();
+        LocalDate end = checkOut == null ? start : checkOut.toLocalDate();
+        if (start == null) {
+            return "Ngày thường";
+        }
+        if (end == null || end.isBefore(start)) {
+            end = start;
+        }
+
+        boolean hasHoliday = false;
+        boolean hasWeekend = false;
+        boolean hasNormal = false;
+        for (LocalDate current = start; !current.isAfter(end); current = current.plusDays(1)) {
+            if (ngayLeDAO.isHoliday(current)) {
+                hasHoliday = true;
+            } else if (isWeekend(current)) {
+                hasWeekend = true;
+            } else {
+                hasNormal = true;
+            }
+        }
+        if (hasHoliday && (hasWeekend || hasNormal)) {
+            return "Có ngày lễ trong khoảng lưu trú";
+        }
+        if (hasHoliday) {
+            return "Ngày lễ";
+        }
+        if (hasWeekend && hasNormal) {
+            return "Có cuối tuần trong khoảng lưu trú";
+        }
+        if (hasWeekend) {
+            return "Cuối tuần";
+        }
+        return "Ngày thường";
+    }
+
+    private String buildDurationLabel(String stayType, long stayHours) {
+        if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
+            return "1 đêm";
+        }
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return Math.max(1L, stayHours) + " giờ";
+        }
+        long soNgay = Math.max(1L, (long) Math.ceil(stayHours / 24.0d));
+        return soNgay + " ngày";
+    }
+
+    private Timestamp normalizeExpectedCheckout(Timestamp value) {
+        if (value == null) {
+            return null;
+        }
+        LocalDateTime dateTime = value.toLocalDateTime();
+        if (dateTime.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+            return Timestamp.valueOf(LocalDateTime.of(dateTime.toLocalDate(), LEGACY_EXPECTED_CHECKOUT_TIME));
+        }
+        return value;
+    }
+
+    private long calculateRoundedLateHours(LocalDateTime expectedCheckOut, LocalDateTime actualCheckOut) {
+        if (expectedCheckOut == null || actualCheckOut == null || !actualCheckOut.isAfter(expectedCheckOut)) {
+            return 0L;
+        }
+        return Math.max(1L, (long) Math.ceil(Duration.between(expectedCheckOut, actualCheckOut).toMinutes() / 60.0d));
+    }
+
     private BigDecimal resolveAppliedRate(ChiTietBangGia detail, String loaiNgay) {
         if (detail == null) {
             return BigDecimal.ZERO;
         }
-        if ("Ngay le".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
-            return toMoney(detail.getGiaLe());
+        if ("Ngay le".equalsIgnoreCase(loaiNgay) && detail.getHolidaySurcharge() > 0d) {
+            return toMoney(detail.getGiaTheoNgay()).add(toMoney(detail.getHolidaySurcharge()));
         }
-        if ("Cuoi tuan".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
-            return toMoney(detail.getGiaCuoiTuan());
+        if ("Cuoi tuan".equalsIgnoreCase(loaiNgay) && detail.getWeekendSurcharge() > 0d) {
+            return toMoney(detail.getGiaTheoNgay()).add(toMoney(detail.getWeekendSurcharge()));
         }
         return toMoney(detail.getGiaTheoNgay());
     }
@@ -929,16 +1050,26 @@ public class ThanhToanDAO {
     private RoomChargeBreakdown calculateRoomCharge(int maBangGia,
                                                     double giaPhongLuuTru,
                                                     Timestamp checkIn,
+                                                    Timestamp expectedCheckOut,
                                                     Timestamp checkOut,
                                                     long soDemDatPhong,
                                                     double giaPhongDatPhong,
                                                     double thanhTienDatPhong) {
         LocalDateTime start = checkIn == null ? null : checkIn.toLocalDateTime();
-        LocalDateTime end = checkOut == null ? null : checkOut.toLocalDateTime();
-        long soGio = calculateStayHours(start, end);
+        LocalDateTime actualEnd = checkOut == null ? null : checkOut.toLocalDateTime();
+        Timestamp normalizedExpected = normalizeExpectedCheckout(expectedCheckOut);
+        LocalDateTime expectedEnd = normalizedExpected == null ? null : normalizedExpected.toLocalDateTime();
+        LocalDateTime billedEnd = actualEnd;
+        if (billedEnd == null) {
+            billedEnd = expectedEnd;
+        }
+        if (expectedEnd != null && actualEnd != null && actualEnd.isAfter(expectedEnd)) {
+            billedEnd = expectedEnd;
+        }
         LocalDate ngayApDung = start == null ? null : start.toLocalDate();
+        long soGio = calculateStayHours(start, billedEnd);
         String dayType = resolveDayTypeKey(ngayApDung);
-        String stayType = resolveStayTypeKey(start, end, soGio);
+        String stayType = resolveStayTypeKey(start, billedEnd, soGio);
         ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(maBangGia, ngayApDung);
         if (detail == null) {
             List<ChiTietBangGia> details = bangGiaDAO.getChiTietBangGiaByMaBangGia(maBangGia);
@@ -948,9 +1079,10 @@ public class ThanhToanDAO {
         }
 
         RoomChargeBreakdown breakdown = new RoomChargeBreakdown();
-        breakdown.setLoaiNgay(toDayTypeDisplay(dayType));
+        breakdown.setLoaiNgay(buildDayTypeSummary(start, billedEnd));
         breakdown.setSoGioLuuTru(soGio);
         breakdown.setLoaiGiaApDung(toStayTypeDisplay(stayType));
+        breakdown.setDurationLabel(buildDurationLabel(stayType, soGio));
 
         BigDecimal tienPhong = BigDecimal.ZERO;
         if (detail != null) {
@@ -964,19 +1096,30 @@ public class ThanhToanDAO {
 
         if (tienPhong.signum() <= 0 && thanhTienDatPhong > 0d) {
             breakdown.setLoaiGiaApDung(toStayTypeDisplay(STAY_TYPE_DAILY));
+            breakdown.setDurationLabel(buildDurationLabel(STAY_TYPE_DAILY, soGio));
             tienPhong = toMoney(thanhTienDatPhong);
         }
         if (tienPhong.signum() <= 0 && giaPhongDatPhong > 0d) {
             long soDem = Math.max(1L, soDemDatPhong);
             breakdown.setLoaiGiaApDung(toStayTypeDisplay(STAY_TYPE_DAILY));
+            breakdown.setDurationLabel(soDem + " ngày");
             tienPhong = toMoney(giaPhongDatPhong).multiply(BigDecimal.valueOf(soDem));
         }
         if (tienPhong.signum() <= 0 && giaPhongLuuTru > 0d) {
             long soNgay = Math.max(1L, (long) Math.ceil(soGio / 24.0d));
             breakdown.setLoaiGiaApDung(toStayTypeDisplay(STAY_TYPE_DAILY));
+            breakdown.setDurationLabel(soNgay + " ngày");
             tienPhong = toMoney(giaPhongLuuTru).multiply(BigDecimal.valueOf(soNgay));
         }
 
+        long lateHours = calculateRoundedLateHours(expectedEnd, actualEnd);
+        BigDecimal lateCharge = BigDecimal.ZERO;
+        if (lateHours > 0L && detail != null) {
+            lateCharge = toMoney(detail.getGiaTheoGio()).multiply(BigDecimal.valueOf(lateHours));
+        }
+
+        breakdown.setLateCheckoutHours(lateHours);
+        breakdown.setLateCheckoutCharge(lateCharge.max(BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP));
         breakdown.setThanhTien(tienPhong.max(BigDecimal.ZERO).setScale(0, RoundingMode.HALF_UP));
         return breakdown;
     }
@@ -1013,6 +1156,46 @@ public class ThanhToanDAO {
         return null;
     }
 
+    public boolean isInvoiceReadyForPayment(String maHoaDon) {
+        clearLastError();
+        Connection con = getReadyConnection();
+        Integer invoiceId = parseIntOrNull(maHoaDon);
+        if (con == null || invoiceId == null) {
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã hóa đơn không hợp lệ.");
+            return false;
+        }
+        try {
+            ensureExtendedSchema(con);
+            synchronizeInvoices(con);
+            Integer maDatPhong = findBookingIdByInvoice(con, invoiceId.intValue());
+            if (maDatPhong == null || maDatPhong.intValue() <= 0) {
+                setLastError("Không tìm thấy hóa đơn.");
+                return false;
+            }
+            if (!isBookingReadyForPayment(con, maDatPhong.intValue())) {
+                setLastError(INCOMPLETE_CHECKOUT_MESSAGE);
+                return false;
+            }
+            return true;
+        } catch (Exception e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private Integer findBookingIdByInvoice(Connection con, int maHoaDon) throws Exception {
+        try (PreparedStatement ps = con.prepareStatement("SELECT TOP 1 ISNULL(maDatPhong, 0) AS maDatPhong FROM HoaDon WHERE maHoaDon = ?")) {
+            ps.setInt(1, maHoaDon);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return Integer.valueOf(rs.getInt("maDatPhong"));
+                }
+            }
+        }
+        return null;
+    }
+
     private void cleanupDuplicateInvoicesForBooking(Connection con, int maDatPhong, int keepMaHoaDon) throws Exception {
         try (PreparedStatement ps = con.prepareStatement(
                 "SELECT maHoaDon FROM HoaDon WHERE maDatPhong = ? AND maHoaDon <> ? ORDER BY maHoaDon DESC")) {
@@ -1032,6 +1215,31 @@ public class ThanhToanDAO {
                         delHeader.setInt(1, duplicateId);
                         delHeader.executeUpdate();
                     }
+                }
+            }
+        }
+    }
+
+    private void removeInvoicesForBookingsNotReady(Connection con) throws Exception {
+        String sql = "SELECT hd.maHoaDon, hd.maDatPhong, ISNULL(hd.trangThai, N'') AS trangThai " +
+                "FROM HoaDon hd " +
+                "WHERE NOT (" + buildBookingReadyForPaymentClause("hd.maDatPhong") + ")";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                int maHoaDon = rs.getInt("maHoaDon");
+                int maDatPhong = rs.getInt("maDatPhong");
+                String trangThai = safeTrim(rs.getString("trangThai"));
+                if (maDatPhong <= 0 || "Đã thanh toán".equalsIgnoreCase(trangThai) || hasAnyPaymentTransaction(con, maHoaDon)) {
+                    continue;
+                }
+                try (PreparedStatement delLines = con.prepareStatement("DELETE FROM ChiTietHoaDon WHERE maHoaDon = ?")) {
+                    delLines.setInt(1, maHoaDon);
+                    delLines.executeUpdate();
+                }
+                try (PreparedStatement delHeader = con.prepareStatement("DELETE FROM HoaDon WHERE maHoaDon = ?")) {
+                    delHeader.setInt(1, maHoaDon);
+                    delHeader.executeUpdate();
                 }
             }
         }
@@ -1058,6 +1266,15 @@ public class ThanhToanDAO {
         try {
             ensureExtendedSchema(con);
             synchronizeInvoices(con);
+            Integer maDatPhong = findBookingIdByInvoice(con, invoiceId.intValue());
+            if (maDatPhong == null || maDatPhong.intValue() <= 0) {
+                setLastError("Không tìm thấy hóa đơn.");
+                return false;
+            }
+            if (!isBookingReadyForPayment(con, maDatPhong.intValue())) {
+                setLastError(INCOMPLETE_CHECKOUT_MESSAGE);
+                return false;
+            }
             try (PreparedStatement ps = con.prepareStatement(
                     "UPDATE HoaDon SET trangThai = N'Đã thanh toán', ngayThanhToan = GETDATE(), ghiChu = CASE " +
                             "WHEN ISNULL(ghiChu,N'') = N'' THEN ? ELSE ghiChu + N' | ' + ? END WHERE maHoaDon = ?")) {
@@ -1108,12 +1325,16 @@ public class ThanhToanDAO {
         private double tienPhong;
         private double tienDichVu;
         private double tienCoc;
+        private double phuThu;
     }
 
     private static final class RoomChargeBreakdown {
         private String loaiNgay;
         private String loaiGiaApDung;
         private long soGioLuuTru;
+        private String durationLabel;
+        private long lateCheckoutHours;
+        private BigDecimal lateCheckoutCharge = BigDecimal.ZERO;
         private BigDecimal thanhTien = BigDecimal.ZERO;
 
         public String getLoaiNgay() {
@@ -1140,6 +1361,30 @@ public class ThanhToanDAO {
             this.soGioLuuTru = soGioLuuTru;
         }
 
+        public String getDurationLabel() {
+            return durationLabel;
+        }
+
+        public void setDurationLabel(String durationLabel) {
+            this.durationLabel = durationLabel;
+        }
+
+        public long getLateCheckoutHours() {
+            return lateCheckoutHours;
+        }
+
+        public void setLateCheckoutHours(long lateCheckoutHours) {
+            this.lateCheckoutHours = lateCheckoutHours;
+        }
+
+        public BigDecimal getLateCheckoutCharge() {
+            return lateCheckoutCharge;
+        }
+
+        public void setLateCheckoutCharge(BigDecimal lateCheckoutCharge) {
+            this.lateCheckoutCharge = lateCheckoutCharge == null ? BigDecimal.ZERO : lateCheckoutCharge;
+        }
+
         public BigDecimal getThanhTien() {
             return thanhTien;
         }
@@ -1150,25 +1395,7 @@ public class ThanhToanDAO {
     }
 
     private void ensureExtendedSchema(Connection con) throws Exception {
-        if (schemaEnsured) {
-            return;
-        }
-        executeSql(con, "IF COL_LENGTH('HoaDon', 'phuThu') IS NULL ALTER TABLE HoaDon ADD phuThu DECIMAL(15,0) NULL");
-        executeSql(con, "IF COL_LENGTH('HoaDon', 'giamGia') IS NULL ALTER TABLE HoaDon ADD giamGia DECIMAL(15,0) NULL");
-        executeSql(con, "IF COL_LENGTH('HoaDon', 'tienCocTru') IS NULL ALTER TABLE HoaDon ADD tienCocTru DECIMAL(15,0) NULL");
-        executeSql(con, "IF COL_LENGTH('HoaDon', 'trangThai') IS NULL ALTER TABLE HoaDon ADD trangThai NVARCHAR(30) NULL");
-        executeSql(con, "IF COL_LENGTH('HoaDon', 'ghiChu') IS NULL ALTER TABLE HoaDon ADD ghiChu NVARCHAR(MAX) NULL");
-        executeSql(con, "IF COL_LENGTH('HoaDon', 'ngayThanhToan') IS NULL ALTER TABLE HoaDon ADD ngayThanhToan DATETIME NULL");
-        executeSql(con, "UPDATE HoaDon SET phuThu = ISNULL(phuThu,0), giamGia = ISNULL(giamGia,0), tienCocTru = ISNULL(tienCocTru,0), " +
-                "trangThai = ISNULL(trangThai,N'Chờ thanh toán'), ghiChu = ISNULL(ghiChu,N'')");
-
-        executeSql(con, "IF COL_LENGTH('ThanhToan', 'phuongThuc') IS NULL ALTER TABLE ThanhToan ADD phuongThuc NVARCHAR(30) NULL");
-        executeSql(con, "IF COL_LENGTH('ThanhToan', 'soThamChieu') IS NULL ALTER TABLE ThanhToan ADD soThamChieu NVARCHAR(100) NULL");
-        executeSql(con, "IF COL_LENGTH('ThanhToan', 'ghiChu') IS NULL ALTER TABLE ThanhToan ADD ghiChu NVARCHAR(MAX) NULL");
-        executeSql(con, "IF COL_LENGTH('ThanhToan', 'loaiGiaoDich') IS NULL ALTER TABLE ThanhToan ADD loaiGiaoDich NVARCHAR(30) NULL");
-        executeSql(con, "UPDATE ThanhToan SET phuongThuc = ISNULL(phuongThuc,N'Tiền mặt'), soThamChieu = ISNULL(soThamChieu,N''), " +
-                "ghiChu = ISNULL(ghiChu,N''), loaiGiaoDich = ISNULL(loaiGiaoDich,N'THANH_TOAN')");
-        executeSql(con, "IF COL_LENGTH('ChiTietHoaDon', 'loaiChiPhi') IS NOT NULL AND COL_LENGTH('ChiTietHoaDon', 'loaiChiPhi') < 240 ALTER TABLE ChiTietHoaDon ALTER COLUMN loaiChiPhi NVARCHAR(255) NULL");
+        // Khong tu dong sua schema khi chay DAO. Neu can, dung script SQL cua project.
         schemaEnsured = true;
     }
 
@@ -1244,27 +1471,7 @@ public class ThanhToanDAO {
     }
 
     private void syncCustomerAfterInvoicePaid(Connection con, int maHoaDon) {
-        try {
-            String sql = "SELECT maKhachHang, trangThai FROM HoaDon WHERE maHoaDon = ?";
-            try (PreparedStatement ps = con.prepareStatement(sql)) {
-                ps.setInt(1, maHoaDon);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        int maKhachHang = rs.getInt("maKhachHang");
-                        String trangThai = safeTrim(rs.getString("trangThai"));
-                        if (maKhachHang > 0 && "Đã thanh toán".equalsIgnoreCase(trangThai)) {
-                            KhachHangDAO khachHangDAO = new KhachHangDAO();
-                            khachHangDAO.updateTrangThaiTuDong(
-                                    String.valueOf(maKhachHang),
-                                    "Ngừng giao dịch",
-                                    "Tự động cập nhật sau khi thanh toán xong hóa đơn HD" + maHoaDon
-                            );
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
+        // KhachHang.trangThai la trang thai master data; khong doi tu dong sau thanh toan.
     }
 
     private void syncBookingAndRoomsAfterPayment(Connection con, int maHoaDon) {
@@ -1279,6 +1486,9 @@ public class ThanhToanDAO {
                 }
             }
             if (maDatPhong <= 0) {
+                return;
+            }
+            if (!isBookingReadyForPayment(con, maDatPhong)) {
                 return;
             }
 
@@ -1296,58 +1506,72 @@ public class ThanhToanDAO {
             if (con == null) {
                 return;
             }
-            if (useDirectActiveStatusAfterCheckout()) {
-                synchronizeOperationalStatusesWithoutCleaning(con);
-                return;
-            }
-            try (PreparedStatement ps = con.prepareStatement(
-                    "UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai IN (N'Hoạt động', N'Trống', N'Đã đặt', N'Đang ở', N'Dọn dẹp')")) {
-                ps.executeUpdate();
-            }
-            try (PreparedStatement ps = con.prepareStatement(
-                    "UPDATE p SET p.trangThai = N'Đã đặt' FROM Phong p WHERE EXISTS (" +
-                            "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                            "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in'))")) {
-                ps.executeUpdate();
-            }
-            try (PreparedStatement ps = con.prepareStatement(
-                    "UPDATE p SET p.trangThai = N'Dọn dẹp' FROM Phong p WHERE EXISTS (" +
-                            "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                            "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đã check-out')")) {
-                ps.executeUpdate();
-            }
-            try (PreparedStatement ps = con.prepareStatement(
-                    "UPDATE p SET p.trangThai = N'Đang ở' FROM Phong p WHERE EXISTS (" +
-                            "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                            "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Đang lưu trú')")) {
-                ps.executeUpdate();
-            }
+            synchronizeOperationalStatusesWithoutCleaning(con);
         } catch (Exception ignored) {
         }
     }
 
     private void synchronizeOperationalStatusesWithoutCleaning(Connection con) throws SQLException {
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE Phong SET trangThai = N'Ho\u1ea1t \u0111\u1ed9ng' " +
-                        "WHERE trangThai IN (N'Ho\u1ea1t \u0111\u1ed9ng', N'Tr\u1ed1ng', N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110ang \u1edf', N'D\u1ecdn d\u1eb9p')")) {
-            ps.executeUpdate();
+        List<Integer> roomIds = new ArrayList<Integer>();
+        try (PreparedStatement ps = con.prepareStatement("SELECT maPhong FROM Phong");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                roomIds.add(Integer.valueOf(rs.getInt("maPhong")));
+            }
+        }
+        new DatPhongDAO().refreshRoomStatuses(con, roomIds);
+    }
+
+    private boolean validateInvoiceReadyForPayment(Connection con, ThanhToan invoice) throws Exception {
+        int maDatPhong = parseIntOrZero(invoice == null ? null : invoice.getMaDatPhong());
+        if (maDatPhong <= 0) {
+            setLastError("Không xác định được đơn đặt phòng của hóa đơn.");
+            return false;
+        }
+        if (!isBookingReadyForPayment(con, maDatPhong)) {
+            setLastError(INCOMPLETE_CHECKOUT_MESSAGE);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isBookingReadyForPayment(Connection con, int maDatPhong) throws Exception {
+        if (con == null || maDatPhong <= 0) {
+            return false;
         }
         try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'\u0110\u00e3 \u0111\u1eb7t' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in'))")) {
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'\u0110ang \u1edf' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'\u0110ang l\u01b0u tr\u00fa')")) {
-            ps.executeUpdate();
+                "SELECT CASE WHEN " +
+                        "EXISTS (SELECT 1 FROM ChiTietDatPhong ctdp WHERE ctdp.maDatPhong = ?) " +
+                        "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maDatPhong = ? AND lt.checkOut IS NULL) " +
+                        "AND NOT EXISTS (" +
+                        "    SELECT 1 FROM ChiTietDatPhong ctdp " +
+                        "    WHERE ctdp.maDatPhong = ? " +
+                        "      AND NOT EXISTS (" +
+                        "          SELECT 1 FROM LuuTru ltDone " +
+                        "          WHERE ltDone.maChiTietDatPhong = ctdp.maChiTietDatPhong AND ltDone.checkOut IS NOT NULL" +
+                        "      )" +
+                        ") " +
+                        "THEN 1 ELSE 0 END")) {
+            ps.setInt(1, maDatPhong);
+            ps.setInt(2, maDatPhong);
+            ps.setInt(3, maDatPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) == 1;
+            }
         }
     }
 
-    private boolean useDirectActiveStatusAfterCheckout() {
-        return true;
+    private String buildBookingReadyForPaymentClause(String bookingIdExpression) {
+        return "EXISTS (SELECT 1 FROM ChiTietDatPhong ctdpAll WHERE ctdpAll.maDatPhong = " + bookingIdExpression + ") " +
+                "AND NOT EXISTS (SELECT 1 FROM LuuTru ltActive WHERE ltActive.maDatPhong = " + bookingIdExpression + " AND ltActive.checkOut IS NULL) " +
+                "AND NOT EXISTS (" +
+                "    SELECT 1 FROM ChiTietDatPhong ctdpPending " +
+                "    WHERE ctdpPending.maDatPhong = " + bookingIdExpression +
+                "      AND NOT EXISTS (" +
+                "          SELECT 1 FROM LuuTru ltDone " +
+                "          WHERE ltDone.maChiTietDatPhong = ctdpPending.maChiTietDatPhong AND ltDone.checkOut IS NOT NULL" +
+                "      )" +
+                ")";
     }
 
     private void clearLastError() {

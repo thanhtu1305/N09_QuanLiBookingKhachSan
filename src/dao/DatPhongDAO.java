@@ -18,9 +18,18 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 public class DatPhongDAO {
+    public static final String STATUS_PENDING_CHECKIN = "Chờ check-in";
+    public static final String STATUS_ACTIVE = "Đang ở";
+    public static final String STATUS_PARTIAL_CHECKOUT = "Check-out một phần";
+    public static final String STATUS_WAIT_PAYMENT = "Chờ thanh toán";
+    public static final String STATUS_PAID = "Đã thanh toán";
+    public static final String STATUS_CHECKED_OUT = "Đã check-out";
+    public static final String STATUS_CANCELLED = "Đã hủy";
+    public static final String STATUS_CANCELLED_BOOKING = "Hủy booking";
     private static final String LOAI_NGAY_THUONG = "Ngày thường";
     private static final String LOAI_NGAY_CUOI_TUAN = "Cuối tuần";
     private static final String LOAI_NGAY_LE = "Ngày lễ";
@@ -42,6 +51,36 @@ public class DatPhongDAO {
     private static final String DISPLAY_LOAI_GIA_THEO_NGAY = "Theo ng\u00e0y";
     private static final String DISPLAY_LOAI_GIA_QUA_DEM = "Qua \u0111\u00eam";
     private static final String DISPLAY_LOAI_GIA_THEO_GIO = "Theo gi\u1edd";
+
+    public static String normalizeStageStatus(String status) {
+        String value = status == null ? "" : status.trim();
+        if ("\u0110\u00e3 check-in".equalsIgnoreCase(value) || "\u0110ang l\u01b0u tr\u00fa".equalsIgnoreCase(value)) {
+            return "\u0110ang \u1edf";
+        }
+        return value;
+    }
+
+    public static boolean isBookingStageStatus(String status) {
+        String value = normalizeStageStatus(status);
+        return "\u0110\u00e3 \u0111\u1eb7t".equalsIgnoreCase(value)
+                || "\u0110\u00e3 x\u00e1c nh\u1eadn".equalsIgnoreCase(value)
+                || "\u0110\u00e3 c\u1ecdc".equalsIgnoreCase(value)
+                || "Ch\u1edd check-in".equalsIgnoreCase(value);
+    }
+
+    public static boolean isOperationalStageStatus(String status) {
+        String value = normalizeStageStatus(status);
+        return "Ch\u1edd check-in".equalsIgnoreCase(value)
+                || "\u0110ang \u1edf".equalsIgnoreCase(value)
+                || "Check-out m\u1ed9t ph\u1ea7n".equalsIgnoreCase(value);
+    }
+
+    public static boolean isPaymentStageStatus(String status) {
+        String value = normalizeStageStatus(status);
+        return "\u0110\u00e3 check-out".equalsIgnoreCase(value)
+                || "Ch\u1edd thanh to\u00e1n".equalsIgnoreCase(value)
+                || "\u0110\u00e3 thanh to\u00e1n".equalsIgnoreCase(value);
+    }
 
     private static final String SELECT_HEADER_BASE =
             "SELECT dp.maDatPhong, dp.maKhachHang, dp.maNhanVien, dp.maBangGia, dp.ngayDat, dp.ngayNhanPhong, dp.ngayTraPhong, "
@@ -73,7 +112,7 @@ public class DatPhongDAO {
             while (rs.next()) {
                 DatPhong datPhong = mapDatPhongHeader(rs);
                 datPhong.getChiTietDatPhongs().addAll(getChiTietByMaDatPhongInternal(con, datPhong));
-                normalizeBooking(datPhong);
+                normalizeBooking(con, datPhong);
                 result.add(datPhong);
             }
         } catch (SQLException e) {
@@ -99,7 +138,7 @@ public class DatPhongDAO {
                 if (rs.next()) {
                     DatPhong datPhong = mapDatPhongHeader(rs);
                     datPhong.getChiTietDatPhongs().addAll(getChiTietByMaDatPhongInternal(con, datPhong));
-                    normalizeBooking(datPhong);
+                    normalizeBooking(con, datPhong);
                     return datPhong;
                 }
             }
@@ -113,28 +152,11 @@ public class DatPhongDAO {
     public List<DatPhong> findByTrangThai(String trangThai) {
         clearLastError();
         List<DatPhong> result = new ArrayList<DatPhong>();
-        Connection con = ConnectDB.getConnection();
-        if (con == null) {
-            setLastError("Không thể kết nối cơ sở dữ liệu.");
-            return result;
-        }
-
-        String status = safeTrim(trangThai);
-        String sql = SELECT_HEADER_BASE + " WHERE (? = '' OR dp.trangThai = ?) ORDER BY dp.maDatPhong DESC";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setString(1, status);
-            stmt.setString(2, status);
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    DatPhong datPhong = mapDatPhongHeader(rs);
-                    datPhong.getChiTietDatPhongs().addAll(getChiTietByMaDatPhongInternal(con, datPhong));
-                    normalizeBooking(datPhong);
-                    result.add(datPhong);
-                }
+        String normalizedStatus = safeTrim(trangThai);
+        for (DatPhong datPhong : getAll()) {
+            if (normalizedStatus.isEmpty() || normalizedStatus.equalsIgnoreCase(safeTrim(datPhong.getTrangThaiDatPhong()))) {
+                result.add(datPhong);
             }
-        } catch (SQLException e) {
-            setLastError(e.getMessage());
-            e.printStackTrace();
         }
         return result;
     }
@@ -307,7 +329,7 @@ public class DatPhongDAO {
             DatPhong booking = findById(String.valueOf(id.intValue()));
             if (booking != null) {
                 if ("Đã hủy".equalsIgnoreCase(trangThai)) {
-                    releaseRoomsIfBooked(con, getAssignedRoomIds(con, id.intValue()));
+                    refreshRoomStatuses(con, getAssignedRoomIds(con, id.intValue()));
                 } else {
                     updateAssignedRoomStatuses(con, booking, resolveRoomStatusForBooking(trangThai));
                 }
@@ -342,8 +364,8 @@ public class DatPhongDAO {
                 .append("CAST(COALESCE(lt.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS DATE) AS ngayNhanPhong, ")
                 .append("CAST(COALESCE(lt.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS DATE) AS ngayTraPhong, ")
                 .append("CASE ")
-                .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang lưu trú' ")
-                .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang lưu trú' ")
+                .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang ở' ")
+                .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang ở' ")
                 .append(" ELSE dp.trangThai ")
                 .append("END AS trangThai ")
                 .append("FROM ChiTietDatPhong ctdp ")
@@ -358,7 +380,7 @@ public class DatPhongDAO {
             sql.append("AND dp.maDatPhong <> ? ");
         }
         sql.append("AND (")
-                .append(" dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang lưu trú', N'Đã check-in') ")
+                .append(" dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in') ")
                 .append(" OR (lt.maLuuTru IS NOT NULL AND (lt.checkOut IS NULL OR CAST(lt.checkOut AS DATE) > ?))")
                 .append(") ")
                 .append("ORDER BY CASE WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN 0 ELSE 1 END, dp.ngayNhanPhong ASC, dp.maDatPhong DESC");
@@ -486,7 +508,7 @@ public class DatPhongDAO {
 
         int detailCount = countDetails(con, bookingId.intValue());
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, ctdp.thanhTien, "
-                + "dp.ngayNhanPhong, dp.ngayTraPhong, dp.maBangGia, dp.tienCoc AS tienCocHeader, dp.trangThai AS trangThaiDatPhong, "
+                + "dp.ngayNhanPhong, dp.ngayTraPhong, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, dp.tienCoc AS tienCocHeader, dp.trangThai AS trangThaiDatPhong, "
                 + "p.soPhong, p.tang, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, "
                 + "COALESCE(CAST(p.maLoaiPhong AS NVARCHAR(20)), CAST(bg.maLoaiPhong AS NVARCHAR(20))) AS maLoaiPhongResolved, "
                 + "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhongResolved "
@@ -496,6 +518,10 @@ public class DatPhongDAO {
                 + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
                 + "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia "
                 + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong "
+                + "OUTER APPLY (SELECT TOP 1 bgRoom.maBangGia FROM BangGia bgRoom "
+                + "             WHERE bgRoom.maLoaiPhong = COALESCE(p.maLoaiPhong, bg.maLoaiPhong) "
+                + "               AND bgRoom.trangThai = N'Đang áp dụng' "
+                + "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved "
                 + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut "
                 + "             FROM LuuTru lt "
                 + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
@@ -512,7 +538,7 @@ public class DatPhongDAO {
                     detail.setMaDatPhong(String.valueOf(rs.getInt("maDatPhong")));
                     detail.setMaPhong(rs.getObject("maPhong") == null ? "" : String.valueOf(rs.getInt("maPhong")));
                     detail.setMaLoaiPhong(safeTrim(rs.getString("maLoaiPhongResolved")));
-                    detail.setMaBangGia(rs.getObject("maBangGia") == null ? "" : String.valueOf(rs.getInt("maBangGia")));
+                    detail.setMaBangGia(rs.getObject("maBangGiaResolved") == null ? "" : String.valueOf(rs.getInt("maBangGiaResolved")));
                     detail.setMaChiTietBangGia("");
                     detail.setCheckInDuKien(toLocalDate(rs.getDate("ngayNhanPhong")));
                     detail.setCheckOutDuKien(toLocalDate(rs.getDate("ngayTraPhong")));
@@ -578,7 +604,8 @@ public class DatPhongDAO {
         String sql = "INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien) VALUES (?, ?, ?, ?, ?)";
         try (PreparedStatement stmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             for (ChiTietDatPhong detail : details) {
-                applyResolvedRoomRate(detail, datPhong.getMaBangGia(), datPhong.getNgayNhanPhong(), datPhong.getNgayTraPhong());
+                String detailBangGia = resolveBangGiaForDetail(con, detail, datPhong.getMaBangGia());
+                applyResolvedRoomRate(detail, detailBangGia, datPhong.getNgayNhanPhong(), datPhong.getNgayTraPhong());
                 stmt.setInt(1, Integer.parseInt(datPhong.getMaDatPhong()));
                 setNullableInt(stmt, 2, detail.getMaPhong());
                 stmt.setInt(3, detail.getSoNguoi() <= 0 ? 1 : detail.getSoNguoi());
@@ -607,18 +634,14 @@ public class DatPhongDAO {
         if (datPhong.getChiTietDatPhongs() == null) {
             return;
         }
-        String sql = "UPDATE Phong SET trangThai = ? WHERE maPhong = ?";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            for (ChiTietDatPhong detail : datPhong.getChiTietDatPhongs()) {
-                Integer roomId = parseIntOrNull(detail.getMaPhong());
-                if (roomId == null) {
-                    continue;
-                }
-                stmt.setString(1, roomStatus);
-                stmt.setInt(2, roomId.intValue());
-                stmt.executeUpdate();
+        List<Integer> roomIds = new ArrayList<Integer>();
+        for (ChiTietDatPhong detail : datPhong.getChiTietDatPhongs()) {
+            Integer roomId = parseIntOrNull(detail.getMaPhong());
+            if (roomId != null) {
+                roomIds.add(roomId);
             }
         }
+        refreshRoomStatuses(con, roomIds);
     }
 
     private List<Integer> getAssignedRoomIds(Connection con, int maDatPhong) throws SQLException {
@@ -639,11 +662,94 @@ public class DatPhongDAO {
         if (roomIds == null || roomIds.isEmpty()) {
             return;
         }
-        String sql = "UPDATE Phong SET trangThai = N'Hoạt động' WHERE maPhong = ? AND trangThai IN (N'Đã đặt', N'Hoạt động')";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            for (Integer roomId : roomIds) {
-                stmt.setInt(1, roomId.intValue());
+        refreshRoomStatuses(con, roomIds);
+    }
+
+    public void refreshRoomStatuses(Connection con, List<Integer> roomIds) throws SQLException {
+        if (con == null || roomIds == null || roomIds.isEmpty()) {
+            return;
+        }
+        LinkedHashSet<Integer> uniqueRoomIds = new LinkedHashSet<Integer>();
+        for (Integer roomId : roomIds) {
+            if (roomId != null && roomId.intValue() > 0) {
+                uniqueRoomIds.add(roomId);
+            }
+        }
+        if (uniqueRoomIds.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE Phong SET trangThai = ? WHERE maPhong = ?")) {
+            for (Integer roomId : uniqueRoomIds) {
+                String status = resolveOperationalRoomStatus(con, roomId.intValue());
+                if (status.isEmpty()) {
+                    continue;
+                }
+                stmt.setString(1, status);
+                stmt.setInt(2, roomId.intValue());
                 stmt.executeUpdate();
+            }
+        }
+    }
+
+    public void refreshRoomStatus(Connection con, int maPhong) throws SQLException {
+        if (maPhong <= 0) {
+            return;
+        }
+        List<Integer> roomIds = new ArrayList<Integer>();
+        roomIds.add(Integer.valueOf(maPhong));
+        refreshRoomStatuses(con, roomIds);
+    }
+
+    private String resolveOperationalRoomStatus(Connection con, int maPhong) throws SQLException {
+        String currentStatus = loadCurrentRoomStatus(con, maPhong);
+        if ("Bảo trì".equalsIgnoreCase(currentStatus)) {
+            return "Bảo trì";
+        }
+        if (hasActiveStayForRoom(con, maPhong)) {
+            return "Đang ở";
+        }
+        if (hasBookedAssignmentForRoom(con, maPhong)) {
+            return "Đã đặt";
+        }
+        if ("Dọn dẹp".equalsIgnoreCase(currentStatus)) {
+            return "Dọn dẹp";
+        }
+        return "Hoạt động";
+    }
+
+    private String loadCurrentRoomStatus(Connection con, int maPhong) throws SQLException {
+        try (PreparedStatement stmt = con.prepareStatement("SELECT ISNULL(trangThai, N'') FROM Phong WHERE maPhong = ?")) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return safeTrim(rs.getString(1));
+                }
+            }
+        }
+        return "";
+    }
+
+    private boolean hasActiveStayForRoom(Connection con, int maPhong) throws SQLException {
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT COUNT(1) FROM LuuTru WHERE maPhong = ? AND checkOut IS NULL")) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
+    private boolean hasBookedAssignmentForRoom(Connection con, int maPhong) throws SQLException {
+        String sql = "SELECT COUNT(1) "
+                + "FROM ChiTietDatPhong ctdp "
+                + "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
+                + "WHERE ctdp.maPhong = ? "
+                + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Check-out một phần', N'Đã check-in') "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
             }
         }
     }
@@ -674,7 +780,7 @@ public class DatPhongDAO {
         return 0;
     }
 
-    private void normalizeBooking(DatPhong datPhong) {
+    private void normalizeBooking(Connection con, DatPhong datPhong) {
         int detailCount = datPhong.getChiTietDatPhongs().size();
         if (datPhong.getSoLuongPhong() <= 0) {
             datPhong.setSoLuongPhong(detailCount == 0 ? 1 : detailCount);
@@ -688,6 +794,10 @@ public class DatPhongDAO {
                 totalGuests += detail.getSoNguoi();
             }
             datPhong.setSoNguoi(totalGuests);
+        }
+        String resolvedStatus = resolveBookingStatus(con, datPhong);
+        if (!resolvedStatus.isEmpty()) {
+            datPhong.setTrangThaiDatPhong(resolvedStatus);
         }
     }
 
@@ -744,16 +854,7 @@ public class DatPhongDAO {
     }
 
     public String determineLoaiNgay(LocalDate date) {
-        if (Boolean.TRUE.booleanValue()) {
-            return toDayTypeDisplay(resolveDayTypeKey(date));
-        }
-        if (date == null) {
-            return "NgÃ y thÆ°á»ng";
-        }
-        if (ngayLeDAO.isHoliday(date)) {
-            return "NgÃ y lá»…";
-        }
-        return isWeekend(date) ? "Cuá»‘i tuáº§n" : "NgÃ y thÆ°á»ng";
+        return toDayTypeDisplay(resolveDayTypeKey(date));
     }
 
     public String determineLoaiNgay(LocalDate checkIn, LocalDate checkOut) {
@@ -761,62 +862,7 @@ public class DatPhongDAO {
     }
 
     public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
-        if (Boolean.TRUE.booleanValue()) {
-            return resolveRoomRateWithSurcharge(maBangGia, checkIn, checkOut);
-        }
-        RoomRateResolution resolution = new RoomRateResolution();
-        resolution.setLoaiNgay(normalizeLoaiNgay(determineLoaiNgay(checkIn, checkOut)));
-        resolution.setLoaiGiaApDung("Theo ngÃ y");
-        resolution.setGiaApDung(0d);
-        resolution.setMaChiTietBangGia("");
-
-        Integer bangGiaId = parseIntOrNull(maBangGia);
-        if (bangGiaId == null) {
-            return resolution;
-        }
-
-        ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(bangGiaId.intValue(), checkIn);
-        if (detail == null) {
-            List<ChiTietBangGia> details = bangGiaDAO.getChiTietBangGiaByMaBangGia(bangGiaId.intValue());
-            if (!details.isEmpty()) {
-                detail = details.get(0);
-            }
-        }
-        if (detail == null) {
-            return resolution;
-        }
-
-        resolution.setMaChiTietBangGia(String.valueOf(detail.getMaChiTietBangGia()));
-        String loaiNgay = resolution.getLoaiNgay();
-        long soDem = 1L;
-        if (checkIn != null && checkOut != null) {
-            soDem = Math.max(1L, ChronoUnit.DAYS.between(checkIn, checkOut));
-        }
-
-        double giaApDung;
-        if ("NgÃ y lá»…".equalsIgnoreCase(loaiNgay) && detail.getGiaLe() > 0d) {
-            giaApDung = detail.getGiaLe();
-            resolution.setLoaiGiaApDung("GiÃ¡ lá»…");
-        } else if ("Cuá»‘i tuáº§n".equalsIgnoreCase(loaiNgay) && detail.getGiaCuoiTuan() > 0d) {
-            giaApDung = detail.getGiaCuoiTuan();
-            resolution.setLoaiGiaApDung("GiÃ¡ cuá»‘i tuáº§n");
-        } else if (soDem == 1L && detail.getGiaQuaDem() > 0d) {
-            giaApDung = chooseLowerPositive(detail.getGiaQuaDem(), detail.getGiaTheoNgay());
-            resolution.setLoaiGiaApDung(giaApDung == detail.getGiaQuaDem() ? "Qua Ä‘Ãªm" : "Theo ngÃ y");
-        } else if (detail.getGiaTheoNgay() > 0d) {
-            giaApDung = detail.getGiaTheoNgay();
-            resolution.setLoaiGiaApDung("Theo ngÃ y");
-        } else if (detail.getGiaQuaDem() > 0d) {
-            giaApDung = detail.getGiaQuaDem();
-            resolution.setLoaiGiaApDung("Qua Ä‘Ãªm");
-        } else {
-            giaApDung = detail.getGiaTheoGio();
-            resolution.setLoaiGiaApDung("Theo giá»");
-        }
-
-        resolution.setLoaiGiaApDung(normalizeLoaiGia(resolution.getLoaiGiaApDung()));
-        resolution.setGiaApDung(Math.max(giaApDung, 0d));
-        return resolution;
+        return resolveRoomRateWithSurcharge(maBangGia, checkIn, checkOut);
     }
 
     private void applyResolvedRoomRate(ChiTietDatPhong detail, String maBangGia, LocalDate defaultCheckIn, LocalDate defaultCheckOut) {
@@ -830,6 +876,61 @@ public class DatPhongDAO {
         detail.setMaBangGia(defaultIfEmpty(maBangGia, detail.getMaBangGia()));
         detail.setMaChiTietBangGia(resolution.getMaChiTietBangGia());
         detail.setGhiChu(buildRateNote(resolution));
+    }
+
+    private String resolveBangGiaForDetail(Connection con, ChiTietDatPhong detail, String defaultMaBangGia) throws SQLException {
+        if (detail == null) {
+            return defaultMaBangGia;
+        }
+        Integer preferredBangGia = parseIntOrNull(defaultMaBangGia);
+        Integer roomTypeId = parseIntOrNull(detail.getMaLoaiPhong());
+        if (roomTypeId == null) {
+            Integer roomId = parseIntOrNull(detail.getMaPhong());
+            if (roomId != null) {
+                roomTypeId = findRoomTypeIdByRoom(con, roomId.intValue());
+            }
+        }
+        if (roomTypeId == null) {
+            return defaultIfEmpty(detail.getMaBangGia(), defaultMaBangGia);
+        }
+        Integer bangGiaId = findAppliedBangGiaByRoomType(con, roomTypeId.intValue(), preferredBangGia);
+        if (bangGiaId != null) {
+            return String.valueOf(bangGiaId.intValue());
+        }
+        return defaultIfEmpty(detail.getMaBangGia(), defaultMaBangGia);
+    }
+
+    private Integer findRoomTypeIdByRoom(Connection con, int maPhong) throws SQLException {
+        try (PreparedStatement stmt = con.prepareStatement("SELECT TOP 1 maLoaiPhong FROM Phong WHERE maPhong = ?")) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Integer.valueOf(rs.getInt(1));
+                }
+            }
+        }
+        return null;
+    }
+
+    private Integer findAppliedBangGiaByRoomType(Connection con, int maLoaiPhong, Integer preferredBangGia) throws SQLException {
+        String sql = "SELECT TOP 1 maBangGia FROM BangGia WHERE maLoaiPhong = ? AND trangThai = N'Đang áp dụng' "
+                + "ORDER BY CASE WHEN ? IS NOT NULL AND maBangGia = ? THEN 0 ELSE 1 END, maBangGia DESC";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maLoaiPhong);
+            if (preferredBangGia == null) {
+                stmt.setObject(2, null);
+                stmt.setObject(3, null);
+            } else {
+                stmt.setInt(2, preferredBangGia.intValue());
+                stmt.setInt(3, preferredBangGia.intValue());
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return Integer.valueOf(rs.getInt(1));
+                }
+            }
+        }
+        return null;
     }
 
     private String buildRateNote(RoomRateResolution resolution) {
@@ -910,7 +1011,7 @@ public class DatPhongDAO {
         resolution.setLoaiNgayKey(dayType);
         resolution.setLoaiLuuTruKey(stayType);
         resolution.setLoaiNgay(buildDayTypeSummary(checkIn, checkOut));
-        resolution.setLoaiGiaApDung(toStayTypeDisplay(stayType));
+        resolution.setLoaiGiaApDung(buildStayTypeSummary(stayType, checkIn, checkOut));
         resolution.setGiaNenApDung(0d);
         resolution.setPhuThuApDung(0d);
         resolution.setTongPhuThuApDung(0d);
@@ -1014,26 +1115,21 @@ public class DatPhongDAO {
             return DISPLAY_LOAI_NGAY_CUOI_TUAN;
         }
 
-        StringBuilder summary = new StringBuilder("Kho\u1ea3ng l\u01b0u tr\u00fa g\u1ed3m ");
-        boolean appended = false;
-        if (hasNormal) {
-            summary.append("ng\u00e0y th\u01b0\u1eddng");
-            appended = true;
-        }
-        if (hasWeekend) {
-            if (appended) {
-                summary.append(" / ");
-            }
-            summary.append("cu\u1ed1i tu\u1ea7n");
-            appended = true;
-        }
         if (hasHoliday) {
-            if (appended) {
-                summary.append(" / ");
-            }
-            summary.append("l\u1ec5");
+            return "C\u00f3 ng\u00e0y l\u1ec5 trong kho\u1ea3ng l\u01b0u tr\u00fa";
         }
-        return summary.toString();
+        return "C\u00f3 cu\u1ed1i tu\u1ea7n trong kho\u1ea3ng l\u01b0u tr\u00fa";
+    }
+
+    private String buildStayTypeSummary(String stayType, LocalDate checkIn, LocalDate checkOut) {
+        if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
+            return "Qua \u0111\u00eam - 1 \u0111\u00eam";
+        }
+        if (STAY_TYPE_HOURLY.equals(stayType)) {
+            return "Theo gi\u1edd";
+        }
+        long soNgay = resolvePricingUnits(STAY_TYPE_DAILY, checkIn, checkOut);
+        return "Theo ng\u00e0y - " + Math.max(1L, soNgay) + " ng\u00e0y";
     }
 
     private String resolveStayTypeKey(LocalDate checkIn, LocalDate checkOut) {
@@ -1089,10 +1185,10 @@ public class DatPhongDAO {
             return 0d;
         }
         if (DAY_TYPE_HOLIDAY.equals(dayType)) {
-            return detail.getPhuThuNgayLe();
+            return detail.getHolidaySurcharge();
         }
         if (DAY_TYPE_WEEKEND.equals(dayType)) {
-            return detail.getPhuThuCuoiTuan();
+            return detail.getWeekendSurcharge();
         }
         return 0d;
     }
@@ -1155,16 +1251,22 @@ public class DatPhongDAO {
 
     private String resolveRoomStatusForBooking(String bookingStatus) {
         String status = safeTrim(bookingStatus);
-        if ("Đang lưu trú".equalsIgnoreCase(status) || "Đã check-in".equalsIgnoreCase(status)) {
+        if (STATUS_ACTIVE.equalsIgnoreCase(status)
+                || STATUS_PARTIAL_CHECKOUT.equalsIgnoreCase(status)
+                || "Đã check-in".equalsIgnoreCase(status)) {
             return "Đang ở";
         }
-        if ("Đã hủy".equalsIgnoreCase(status) || "Hủy booking".equalsIgnoreCase(status)) {
+        if (STATUS_CANCELLED.equalsIgnoreCase(status)
+                || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(status)
+                || STATUS_WAIT_PAYMENT.equalsIgnoreCase(status)
+                || STATUS_PAID.equalsIgnoreCase(status)
+                || STATUS_CHECKED_OUT.equalsIgnoreCase(status)) {
             return "Hoạt động";
         }
         if ("Đã đặt".equalsIgnoreCase(status)
                 || "Đã xác nhận".equalsIgnoreCase(status)
                 || "Đã cọc".equalsIgnoreCase(status)
-                || "Chờ check-in".equalsIgnoreCase(status)) {
+                || STATUS_PENDING_CHECKIN.equalsIgnoreCase(status)) {
             return "Đã đặt";
         }
         return "Đã đặt";
@@ -1172,7 +1274,7 @@ public class DatPhongDAO {
 
     private String resolveDetailStatus(String bookingStatus, String soPhong, Integer latestStayId, Timestamp latestCheckOut) {
         String status = safeTrim(bookingStatus);
-        if ("Đã hủy".equalsIgnoreCase(status) || "Hủy booking".equalsIgnoreCase(status)) {
+        if (STATUS_CANCELLED.equalsIgnoreCase(status) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(status)) {
             return "Đã hủy";
         }
         if (latestStayId != null) {
@@ -1181,19 +1283,96 @@ public class DatPhongDAO {
         if (safeTrim(soPhong).isEmpty()) {
             return "Chưa gán phòng";
         }
-        if ("Đang lưu trú".equalsIgnoreCase(status) || "Đã check-in".equalsIgnoreCase(status)) {
+        if (STATUS_ACTIVE.equalsIgnoreCase(status)
+                || STATUS_PARTIAL_CHECKOUT.equalsIgnoreCase(status)
+                || "Đã check-in".equalsIgnoreCase(status)) {
             return "Chờ check-in";
         }
         if ("Đã đặt".equalsIgnoreCase(status)
                 || "Đã xác nhận".equalsIgnoreCase(status)
                 || "Đã cọc".equalsIgnoreCase(status)
-                || "Chờ check-in".equalsIgnoreCase(status)) {
+                || STATUS_PENDING_CHECKIN.equalsIgnoreCase(status)) {
             return "Chờ check-in";
         }
-        if ("Đã check-out".equalsIgnoreCase(status) || "Đã thanh toán".equalsIgnoreCase(status)) {
+        if (STATUS_CHECKED_OUT.equalsIgnoreCase(status)
+                || STATUS_WAIT_PAYMENT.equalsIgnoreCase(status)
+                || STATUS_PAID.equalsIgnoreCase(status)) {
             return "Đã check-out";
         }
         return status.isEmpty() ? "Đã gán phòng" : status;
+    }
+
+    private String resolveBookingStatus(Connection con, DatPhong datPhong) {
+        if (con == null || datPhong == null) {
+            return "";
+        }
+        String currentStatus = safeTrim(datPhong.getTrangThaiDatPhong());
+        if (STATUS_CANCELLED.equalsIgnoreCase(currentStatus) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(currentStatus)) {
+            return STATUS_CANCELLED;
+        }
+
+        Integer maDatPhong = parseIntOrNull(datPhong.getMaDatPhong());
+        if (maDatPhong == null) {
+            return currentStatus;
+        }
+
+        String sql = "SELECT COUNT(1) AS soChiTiet, " +
+                "SUM(CASE WHEN stayStats.coDangO = 1 THEN 1 ELSE 0 END) AS soChiTietDangO, " +
+                "SUM(CASE WHEN stayStats.coDaCheckOut = 1 THEN 1 ELSE 0 END) AS soChiTietDaCheckOut, " +
+                "SUM(CASE WHEN stayStats.coLuuTru = 1 THEN 1 ELSE 0 END) AS soChiTietDaPhatSinhLuuTru " +
+                "FROM ChiTietDatPhong ctdp " +
+                "OUTER APPLY ( " +
+                "    SELECT CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NULL) THEN 1 ELSE 0 END AS coDangO, " +
+                "           CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NOT NULL) THEN 1 ELSE 0 END AS coDaCheckOut, " +
+                "           CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) THEN 1 ELSE 0 END AS coLuuTru " +
+                ") stayStats " +
+                "WHERE ctdp.maDatPhong = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong.intValue());
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return currentStatus;
+                }
+
+                int soChiTiet = rs.getInt("soChiTiet");
+                int soChiTietDangO = rs.getInt("soChiTietDangO");
+                int soChiTietDaCheckOut = rs.getInt("soChiTietDaCheckOut");
+                int soChiTietDaPhatSinhLuuTru = rs.getInt("soChiTietDaPhatSinhLuuTru");
+
+                if (isBookingPaid(con, maDatPhong.intValue())) {
+                    return STATUS_PAID;
+                }
+                if (soChiTietDangO > 0) {
+                    return STATUS_ACTIVE;
+                }
+                if (soChiTiet > 0 && soChiTietDaCheckOut >= soChiTiet) {
+                    return STATUS_WAIT_PAYMENT;
+                }
+                if (soChiTietDaPhatSinhLuuTru <= 0) {
+                    return STATUS_PENDING_CHECKIN;
+                }
+                if (soChiTietDaCheckOut > 0 && soChiTietDaPhatSinhLuuTru < soChiTiet) {
+                    return STATUS_PENDING_CHECKIN;
+                }
+                if (soChiTietDaCheckOut > 0) {
+                    return STATUS_PARTIAL_CHECKOUT;
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return currentStatus.isEmpty() ? STATUS_PENDING_CHECKIN : currentStatus;
+    }
+
+    private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
+        String sql = "SELECT COUNT(1) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'') = N'Đã thanh toán'";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
     }
 
     private void setNullableInt(PreparedStatement stmt, int index, String value) throws SQLException {

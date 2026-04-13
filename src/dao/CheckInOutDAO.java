@@ -34,7 +34,10 @@ public class CheckInOutDAO {
     private static final String STATUS_CONFIRMED = "\u0110\u00e3 x\u00e1c nh\u1eadn";
     private static final String STATUS_DEPOSITED = "\u0110\u00e3 c\u1ecdc";
     private static final String STATUS_PENDING_CHECKIN = "Ch\u1edd check-in";
-    private static final String STATUS_ACTIVE = "\u0110ang l\u01b0u tr\u00fa";
+    private static final String STATUS_ACTIVE = "\u0110ang \u1edf";
+    private static final String STATUS_PARTIAL_CHECKOUT = "Check-out m\u1ed9t ph\u1ea7n";
+    private static final String STATUS_WAIT_PAYMENT = "Ch\u1edd thanh to\u00e1n";
+    private static final String STATUS_PAID = "\u0110\u00e3 thanh to\u00e1n";
     private static final String STATUS_CHECKED_IN = "\u0110\u00e3 check-in";
     private static final String STATUS_CHECKED_OUT = "\u0110\u00e3 check-out";
     private static final String STATUS_CANCELLED = "\u0110\u00e3 h\u1ee7y";
@@ -46,6 +49,17 @@ public class CheckInOutDAO {
 
     public String getLastErrorMessage() {
         return lastErrorMessage;
+    }
+
+    public String resolveBookingStatusForBooking(Connection con, int maDatPhong) throws SQLException {
+        return resolveBookingStatus(con, maDatPhong, null);
+    }
+
+    public void refreshBookingStatus(Connection con, int maDatPhong) throws SQLException {
+        if (con == null || maDatPhong <= 0) {
+            return;
+        }
+        updateBookingStatus(con, Integer.valueOf(maDatPhong), resolveBookingStatusForBooking(con, maDatPhong));
     }
 
     public List<LuuTru> getAll() {
@@ -146,7 +160,7 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "ÄĂ£ check-out" : "Äang lÆ°u trĂº");
+            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -182,7 +196,7 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? "ÄĂ£ check-out" : "Äang lÆ°u trĂº");
+            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -344,13 +358,12 @@ public class CheckInOutDAO {
         }
 
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, latestLt.maLuuTru AS maLuuTruGanNhat ")
+        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc ")
                 .append("FROM ChiTietDatPhong ctdp ")
                 .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
-                .append("OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt ")
-                .append("             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong ")
-                .append("             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt ")
-                .append("WHERE ctdp.maDatPhong = ? AND ctdp.maChiTietDatPhong IN (");
+                .append("WHERE ctdp.maDatPhong = ? ")
+                .append("AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) ")
+                .append("AND ctdp.maChiTietDatPhong IN (");
         for (int i = 0; i < detailIds.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
@@ -373,7 +386,7 @@ public class CheckInOutDAO {
                 }
                 try (ResultSet rs = selectStmt.executeQuery()) {
                     while (rs.next()) {
-                        if (rs.getObject("maLuuTruGanNhat") != null || rs.getObject("maPhong") == null) {
+                        if (rs.getObject("maPhong") == null) {
                             continue;
                         }
 
@@ -428,11 +441,8 @@ public class CheckInOutDAO {
 
         String findDetailSql = "SELECT TOP 1 ctdp.maChiTietDatPhong "
                 + "FROM ChiTietDatPhong ctdp "
-                + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru "
-                + "             FROM LuuTru lt "
-                + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
-                + "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt "
-                + "WHERE ctdp.maDatPhong = ? AND ctdp.maPhong = ? AND latestLt.maLuuTru IS NULL "
+                + "WHERE ctdp.maDatPhong = ? AND ctdp.maPhong = ? "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) "
                 + "ORDER BY ctdp.maChiTietDatPhong ASC";
 
         try (PreparedStatement stmt = con.prepareStatement(findDetailSql)) {
@@ -482,7 +492,10 @@ public class CheckInOutDAO {
             }
 
             refreshBookingStatusAfterCheckout(con, parseIntOrNull(current.getMaDatPhong()));
-            updateRoomStatus(con, parseIntOrNull(current.getMaPhong()), STATUS_ROOM_ACTIVE);
+            Integer roomId = parseIntOrNull(current.getMaPhong());
+            if (roomId != null) {
+                new DatPhongDAO().refreshRoomStatus(con, roomId.intValue());
+            }
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -500,63 +513,22 @@ public class CheckInOutDAO {
         if (con == null) {
             return;
         }
-        if (useDirectActiveStatusAfterCheckout()) {
-            synchronizeOperationalStatusesWithoutCleaning(con);
-            return;
-        }
-
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE Phong SET trangThai = N'Hoáº¡t Ä‘á»™ng' WHERE trangThai IN (N'Hoáº¡t Ä‘á»™ng', N'Trá»‘ng', N'ÄĂ£ Ä‘áº·t', N'Äang á»Ÿ')")) {
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'\u0110\u00e3 \u0111\u1eb7t' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                        "OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
-                        "ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) lt " +
-                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang l\u01b0u tr\u00fa') " +
-                        "AND lt.maLuuTru IS NULL)")) {
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'Hoáº¡t Ä‘á»™ng' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'ÄĂ£ check-out')")) {
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'Äang á»Ÿ' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'Äang lÆ°u trĂº')")) {
-            ps.executeUpdate();
-        }
+        refreshAllRoomStatuses(con);
     }
 
     private void synchronizeOperationalStatusesWithoutCleaning(Connection con) throws SQLException {
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE Phong SET trangThai = N'Ho\u1ea1t \u0111\u1ed9ng' " +
-                        "WHERE trangThai IN (N'Ho\u1ea1t \u0111\u1ed9ng', N'Tr\u1ed1ng', N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110ang \u1edf', N'D\u1ecdn d\u1eb9p')")) {
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'\u0110\u00e3 \u0111\u1eb7t' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM ChiTietDatPhong ctdp JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                        "OUTER APPLY (SELECT TOP 1 lt.maLuuTru FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
-                        "ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) lt " +
-                        "WHERE ctdp.maPhong = p.maPhong AND dp.trangThai IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang l\u01b0u tr\u00fa') " +
-                        "AND lt.maLuuTru IS NULL)")) {
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = con.prepareStatement(
-                "UPDATE p SET p.trangThai = N'\u0110ang \u1edf' FROM Phong p WHERE EXISTS (" +
-                        "SELECT 1 FROM LuuTru lt JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong " +
-                        "WHERE lt.maPhong = p.maPhong AND dp.trangThai = N'\u0110ang l\u01b0u tr\u00fa')")) {
-            ps.executeUpdate();
-        }
+        refreshAllRoomStatuses(con);
     }
 
-    private boolean useDirectActiveStatusAfterCheckout() {
-        return true;
+    private void refreshAllRoomStatuses(Connection con) throws SQLException {
+        List<Integer> roomIds = new ArrayList<Integer>();
+        try (PreparedStatement ps = con.prepareStatement("SELECT maPhong FROM Phong");
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                roomIds.add(Integer.valueOf(rs.getInt("maPhong")));
+            }
+        }
+        new DatPhongDAO().refreshRoomStatuses(con, roomIds);
     }
 
     private void fillStatement(PreparedStatement stmt, LuuTru luuTru) throws SQLException {
@@ -614,37 +586,16 @@ public class CheckInOutDAO {
     }
 
     private void refreshBookingStatusAfterCheckIn(Connection con, int maDatPhong) throws SQLException {
-        boolean hasActive = hasActiveStay(con, Integer.valueOf(maDatPhong));
-        boolean hasPending = hasPendingCheckInDetails(con, maDatPhong);
-        if (hasActive) {
-            updateBookingStatus(con, Integer.valueOf(maDatPhong), STATUS_ACTIVE);
-            updateCustomerStatusByBooking(con, Integer.valueOf(maDatPhong), STATUS_ROOM_ACTIVE);
-            return;
-        }
-        if (hasPending) {
-            updateBookingStatus(con, Integer.valueOf(maDatPhong), STATUS_PENDING_CHECKIN);
-            updateCustomerStatusByBooking(con, Integer.valueOf(maDatPhong), STATUS_ROOM_ACTIVE);
-        }
+        String resolvedStatus = resolveBookingStatus(con, maDatPhong, null);
+        updateBookingStatus(con, Integer.valueOf(maDatPhong), resolvedStatus);
     }
 
     private void refreshBookingStatusAfterCheckout(Connection con, Integer maDatPhong) throws SQLException {
         if (maDatPhong == null) {
             return;
         }
-        boolean stillActive = hasActiveStay(con, maDatPhong);
-        boolean stillPending = hasPendingCheckInDetails(con, maDatPhong.intValue());
-        if (stillActive) {
-            updateBookingStatus(con, maDatPhong, STATUS_ACTIVE);
-            updateCustomerStatusByBooking(con, maDatPhong, STATUS_ROOM_ACTIVE);
-            return;
-        }
-        if (stillPending) {
-            updateBookingStatus(con, maDatPhong, STATUS_PENDING_CHECKIN);
-            updateCustomerStatusByBooking(con, maDatPhong, STATUS_ROOM_ACTIVE);
-            return;
-        }
-        updateBookingStatus(con, maDatPhong, STATUS_CHECKED_OUT);
-        updateCustomerStatusByBooking(con, maDatPhong, "Ngừng giao dịch");
+        String resolvedStatus = resolveBookingStatus(con, maDatPhong.intValue(), null);
+        updateBookingStatus(con, maDatPhong, resolvedStatus);
     }
 
     private void updateBookingExpectedCheckOut(Connection con, int maDatPhong, LocalDateTime thoiGianCheckOutDuKien) throws SQLException {
@@ -653,7 +604,7 @@ public class CheckInOutDAO {
         }
         try (PreparedStatement stmt = con.prepareStatement(
                 "UPDATE DatPhong SET ngayTraPhong = ? WHERE maDatPhong = ?")) {
-            stmt.setDate(1, Date.valueOf(thoiGianCheckOutDuKien.toLocalDate()));
+            stmt.setTimestamp(1, Timestamp.valueOf(thoiGianCheckOutDuKien));
             stmt.setInt(2, maDatPhong);
             stmt.executeUpdate();
         }
@@ -678,11 +629,10 @@ public class CheckInOutDAO {
     private boolean hasPendingCheckInDetails(Connection con, int maDatPhong) throws SQLException {
         String sql = "SELECT COUNT(1) "
                 + "FROM ChiTietDatPhong ctdp "
-                + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru "
-                + "             FROM LuuTru lt "
-                + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
-                + "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt "
-                + "WHERE ctdp.maDatPhong = ? AND latestLt.maLuuTru IS NULL";
+                + "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
+                + "WHERE ctdp.maDatPhong = ? "
+                + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in') "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maDatPhong);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -691,16 +641,64 @@ public class CheckInOutDAO {
         }
     }
 
-    private void updateCustomerStatusByBooking(Connection con, Integer maDatPhong, String trangThai) throws SQLException {
-        if (maDatPhong == null || trangThai == null || trangThai.trim().isEmpty()) {
-            return;
+    private String resolveBookingStatus(Connection con, int maDatPhong, String currentStatus) throws SQLException {
+        String status = safeTrim(currentStatus);
+        if (STATUS_CANCELLED.equalsIgnoreCase(status) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(status)) {
+            return STATUS_CANCELLED;
         }
+        if (isBookingPaid(con, maDatPhong)) {
+            return STATUS_PAID;
+        }
+
+        String sql = "SELECT COUNT(1) AS soChiTiet, "
+                + "SUM(CASE WHEN stayStats.coDangO = 1 THEN 1 ELSE 0 END) AS soChiTietDangO, "
+                + "SUM(CASE WHEN stayStats.coDaCheckOut = 1 THEN 1 ELSE 0 END) AS soChiTietDaCheckOut, "
+                + "SUM(CASE WHEN stayStats.coLuuTru = 1 THEN 1 ELSE 0 END) AS soChiTietDaPhatSinhLuuTru "
+                + "FROM ChiTietDatPhong ctdp "
+                + "OUTER APPLY ( "
+                + "    SELECT CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NULL) THEN 1 ELSE 0 END AS coDangO, "
+                + "           CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NOT NULL) THEN 1 ELSE 0 END AS coDaCheckOut, "
+                + "           CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) THEN 1 ELSE 0 END AS coLuuTru "
+                + ") stayStats "
+                + "WHERE ctdp.maDatPhong = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (!rs.next()) {
+                    return status.isEmpty() ? STATUS_PENDING_CHECKIN : status;
+                }
+                int soChiTiet = rs.getInt("soChiTiet");
+                int soChiTietDangO = rs.getInt("soChiTietDangO");
+                int soChiTietDaCheckOut = rs.getInt("soChiTietDaCheckOut");
+                int soChiTietDaPhatSinhLuuTru = rs.getInt("soChiTietDaPhatSinhLuuTru");
+
+                if (soChiTietDangO > 0) {
+                    return STATUS_ACTIVE;
+                }
+                if (soChiTiet > 0 && soChiTietDaCheckOut >= soChiTiet) {
+                    return STATUS_WAIT_PAYMENT;
+                }
+                if (soChiTietDaPhatSinhLuuTru <= 0) {
+                    return STATUS_PENDING_CHECKIN;
+                }
+                if (soChiTietDaCheckOut > 0 && soChiTietDaPhatSinhLuuTru < soChiTiet) {
+                    return STATUS_PENDING_CHECKIN;
+                }
+                if (soChiTietDaCheckOut > 0) {
+                    return STATUS_PARTIAL_CHECKOUT;
+                }
+            }
+        }
+        return status.isEmpty() ? STATUS_PENDING_CHECKIN : status;
+    }
+
+    private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement(
-                "UPDATE KhachHang SET trangThai = ? WHERE maKhachHang = (" +
-                        "SELECT TOP 1 maKhachHang FROM DatPhong WHERE maDatPhong = ?)")) {
-            stmt.setString(1, trangThai);
-            stmt.setInt(2, maDatPhong.intValue());
-            stmt.executeUpdate();
+                "SELECT COUNT(1) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'') = N'Đã thanh toán'")) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
         }
     }
 
@@ -712,7 +710,9 @@ public class CheckInOutDAO {
     private String resolveStayStatus(String trangThaiDatPhong, LocalDateTime checkIn, LocalDateTime checkOut) {
         String bookingStatus = safeTrim(trangThaiDatPhong);
         if (!bookingStatus.isEmpty()) {
-            if (STATUS_ACTIVE.equalsIgnoreCase(bookingStatus) || STATUS_CHECKED_IN.equalsIgnoreCase(bookingStatus)) {
+            if (STATUS_ACTIVE.equalsIgnoreCase(bookingStatus)
+                    || STATUS_PARTIAL_CHECKOUT.equalsIgnoreCase(bookingStatus)
+                    || STATUS_CHECKED_IN.equalsIgnoreCase(bookingStatus)) {
                 return STATUS_ROOM_OCCUPIED;
             }
             if (STATUS_PENDING_CHECKIN.equalsIgnoreCase(bookingStatus)
@@ -721,7 +721,9 @@ public class CheckInOutDAO {
                     || STATUS_DEPOSITED.equalsIgnoreCase(bookingStatus)) {
                 return STATUS_PENDING_CHECKIN;
             }
-            if (STATUS_CHECKED_OUT.equalsIgnoreCase(bookingStatus)) {
+            if (STATUS_CHECKED_OUT.equalsIgnoreCase(bookingStatus)
+                    || STATUS_WAIT_PAYMENT.equalsIgnoreCase(bookingStatus)
+                    || STATUS_PAID.equalsIgnoreCase(bookingStatus)) {
                 return STATUS_CHECKED_OUT;
             }
             return bookingStatus;

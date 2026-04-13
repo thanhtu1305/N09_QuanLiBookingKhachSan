@@ -7,6 +7,8 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JTextField;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -97,6 +99,28 @@ public class AppTimePickerField extends JPanel {
         cboHour.setSelectedItem(String.format("%02d", value.getHour()));
         cboMinute.setSelectedItem(String.format("%02d", value.getMinute()));
         txtDisplay.setText(value.format(TIME_FORMATTER));
+    }
+
+    public void addTextChangeListener(final Runnable listener) {
+        if (listener == null) {
+            return;
+        }
+        txtDisplay.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                listener.run();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                listener.run();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                listener.run();
+            }
+        });
     }
 
     private void togglePopup() {

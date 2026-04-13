@@ -120,6 +120,22 @@ public class ChiTietBangGia {
         this.giaLe = phuThuNgayLe;
     }
 
+    public double getWeekendSurcharge() {
+        return getPhuThuCuoiTuan();
+    }
+
+    public void setWeekendSurcharge(double weekendSurcharge) {
+        setPhuThuCuoiTuan(weekendSurcharge);
+    }
+
+    public double getHolidaySurcharge() {
+        return getPhuThuNgayLe();
+    }
+
+    public void setHolidaySurcharge(double holidaySurcharge) {
+        setPhuThuNgayLe(holidaySurcharge);
+    }
+
     public double getPhuThu() {
         return phuThu;
     }

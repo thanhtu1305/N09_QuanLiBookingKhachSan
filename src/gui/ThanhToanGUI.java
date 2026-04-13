@@ -391,7 +391,7 @@ public class ThanhToanGUI extends JFrame {
         addDetailRow(body, "Số phòng", lblSoPhong);
         addDetailRow(body, "Check-in", lblCheckInThucTe);
         addDetailRow(body, "Check-out", lblCheckOutThucTe);
-        addDetailRow(body, "Số giờ lưu trú", lblSoGioLuuTru);
+        addDetailRow(body, "Thời lượng lưu trú", lblSoGioLuuTru);
         addDetailRow(body, "Loại ngày", lblLoaiNgayApDung);
         addDetailRow(body, "Loại giá", lblLoaiGiaApDung);
         addDetailRow(body, "Tiền phòng cuối", lblTienPhongCuoiCung);
@@ -680,7 +680,7 @@ public class ThanhToanGUI extends JFrame {
                     invoice.getNgayNhanPhong().toLocalDateTime(),
                     invoice.getNgayTraPhong().toLocalDateTime()
             ).toHours());
-            summary.soGioLuuTru = String.valueOf(hours);
+            summary.soGioLuuTru = hours + " giờ";
         }
 
         for (ChiTietDong line : invoice.getChiTiet()) {
@@ -688,16 +688,30 @@ public class ThanhToanGUI extends JFrame {
             if (!value.toLowerCase(Locale.ROOT).contains("tien phong")) {
                 continue;
             }
-            String[] parts = value.split("\\|");
-            if (parts.length >= 4) {
-                summary.loaiNgay = parts[1].trim();
-                summary.loaiGia = parts[2].trim();
-                summary.soGioLuuTru = parts[3].trim();
+            String[] parts = value.split("\\s-\\s");
+            if (parts.length >= 3) {
+                summary.soGioLuuTru = parts[parts.length - 2].trim();
+                summary.loaiNgay = parts[parts.length - 1].trim();
+                summary.loaiGia = resolveDisplayedStayType(summary.soGioLuuTru);
             }
             summary.tienPhongCuoi = ThanhToan.formatMoney(line.getThanhTien() > 0d ? line.getThanhTien() : line.getDonGia());
             break;
         }
         return summary;
+    }
+
+    private String resolveDisplayedStayType(String durationLabel) {
+        String normalized = safeValue(durationLabel, "").toLowerCase(Locale.ROOT);
+        if (normalized.contains("đêm")) {
+            return "Qua đêm";
+        }
+        if (normalized.contains("ngày")) {
+            return "Theo ngày";
+        }
+        if (normalized.contains("giờ")) {
+            return "Theo giờ";
+        }
+        return "-";
     }
 
     private void clearDetailPanel() {
@@ -745,6 +759,9 @@ public class ThanhToanGUI extends JFrame {
                 showWarning("Hóa đơn này đã thanh toán. Bạn chỉ có thể in hóa đơn.");
                 return;
             }
+            if (!ensureInvoiceReadyForPayment(invoice)) {
+                return;
+            }
             new PaymentDialog(this, invoice).setVisible(true);
         }
     }
@@ -752,6 +769,9 @@ public class ThanhToanGUI extends JFrame {
     private void openDiscountDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
+            if (!ensureInvoiceReadyForPayment(invoice)) {
+                return;
+            }
             new DiscountDialog(this, invoice).setVisible(true);
         }
     }
@@ -759,6 +779,9 @@ public class ThanhToanGUI extends JFrame {
     private void openDepositRefundDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
+            if (!ensureInvoiceReadyForPayment(invoice)) {
+                return;
+            }
             new DepositRefundDialog(this, invoice).setVisible(true);
         }
     }
@@ -833,6 +856,19 @@ public class ThanhToanGUI extends JFrame {
             m.invoke(null);
         } catch (Throwable ignored) {
         }
+    }
+
+    private boolean ensureInvoiceReadyForPayment(ThanhToan invoice) {
+        if (invoice == null) {
+            return false;
+        }
+        if (thanhToanDAO.isInvoiceReadyForPayment(invoice.getMaHoaDon())) {
+            return true;
+        }
+        showWarning(safeValue(thanhToanDAO.getLastErrorMessage(),
+                "Đơn này vẫn còn phòng chưa check-out, chưa thể thanh toán toàn bộ."));
+        reloadData(false);
+        return false;
     }
 
     private abstract class BasePaymentDialog extends JDialog {

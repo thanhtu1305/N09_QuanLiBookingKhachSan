@@ -394,6 +394,89 @@ public class DatPhongDAO {
         return null;
     }
 
+    public List<AvailableRoomInfo> getAvailableRooms(LocalDate ngayNhanPhong, LocalDate ngayTraPhong, Integer excludeMaDatPhong, Integer includeMaPhong) {
+        clearLastError();
+        List<AvailableRoomInfo> result = new ArrayList<AvailableRoomInfo>();
+        Connection con = getReadyConnection();
+        if (con == null) {
+            return result;
+        }
+        if (ngayNhanPhong == null || ngayTraPhong == null || !ngayTraPhong.isAfter(ngayNhanPhong)) {
+            return result;
+        }
+
+        String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
+                "FROM Phong p " +
+                "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
+                "WHERE (p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng') OR (? IS NOT NULL AND p.maPhong = ?)) " +
+                "AND NOT EXISTS ( " +
+                "    SELECT 1 FROM LuuTru ltActive " +
+                "    WHERE ltActive.maPhong = p.maPhong " +
+                "      AND ltActive.checkOut IS NULL " +
+                "      AND (? IS NULL OR ltActive.maDatPhong <> ?) " +
+                ") " +
+                "AND NOT EXISTS ( " +
+                "    SELECT 1 " +
+                "    FROM ChiTietDatPhong ctdp " +
+                "    JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "    OUTER APPLY (SELECT TOP 1 lt.maLuuTru " +
+                "                 FROM LuuTru lt " +
+                "                 WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                "                 ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt " +
+                "    WHERE ctdp.maPhong = p.maPhong " +
+                "      AND (? IS NULL OR dp.maDatPhong <> ?) " +
+                "      AND latestLt.maLuuTru IS NULL " +
+                "      AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') " +
+                "      AND dp.ngayNhanPhong < ? " +
+                "      AND dp.ngayTraPhong > ? " +
+                ") " +
+                "ORDER BY CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, " +
+                "TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
+
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            int index = 1;
+            if (includeMaPhong == null) {
+                stmt.setNull(index++, java.sql.Types.INTEGER);
+                stmt.setNull(index++, java.sql.Types.INTEGER);
+            } else {
+                stmt.setInt(index++, includeMaPhong.intValue());
+                stmt.setInt(index++, includeMaPhong.intValue());
+            }
+            if (excludeMaDatPhong == null) {
+                stmt.setNull(index++, java.sql.Types.INTEGER);
+                stmt.setNull(index++, java.sql.Types.INTEGER);
+                stmt.setNull(index++, java.sql.Types.INTEGER);
+                stmt.setNull(index++, java.sql.Types.INTEGER);
+            } else {
+                stmt.setInt(index++, excludeMaDatPhong.intValue());
+                stmt.setInt(index++, excludeMaDatPhong.intValue());
+                stmt.setInt(index++, excludeMaDatPhong.intValue());
+                stmt.setInt(index++, excludeMaDatPhong.intValue());
+            }
+            stmt.setDate(index++, Date.valueOf(ngayTraPhong));
+            stmt.setDate(index, Date.valueOf(ngayNhanPhong));
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    AvailableRoomInfo info = new AvailableRoomInfo();
+                    info.setMaPhong(rs.getInt("maPhong"));
+                    info.setMaLoaiPhong(rs.getInt("maLoaiPhong"));
+                    info.setSoPhong(safeTrim(rs.getString("soPhong")));
+                    info.setTang(safeTrim(rs.getString("tang")));
+                    info.setTrangThai(safeTrim(rs.getString("trangThai")));
+                    info.setTenLoaiPhong(safeTrim(rs.getString("tenLoaiPhong")));
+                    info.setSucChuaToiDa(rs.getInt("sucChuaToiDa"));
+                    info.setGiaThamChieu(rs.getDouble("giaThamChieu"));
+                    result.add(info);
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return result;
+    }
+
     private List<ChiTietDatPhong> getChiTietByMaDatPhongInternal(Connection con, DatPhong header) {
         List<ChiTietDatPhong> details = new ArrayList<ChiTietDatPhong>();
         Integer bookingId = parseIntOrNull(header.getMaDatPhong());
@@ -1179,6 +1262,81 @@ public class DatPhongDAO {
 
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
+    }
+
+    public static final class AvailableRoomInfo {
+        private int maPhong;
+        private int maLoaiPhong;
+        private String soPhong;
+        private String tang;
+        private String trangThai;
+        private String tenLoaiPhong;
+        private int sucChuaToiDa;
+        private double giaThamChieu;
+
+        public int getMaPhong() {
+            return maPhong;
+        }
+
+        public void setMaPhong(int maPhong) {
+            this.maPhong = maPhong;
+        }
+
+        public int getMaLoaiPhong() {
+            return maLoaiPhong;
+        }
+
+        public void setMaLoaiPhong(int maLoaiPhong) {
+            this.maLoaiPhong = maLoaiPhong;
+        }
+
+        public String getSoPhong() {
+            return soPhong;
+        }
+
+        public void setSoPhong(String soPhong) {
+            this.soPhong = soPhong;
+        }
+
+        public String getTang() {
+            return tang;
+        }
+
+        public void setTang(String tang) {
+            this.tang = tang;
+        }
+
+        public String getTrangThai() {
+            return trangThai;
+        }
+
+        public void setTrangThai(String trangThai) {
+            this.trangThai = trangThai;
+        }
+
+        public String getTenLoaiPhong() {
+            return tenLoaiPhong;
+        }
+
+        public void setTenLoaiPhong(String tenLoaiPhong) {
+            this.tenLoaiPhong = tenLoaiPhong;
+        }
+
+        public int getSucChuaToiDa() {
+            return sucChuaToiDa;
+        }
+
+        public void setSucChuaToiDa(int sucChuaToiDa) {
+            this.sucChuaToiDa = sucChuaToiDa;
+        }
+
+        public double getGiaThamChieu() {
+            return giaThamChieu;
+        }
+
+        public void setGiaThamChieu(double giaThamChieu) {
+            this.giaThamChieu = giaThamChieu;
+        }
     }
 
     public static final class RoomRateResolution {

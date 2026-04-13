@@ -181,10 +181,10 @@ public class DashboardDAO {
 
     public int getCheckoutDueTodayCount() {
         String sql = "SELECT COUNT(DISTINCT dp.maDatPhong) "
-                + "FROM LuuTru lt "
-                + "JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
-                + "WHERE CAST(lt.checkOut AS DATE) = CAST(GETDATE() AS DATE) "
-                + "AND dp.trangThai = ?";
+                + "FROM DatPhong dp "
+                + "WHERE CAST(dp.ngayTraPhong AS DATE) = CAST(GETDATE() AS DATE) "
+                + "AND dp.trangThai = ? "
+                + "AND EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maDatPhong = dp.maDatPhong AND lt.checkOut IS NULL)";
 
         try (Connection con = getReadyConnection();
              PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {
@@ -388,7 +388,7 @@ public class DashboardDAO {
 
     private List<DashboardTaskRow> getCheckoutDueTodayTasks() {
         List<DashboardTaskRow> rows = new ArrayList<DashboardTaskRow>();
-        String sql = "SELECT TOP 6 dp.maDatPhong, kh.hoTen, MIN(lt.checkOut) AS checkOutDue, dp.trangThai, "
+        String sql = "SELECT TOP 6 dp.maDatPhong, kh.hoTen, dp.ngayTraPhong AS checkOutDue, dp.trangThai, "
                 + "ISNULL(roomSummary.soPhong, N'Chua gan phong') AS soPhong "
                 + "FROM DatPhong dp "
                 + "JOIN LuuTru lt ON lt.maDatPhong = dp.maDatPhong "
@@ -402,10 +402,11 @@ public class DashboardDAO {
                 + "       ORDER BY TRY_CAST(p2.soPhong AS INT), p2.soPhong "
                 + "       FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, N'') AS soPhong"
                 + ") roomSummary "
-                + "WHERE CAST(lt.checkOut AS DATE) = CAST(GETDATE() AS DATE) "
+                + "WHERE CAST(dp.ngayTraPhong AS DATE) = CAST(GETDATE() AS DATE) "
+                + "AND lt.checkOut IS NULL "
                 + "AND dp.trangThai = ? "
-                + "GROUP BY dp.maDatPhong, kh.hoTen, dp.trangThai, roomSummary.soPhong "
-                + "ORDER BY MIN(lt.checkOut) ASC, dp.maDatPhong DESC";
+                + "GROUP BY dp.maDatPhong, kh.hoTen, dp.ngayTraPhong, dp.trangThai, roomSummary.soPhong "
+                + "ORDER BY dp.ngayTraPhong ASC, dp.maDatPhong DESC";
 
         try (Connection con = getReadyConnection();
              PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {

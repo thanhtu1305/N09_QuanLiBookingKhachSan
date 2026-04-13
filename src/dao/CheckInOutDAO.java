@@ -383,7 +383,7 @@ public class CheckInOutDAO {
                         insertStmt.setInt(2, bookingId.intValue());
                         insertStmt.setInt(3, maPhong);
                         insertStmt.setTimestamp(4, toTimestamp(thoiGianCheckIn));
-                        insertStmt.setTimestamp(5, toTimestamp(thoiGianCheckOutDuKien));
+                        insertStmt.setTimestamp(5, null);
                         insertStmt.setInt(6, rs.getInt("soNguoi"));
                         insertStmt.setDouble(7, rs.getDouble("giaPhong"));
                         insertStmt.setDouble(8, rs.getDouble("tienCoc"));
@@ -401,6 +401,7 @@ public class CheckInOutDAO {
                 return 0;
             }
 
+            updateBookingExpectedCheckOut(con, bookingId.intValue(), thoiGianCheckOutDuKien);
             refreshBookingStatusAfterCheckIn(con, bookingId.intValue());
             synchronizeOperationalStatuses(con);
             con.commit();
@@ -644,6 +645,18 @@ public class CheckInOutDAO {
         }
         updateBookingStatus(con, maDatPhong, STATUS_CHECKED_OUT);
         updateCustomerStatusByBooking(con, maDatPhong, "Ngừng giao dịch");
+    }
+
+    private void updateBookingExpectedCheckOut(Connection con, int maDatPhong, LocalDateTime thoiGianCheckOutDuKien) throws SQLException {
+        if (con == null || thoiGianCheckOutDuKien == null) {
+            return;
+        }
+        try (PreparedStatement stmt = con.prepareStatement(
+                "UPDATE DatPhong SET ngayTraPhong = ? WHERE maDatPhong = ?")) {
+            stmt.setDate(1, Date.valueOf(thoiGianCheckOutDuKien.toLocalDate()));
+            stmt.setInt(2, maDatPhong);
+            stmt.executeUpdate();
+        }
     }
 
     private boolean hasActiveStay(Connection con, Integer maDatPhong) throws SQLException {

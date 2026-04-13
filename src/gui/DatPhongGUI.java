@@ -1278,8 +1278,12 @@ public class DatPhongGUI extends JFrame {
     }
 
 
-    private List<RoomOption> loadRoomOptions(Integer includeRoomId) {
+    private List<RoomOption> loadRoomOptions(LocalDate checkIn, LocalDate checkOut, Integer includeRoomId, Integer excludeBookingId,
+                                             List<BookingDetailRecord> currentRows, BookingDetailRecord currentDetail) {
         List<RoomOption> options = new ArrayList<RoomOption>();
+        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+            return options;
+        }
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             return options;
@@ -1307,7 +1311,54 @@ public class DatPhongGUI extends JFrame {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        return options;
+        List<DatPhongDAO.AvailableRoomInfo> availableRooms = datPhongDAO.getAvailableRooms(checkIn, checkOut, excludeBookingId, includeRoomId);
+        List<RoomOption> filteredOptions = new ArrayList<RoomOption>();
+        for (DatPhongDAO.AvailableRoomInfo room : availableRooms) {
+            if (room == null || room.getMaPhong() <= 0 || isRoomAssignedInOtherDetail(currentRows, room.getMaPhong(), currentDetail)) {
+                continue;
+            }
+            RoomOption option = findRoomOptionById(options, room.getMaPhong());
+            if (option == null) {
+                option = new RoomOption();
+                option.maPhongId = room.getMaPhong();
+                option.soPhong = safeValue(room.getSoPhong(), String.valueOf(option.maPhongId));
+                option.tang = safeValue(room.getTang(), "-");
+                option.trangThai = safeValue(room.getTrangThai(), "Hoạt động");
+                option.maLoaiPhong = room.getMaLoaiPhong();
+                option.tenLoaiPhong = safeValue(room.getTenLoaiPhong(), "-");
+                option.sucChuaToiDa = room.getSucChuaToiDa();
+                option.giaMacDinh = room.getGiaThamChieu();
+            }
+            filteredOptions.add(option);
+        }
+        return filteredOptions;
+    }
+
+    private RoomOption findRoomOptionById(List<RoomOption> options, int maPhongId) {
+        if (options == null || maPhongId <= 0) {
+            return null;
+        }
+        for (RoomOption option : options) {
+            if (option != null && option.maPhongId == maPhongId) {
+                return option;
+            }
+        }
+        return null;
+    }
+
+    private boolean isRoomAssignedInOtherDetail(List<BookingDetailRecord> currentRows, int maPhongId, BookingDetailRecord currentDetail) {
+        if (maPhongId <= 0) {
+            return false;
+        }
+        if (currentRows == null) {
+            return false;
+        }
+        for (BookingDetailRecord row : currentRows) {
+            if (row != null && row != currentDetail && row.maPhongId == maPhongId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<Integer> getAssignedRoomIdsForBooking(Connection con, int maDatPhong) throws Exception {
@@ -1882,7 +1933,12 @@ public class DatPhongGUI extends JFrame {
         }
 
         private void openBookingDetailDialog(BookingDetailRecord detail) {
-            new BookingDetailEditorDialog(this, detail).setVisible(true);
+            try {
+                new BookingDetailEditorDialog(this, detail).setVisible(true);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                showError("Không thể mở popup thêm dòng chi tiết: " + ex.getMessage());
+            }
         }
 
         private void editSelectedDetailRow() {
@@ -2120,6 +2176,8 @@ public class DatPhongGUI extends JFrame {
             private final JLabel lblRateSurcharge;
             private final JLabel lblRateAppliedPrice;
             private final JButton btnPrimary;
+            private String warningMessage;
+            private boolean hasIssue;
             private final Border defaultRoomBorder;
             private final Border defaultCheckInBorder;
             private final Border defaultCheckOutBorder;
@@ -2143,8 +2201,7 @@ public class DatPhongGUI extends JFrame {
                 gbc.insets = new java.awt.Insets(6, 0, 6, 12);
                 gbc.anchor = GridBagConstraints.WEST;
 
-                List<RoomOption> roomOptions = loadRoomOptions(detail == null ? null : Integer.valueOf(detail.maPhongId));
-                cboPhongDialog = new JComboBox<RoomOption>(roomOptions.toArray(new RoomOption[0]));
+                cboPhongDialog = new JComboBox<RoomOption>();
                 cboPhongDialog.setFont(BODY_FONT);
                 txtLoaiPhongDialog = createInputField("");
                 txtLoaiPhongDialog.setEditable(false);
@@ -2179,20 +2236,12 @@ public class DatPhongGUI extends JFrame {
                 cboPhongDialog.addActionListener(e -> syncSelectedRoomInfo());
                 cboPhongDialog.addActionListener(e -> refreshSelectedRatePreview());
                 cboPhongDialog.addActionListener(e -> reevaluateCurrentSelectionState());
+                installDateFieldChangeListener(txtCheckInDialog, this::reloadAvailableRooms);
+                installDateFieldChangeListener(txtCheckOutDialog, this::reloadAvailableRooms);
                 installDateFieldChangeListener(txtCheckInDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckInDialog, this::reevaluateCurrentSelectionState);
                 installDateFieldChangeListener(txtCheckOutDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckOutDialog, this::reevaluateCurrentSelectionState);
-                if (detail != null) {
-                    for (int i = 0; i < cboPhongDialog.getItemCount(); i++) {
-                        RoomOption option = cboPhongDialog.getItemAt(i);
-                        if (option.maPhongId == detail.maPhongId) {
-                            cboPhongDialog.setSelectedIndex(i);
-                            break;
-                        }
-                    }
-                }
-                syncSelectedRoomInfo();
 
                 addFormRow(form, gbc, 0, "Phòng", cboPhongDialog);
                 addFormRow(form, gbc, 1, "Loại phòng", txtLoaiPhongDialog);
@@ -2219,6 +2268,8 @@ public class DatPhongGUI extends JFrame {
                 card.add(form, BorderLayout.CENTER);
                 card.add(pnlInlineWarning, BorderLayout.SOUTH);
                 content.add(card, BorderLayout.CENTER);
+                reloadAvailableRooms();
+                syncSelectedRoomInfo();
 
                 JButton btnPrimary = createPrimaryButton(detail == null ? "Lưu dòng" : "Lưu cập nhật", new Color(37, 99, 235), Color.WHITE, e -> submit());
                 JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
@@ -2232,10 +2283,72 @@ public class DatPhongGUI extends JFrame {
             private void syncSelectedRoomInfo() {
                 RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
                 if (option == null) {
-                    txtLoaiPhongDialog.setText("");
+                    warningMessage = "KhÃ´ng cÃ²n phÃ²ng trá»‘ng phÃ¹ há»£p trong khoáº£ng thá»i gian Ä‘Ã£ chá»n.";
+                    txtLoaiPhongDialog.setText(resolveRoomAvailabilityMessage());
                     return;
                 }
                 txtLoaiPhongDialog.setText(option.tenLoaiPhong);
+            }
+
+            private void reloadAvailableRooms() {
+                Integer preferredRoomId = resolvePreferredRoomId();
+                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
+                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                List<RoomOption> roomOptions = loadRoomOptions(
+                        checkIn,
+                        checkOut,
+                        preferredRoomId,
+                        editing ? Integer.valueOf(editingBooking.maDatPhong) : null,
+                        detailRows,
+                        editingDetail
+                );
+                cboPhongDialog.removeAllItems();
+                for (RoomOption option : roomOptions) {
+                    cboPhongDialog.addItem(option);
+                }
+                selectPreferredRoom(preferredRoomId);
+                cboPhongDialog.setEnabled(cboPhongDialog.getItemCount() > 0);
+                cboPhongDialog.setToolTipText(cboPhongDialog.getItemCount() > 0 ? null : resolveRoomAvailabilityMessage());
+                syncSelectedRoomInfo();
+            }
+
+            private Integer resolvePreferredRoomId() {
+                RoomOption selected = (RoomOption) cboPhongDialog.getSelectedItem();
+                if (selected != null && selected.maPhongId > 0) {
+                    return Integer.valueOf(selected.maPhongId);
+                }
+                if (editingDetail != null && editingDetail.maPhongId > 0) {
+                    return Integer.valueOf(editingDetail.maPhongId);
+                }
+                return null;
+            }
+
+            private void selectPreferredRoom(Integer preferredRoomId) {
+                if (cboPhongDialog.getItemCount() <= 0) {
+                    return;
+                }
+                if (preferredRoomId != null) {
+                    for (int i = 0; i < cboPhongDialog.getItemCount(); i++) {
+                        RoomOption option = cboPhongDialog.getItemAt(i);
+                        if (option != null && option.maPhongId == preferredRoomId.intValue()) {
+                            cboPhongDialog.setSelectedIndex(i);
+                            return;
+                        }
+                    }
+                }
+                cboPhongDialog.setSelectedIndex(0);
+            }
+
+            private String resolveRoomAvailabilityMessage() {
+                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
+                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+                    return "Vui lòng chọn ngày nhận/trả hợp lệ để xem phòng trống.";
+                }
+                if (cboPhongDialog.getItemCount() == 0) {
+                    return "Không còn phòng trống phù hợp trong khoảng thời gian đã chọn.";
+                }
+                return "";
             }
 
             private void refreshSelectedRatePreview() {
@@ -2315,19 +2428,26 @@ public class DatPhongGUI extends JFrame {
 
                 String warningMessage = null;
                 boolean hasIssue = false;
-                if (option == null) {
-                    warningMessage = "Vui lòng chọn phòng trước khi lưu.";
-                    hasIssue = true;
-                } else if (isDuplicateRoomSelection(option.maPhongId)) {
-                    warningMessage = "Phòng " + option.soPhong + " đã được chọn trong phiếu đặt phòng này.";
-                    hasIssue = true;
-                } else if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
+                if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
                     warningMessage = "Ngày trả phòng phải lớn hơn ngày nhận phòng.";
                     hasIssue = true;
-                } else if (option != null && option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa) {
+                }
+                if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0 && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                    warningMessage = "Không còn phòng trống phù hợp trong khoảng thời gian đã chọn.";
+                    hasIssue = true;
+                } else if (!hasIssue && option == null) {
+                    warningMessage = "Vui lòng chọn phòng trước khi lưu.";
+                    hasIssue = true;
+                } else if (!hasIssue && isDuplicateRoomSelection(option.maPhongId)) {
+                    warningMessage = "Phòng " + option.soPhong + " đã được chọn trong phiếu đặt phòng này.";
+                    hasIssue = true;
+                } else if (!hasIssue && checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
+                    warningMessage = "Ngày trả phòng phải lớn hơn ngày nhận phòng.";
+                    hasIssue = true;
+                } else if (!hasIssue && option != null && option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa) {
                     warningMessage = "Phòng " + option.soPhong + " chỉ nhận tối đa " + option.sucChuaToiDa + " khách.";
                     hasIssue = true;
-                } else if (option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                } else if (!hasIssue && option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
                     DatPhongConflictInfo conflictInfo = datPhongDAO.findRoomConflict(
                             option.maPhongId,
                             checkIn,
@@ -2344,6 +2464,9 @@ public class DatPhongGUI extends JFrame {
             }
 
             private void applyInlineWarningState(String warningMessage, boolean hasIssue) {
+                if (lblInlineWarning == null || pnlInlineWarning == null) {
+                    return;
+                }
                 lblInlineWarning.setText(hasIssue
                         ? "<html>" + warningMessage + "<br/>Vui lòng chọn phòng khác hoặc đổi ngày nhận/trả phòng.</html>"
                         : "");

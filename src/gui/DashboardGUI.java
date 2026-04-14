@@ -2,6 +2,8 @@ package gui;
 
 import dao.DashboardDAO;
 import entity.DashboardChartPoint;
+import entity.DashboardGanttCell;
+import entity.DashboardGanttRow;
 import entity.DashboardSummary;
 import entity.DashboardTaskRow;
 import gui.common.AppBranding;
@@ -14,6 +16,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -22,7 +25,9 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
+import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
@@ -68,10 +73,15 @@ public class DashboardGUI extends JFrame {
     private static final DecimalFormat MONEY_FORMAT = new DecimalFormat("#,##0");
     private static final DateTimeFormatter DATE_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATETIME_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static final DateTimeFormatter GANTT_HEADER_FORMAT = DateTimeFormatter.ofPattern("dd/MM");
+    private static final int GANTT_DAY_COUNT = 7;
 
     private final String username;
     private final String role;
     private final DashboardDAO dashboardDAO;
+    private final List<DashboardGanttRow> allGanttRows = new ArrayList<DashboardGanttRow>();
+    private final List<DashboardGanttRow> filteredGanttRows = new ArrayList<DashboardGanttRow>();
+    private final List<LocalDate> ganttDates = new ArrayList<LocalDate>();
 
     private JPanel rootPanel;
     private JLabel lblNgayLamViecValue;
@@ -94,6 +104,21 @@ public class DashboardGUI extends JFrame {
     private JTable tblCongViec;
     private DefaultTableModel taskTableModel;
     private List<DashboardTaskRow> currentTaskRows = new ArrayList<DashboardTaskRow>();
+    private JTable tblGantt;
+    private DefaultTableModel ganttTableModel;
+    private JComboBox<String> cboGanttTang;
+    private JComboBox<String> cboGanttLoaiPhong;
+    private JLabel lblGanttPhongValue;
+    private JLabel lblGanttNgayValue;
+    private JLabel lblGanttTrangThaiValue;
+    private JLabel lblGanttKhachValue;
+    private JLabel lblGanttThoiGianValue;
+    private JLabel lblGanttMaThamChieuValue;
+    private JLabel lblGanttHuongXuLyValue;
+    private JButton btnGanttOpenDatPhong;
+    private JButton btnGanttOpenCheckInOut;
+    private DashboardGanttCell selectedGanttCell;
+    private boolean suppressGanttFilterEvents;
     private JLabel lblChiTietMa;
     private JLabel lblChiTietLoai;
     private JLabel lblChiTietDoiTuong;
@@ -141,8 +166,6 @@ public class DashboardGUI extends JFrame {
         top.add(buildHeader());
         top.add(Box.createVerticalStrut(10));
         top.add(buildActionBar());
-        top.add(Box.createVerticalStrut(10));
-        top.add(buildInfoRow());
 
         main.add(top, BorderLayout.NORTH);
         main.add(buildCenterContent(), BorderLayout.CENTER);
@@ -236,6 +259,14 @@ public class DashboardGUI extends JFrame {
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
+        JPanel ganttSection = buildGanttSection();
+        ganttSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ganttSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, ganttSection.getPreferredSize().height));
+
+        JPanel infoSection = buildInfoRow();
+        infoSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+        infoSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, infoSection.getPreferredSize().height));
+
         JPanel kpiSection = buildKpiSection();
         kpiSection.setAlignmentX(Component.LEFT_ALIGNMENT);
         kpiSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, kpiSection.getPreferredSize().height));
@@ -247,6 +278,10 @@ public class DashboardGUI extends JFrame {
         JPanel taskSection = buildTaskSection();
         taskSection.setAlignmentX(Component.LEFT_ALIGNMENT);
 
+        content.add(ganttSection);
+        content.add(Box.createVerticalStrut(12));
+        content.add(infoSection);
+        content.add(Box.createVerticalStrut(12));
         content.add(kpiSection);
         content.add(Box.createVerticalStrut(12));
         content.add(chartSplitPane);
@@ -259,6 +294,164 @@ public class DashboardGUI extends JFrame {
         scrollPane.getViewport().setOpaque(false);
         scrollPane.getVerticalScrollBar().setUnitIncrement(18);
         return scrollPane;
+    }
+
+    private JPanel buildGanttSection() {
+        JPanel card = createCardPanel(new BorderLayout(0, 10));
+
+        JPanel header = new JPanel();
+        header.setOpaque(false);
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
+
+        JLabel lblTitle = new JLabel("Sơ đồ Gantt tình trạng phòng");
+        lblTitle.setFont(SECTION_FONT);
+        lblTitle.setForeground(TEXT_PRIMARY);
+
+        JLabel lblSub = new JLabel("Theo dõi lịch sử dụng phòng trong 7 ngày tới.");
+        lblSub.setFont(BODY_FONT);
+        lblSub.setForeground(TEXT_MUTED);
+
+        titleRow.add(lblTitle, BorderLayout.WEST);
+        titleRow.add(lblSub, BorderLayout.EAST);
+
+        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        controls.setOpaque(false);
+
+        cboGanttTang = createFilterComboBox(new String[]{"Tất cả"});
+        cboGanttLoaiPhong = createFilterComboBox(new String[]{"Tất cả"});
+        cboGanttTang.addActionListener(e -> {
+            if (!suppressGanttFilterEvents) {
+                applyGanttFilters();
+            }
+        });
+        cboGanttLoaiPhong.addActionListener(e -> {
+            if (!suppressGanttFilterEvents) {
+                applyGanttFilters();
+            }
+        });
+
+        controls.add(createFieldGroup("Tầng", cboGanttTang));
+        controls.add(createFieldGroup("Loại phòng", cboGanttLoaiPhong));
+        controls.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE, e -> loadDashboardData(true)));
+
+        header.add(titleRow);
+        header.add(Box.createVerticalStrut(8));
+        header.add(controls);
+
+        ganttTableModel = new DefaultTableModel(new Object[]{"Phòng"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        tblGantt = new JTable(ganttTableModel) {
+            @Override
+            public String getToolTipText(java.awt.event.MouseEvent event) {
+                int row = rowAtPoint(event.getPoint());
+                int column = columnAtPoint(event.getPoint());
+                if (row < 0 || column < 0) {
+                    return null;
+                }
+                Object value = getValueAt(row, column);
+                if (value instanceof DashboardGanttCell) {
+                    return buildGanttTooltip((DashboardGanttCell) value);
+                }
+                if (value instanceof DashboardGanttRow) {
+                    DashboardGanttRow ganttRow = (DashboardGanttRow) value;
+                    return "<html>Phòng: " + safeValue(ganttRow.getSoPhong(), "-")
+                            + "<br>Loại: " + safeValue(ganttRow.getLoaiPhong(), "-")
+                            + "<br>Tầng: " + safeValue(ganttRow.getTang(), "-")
+                            + "<br>Trạng thái phòng: " + safeValue(ganttRow.getTrangThaiPhong(), "-")
+                            + "</html>";
+                }
+                return super.getToolTipText(event);
+            }
+        };
+        tblGantt.setFont(BODY_FONT);
+        tblGantt.setRowHeight(44);
+        tblGantt.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        tblGantt.setRowSelectionAllowed(false);
+        tblGantt.setColumnSelectionAllowed(false);
+        tblGantt.setCellSelectionEnabled(true);
+        tblGantt.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tblGantt.setGridColor(BORDER_SOFT);
+        tblGantt.setShowGrid(true);
+        tblGantt.setFillsViewportHeight(true);
+        tblGantt.setDefaultRenderer(Object.class, new DashboardGanttCellRenderer());
+        ScreenUIHelper.styleTableHeader(tblGantt);
+        tblGantt.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                int row = tblGantt.rowAtPoint(e.getPoint());
+                int column = tblGantt.columnAtPoint(e.getPoint());
+                if (row < 0 || column <= 0 || row >= filteredGanttRows.size()) {
+                    return;
+                }
+                DashboardGanttRow ganttRow = filteredGanttRows.get(row);
+                if (column - 1 >= ganttRow.getCells().size()) {
+                    return;
+                }
+                tblGantt.changeSelection(row, column, false, false);
+                selectGanttCell(ganttRow, ganttRow.getCells().get(column - 1));
+            }
+        });
+
+        JScrollPane scrollPane = new JScrollPane(tblGantt);
+        scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+        scrollPane.getHorizontalScrollBar().setUnitIncrement(18);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        scrollPane.setPreferredSize(new Dimension(0, 320));
+
+        JPanel detailCard = createInfoCardPanel(new GridLayout(1, 2, 12, 0));
+        lblGanttPhongValue = createValueLabel();
+        lblGanttNgayValue = createValueLabel();
+        lblGanttTrangThaiValue = createValueLabel();
+        lblGanttKhachValue = createValueLabel();
+        lblGanttThoiGianValue = createValueLabel();
+        lblGanttMaThamChieuValue = createValueLabel();
+        lblGanttHuongXuLyValue = createValueLabel();
+
+        JPanel leftDetail = new JPanel();
+        leftDetail.setOpaque(false);
+        leftDetail.setLayout(new BoxLayout(leftDetail, BoxLayout.Y_AXIS));
+        addDetailRow(leftDetail, "Phòng", lblGanttPhongValue);
+        addDetailRow(leftDetail, "Ngày", lblGanttNgayValue);
+        addDetailRow(leftDetail, "Trạng thái", lblGanttTrangThaiValue);
+        addDetailRow(leftDetail, "Khách", lblGanttKhachValue);
+
+        JPanel rightDetail = new JPanel(new BorderLayout(0, 8));
+        rightDetail.setOpaque(false);
+        JPanel rightDetailBody = new JPanel();
+        rightDetailBody.setOpaque(false);
+        rightDetailBody.setLayout(new BoxLayout(rightDetailBody, BoxLayout.Y_AXIS));
+        addDetailRow(rightDetailBody, "Thời gian", lblGanttThoiGianValue);
+        addDetailRow(rightDetailBody, "Tham chiếu", lblGanttMaThamChieuValue);
+        addDetailRow(rightDetailBody, "Hướng xử lý", lblGanttHuongXuLyValue);
+
+        JPanel actionRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actionRow.setOpaque(false);
+        btnGanttOpenDatPhong = createOutlineButton("Mở Đặt phòng", BRAND_GREEN, e -> openSelectedGanttBooking());
+        btnGanttOpenCheckInOut = createOutlineButton("Mở Check-in / Check-out", BRAND_BLUE, e -> openSelectedGanttStay());
+        actionRow.add(btnGanttOpenDatPhong);
+        actionRow.add(btnGanttOpenCheckInOut);
+
+        rightDetail.add(rightDetailBody, BorderLayout.CENTER);
+        rightDetail.add(actionRow, BorderLayout.SOUTH);
+
+        detailCard.add(leftDetail);
+        detailCard.add(rightDetail);
+
+        card.add(header, BorderLayout.NORTH);
+        card.add(scrollPane, BorderLayout.CENTER);
+        card.add(detailCard, BorderLayout.SOUTH);
+
+        updateGanttDetail(null, null);
+        rebuildGanttColumns();
+        return card;
     }
 
     private JPanel buildKpiSection() {
@@ -440,9 +633,376 @@ public class DashboardGUI extends JFrame {
         return wrapper;
     }
 
+    private JComboBox<String> createFilterComboBox(String[] values) {
+        JComboBox<String> comboBox = new JComboBox<String>(values);
+        comboBox.setFont(BODY_FONT);
+        comboBox.setPreferredSize(new Dimension(150, 34));
+        comboBox.setMaximumSize(new Dimension(180, 34));
+        return comboBox;
+    }
+
+    private JPanel createFieldGroup(String label, Component component) {
+        JPanel group = new JPanel();
+        group.setOpaque(false);
+        group.setLayout(new BoxLayout(group, BoxLayout.Y_AXIS));
+
+        JLabel lbl = new JLabel(label);
+        lbl.setFont(LABEL_FONT);
+        lbl.setForeground(TEXT_MUTED);
+
+        group.add(lbl);
+        group.add(Box.createVerticalStrut(4));
+        group.add(component);
+        return group;
+    }
+
+    private JButton createOutlineButton(String text, Color accentColor, java.awt.event.ActionListener listener) {
+        JButton button = new JButton(text);
+        button.setFont(BUTTON_FONT);
+        button.setForeground(accentColor);
+        button.setBackground(Color.WHITE);
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setBorderPainted(true);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(accentColor, 1, true),
+                new EmptyBorder(9, 14, 9, 14)
+        ));
+        button.addActionListener(listener);
+        return button;
+    }
+
+    private void loadGanttRows(List<DashboardGanttRow> rows) {
+        allGanttRows.clear();
+        if (rows != null) {
+            allGanttRows.addAll(rows);
+        }
+
+        ganttDates.clear();
+        if (!allGanttRows.isEmpty() && !allGanttRows.get(0).getCells().isEmpty()) {
+            for (DashboardGanttCell cell : allGanttRows.get(0).getCells()) {
+                ganttDates.add(cell.getDate());
+            }
+        } else {
+            LocalDate startDate = LocalDate.now();
+            for (int i = 0; i < GANTT_DAY_COUNT; i++) {
+                ganttDates.add(startDate.plusDays(i));
+            }
+        }
+
+        refreshGanttFilterOptions();
+        applyGanttFilters();
+    }
+
+    private void refreshGanttFilterOptions() {
+        if (cboGanttTang == null || cboGanttLoaiPhong == null) {
+            return;
+        }
+        String selectedTang = valueOf(cboGanttTang.getSelectedItem());
+        String selectedLoaiPhong = valueOf(cboGanttLoaiPhong.getSelectedItem());
+
+        suppressGanttFilterEvents = true;
+        try {
+            cboGanttTang.removeAllItems();
+            cboGanttTang.addItem("Tất cả");
+            List<String> floors = new ArrayList<String>();
+            for (DashboardGanttRow row : allGanttRows) {
+                String tang = safeValue(row.getTang(), "-");
+                if (!floors.contains(tang)) {
+                    floors.add(tang);
+                }
+            }
+            floors.sort((left, right) -> left.compareToIgnoreCase(right));
+            for (String floor : floors) {
+                cboGanttTang.addItem(floor);
+            }
+
+            cboGanttLoaiPhong.removeAllItems();
+            cboGanttLoaiPhong.addItem("Tất cả");
+            List<String> roomTypes = new ArrayList<String>();
+            for (DashboardGanttRow row : allGanttRows) {
+                String loaiPhong = safeValue(row.getLoaiPhong(), "-");
+                if (!roomTypes.contains(loaiPhong)) {
+                    roomTypes.add(loaiPhong);
+                }
+            }
+            roomTypes.sort((left, right) -> left.compareToIgnoreCase(right));
+            for (String roomType : roomTypes) {
+                cboGanttLoaiPhong.addItem(roomType);
+            }
+
+            restoreComboSelection(cboGanttTang, selectedTang);
+            restoreComboSelection(cboGanttLoaiPhong, selectedLoaiPhong);
+        } finally {
+            suppressGanttFilterEvents = false;
+        }
+    }
+
+    private void restoreComboSelection(JComboBox<String> comboBox, String preferredValue) {
+        if (comboBox == null) {
+            return;
+        }
+        String normalized = safeValue(preferredValue, "Tất cả");
+        for (int i = 0; i < comboBox.getItemCount(); i++) {
+            if (normalized.equals(comboBox.getItemAt(i))) {
+                comboBox.setSelectedIndex(i);
+                return;
+            }
+        }
+        if (comboBox.getItemCount() > 0) {
+            comboBox.setSelectedIndex(0);
+        }
+    }
+
+    private void applyGanttFilters() {
+        filteredGanttRows.clear();
+        String tang = valueOf(cboGanttTang == null ? null : cboGanttTang.getSelectedItem());
+        String loaiPhong = valueOf(cboGanttLoaiPhong == null ? null : cboGanttLoaiPhong.getSelectedItem());
+
+        for (DashboardGanttRow row : allGanttRows) {
+            if (!"Tất cả".equals(tang) && !safeValue(row.getTang(), "-").equalsIgnoreCase(tang)) {
+                continue;
+            }
+            if (!"Tất cả".equals(loaiPhong) && !safeValue(row.getLoaiPhong(), "-").equalsIgnoreCase(loaiPhong)) {
+                continue;
+            }
+            filteredGanttRows.add(row);
+        }
+        refillGanttTable();
+    }
+
+    private void rebuildGanttColumns() {
+        if (ganttTableModel == null) {
+            return;
+        }
+        Object[] columns = new Object[1 + ganttDates.size()];
+        columns[0] = "Phòng";
+        for (int i = 0; i < ganttDates.size(); i++) {
+            columns[i + 1] = ganttDates.get(i).format(GANTT_HEADER_FORMAT);
+        }
+        ganttTableModel.setColumnIdentifiers(columns);
+        configureGanttColumnWidths();
+    }
+
+    private void configureGanttColumnWidths() {
+        if (tblGantt == null || tblGantt.getColumnModel().getColumnCount() == 0) {
+            return;
+        }
+        tblGantt.getColumnModel().getColumn(0).setPreferredWidth(110);
+        tblGantt.getColumnModel().getColumn(0).setMinWidth(110);
+        for (int i = 1; i < tblGantt.getColumnModel().getColumnCount(); i++) {
+            tblGantt.getColumnModel().getColumn(i).setPreferredWidth(95);
+            tblGantt.getColumnModel().getColumn(i).setMinWidth(95);
+        }
+    }
+
+    private void refillGanttTable() {
+        rebuildGanttColumns();
+        ganttTableModel.setRowCount(0);
+
+        for (DashboardGanttRow row : filteredGanttRows) {
+            Object[] data = new Object[1 + ganttDates.size()];
+            data[0] = row;
+            for (int i = 0; i < ganttDates.size() && i < row.getCells().size(); i++) {
+                data[i + 1] = row.getCells().get(i);
+            }
+            ganttTableModel.addRow(data);
+        }
+
+        restoreSelectedGanttCell();
+        if (filteredGanttRows.isEmpty()) {
+            tblGantt.clearSelection();
+            updateGanttDetail(null, null);
+        }
+    }
+
+    private void restoreSelectedGanttCell() {
+        if (tblGantt == null || selectedGanttCell == null) {
+            if (tblGantt != null) {
+                tblGantt.clearSelection();
+            }
+            return;
+        }
+        for (int rowIndex = 0; rowIndex < filteredGanttRows.size(); rowIndex++) {
+            DashboardGanttRow row = filteredGanttRows.get(rowIndex);
+            if (row.getMaPhong() != selectedGanttCell.getMaPhong()) {
+                continue;
+            }
+            for (int i = 0; i < row.getCells().size(); i++) {
+                DashboardGanttCell cell = row.getCells().get(i);
+                if (cell.getDate() != null && cell.getDate().equals(selectedGanttCell.getDate())) {
+                    tblGantt.changeSelection(rowIndex, i + 1, false, false);
+                    selectedGanttCell = cell;
+                    updateGanttDetail(row, cell);
+                    return;
+                }
+            }
+        }
+        tblGantt.clearSelection();
+        selectedGanttCell = null;
+        updateGanttDetail(null, null);
+    }
+
+    private void selectGanttCell(DashboardGanttRow row, DashboardGanttCell cell) {
+        selectedGanttCell = cell;
+        updateGanttDetail(row, cell);
+        if (tblGantt != null) {
+            tblGantt.repaint();
+        }
+    }
+
+    private void updateGanttDetail(DashboardGanttRow row, DashboardGanttCell cell) {
+        if (lblGanttPhongValue == null) {
+            return;
+        }
+        if (row == null || cell == null) {
+            lblGanttPhongValue.setText("-");
+            lblGanttNgayValue.setText("-");
+            lblGanttTrangThaiValue.setText("-");
+            lblGanttKhachValue.setText("-");
+            lblGanttThoiGianValue.setText("-");
+            lblGanttMaThamChieuValue.setText("-");
+            lblGanttHuongXuLyValue.setText("<html>" + (filteredGanttRows.isEmpty()
+                    ? "Chưa có dữ liệu lịch phòng trong khoảng thời gian này."
+                    : "Chọn một ô phòng-ngày để xem booking hoặc lưu trú liên quan.") + "</html>");
+            btnGanttOpenDatPhong.setEnabled(false);
+            btnGanttOpenCheckInOut.setEnabled(false);
+            return;
+        }
+
+        lblGanttPhongValue.setText("<html><b>" + safeValue(row.getSoPhong(), "-") + "</b> - "
+                + safeValue(row.getLoaiPhong(), "-") + " - " + safeValue(row.getTang(), "-") + "</html>");
+        lblGanttNgayValue.setText(cell.getDate() == null ? "-" : cell.getDate().format(DATE_LABEL_FORMAT));
+        lblGanttTrangThaiValue.setText(safeValue(cell.getStatusText(), "-"));
+        lblGanttKhachValue.setText(safeValue(cell.getCustomerName(), "-"));
+        lblGanttThoiGianValue.setText(cell.getFromDate() == null
+                ? "-"
+                : "Từ " + cell.getFromDate().format(DATE_LABEL_FORMAT) + " đến "
+                + (cell.getToDate() == null ? cell.getFromDate().format(DATE_LABEL_FORMAT) : cell.getToDate().format(DATE_LABEL_FORMAT)));
+        lblGanttMaThamChieuValue.setText(buildGanttReferenceText(cell));
+        lblGanttHuongXuLyValue.setText("<html>" + buildGanttActionHint(cell) + "</html>");
+        btnGanttOpenDatPhong.setEnabled("BOOKING".equalsIgnoreCase(cell.getSourceType()));
+        btnGanttOpenCheckInOut.setEnabled("STAY".equalsIgnoreCase(cell.getSourceType()));
+    }
+
+    private String buildGanttReferenceText(DashboardGanttCell cell) {
+        if (cell == null) {
+            return "-";
+        }
+        if ("STAY".equalsIgnoreCase(cell.getSourceType())) {
+            return "LT" + cell.getMaLuuTru() + " / DP" + cell.getMaDatPhong();
+        }
+        if ("BOOKING".equalsIgnoreCase(cell.getSourceType())) {
+            return "DP" + cell.getMaDatPhong();
+        }
+        return "-";
+    }
+
+    private String buildGanttActionHint(DashboardGanttCell cell) {
+        if (cell == null) {
+            return "-";
+        }
+        if ("BOOKING".equalsIgnoreCase(cell.getSourceType())) {
+            return "Booking chưa check-in. Có thể mở màn Đặt phòng để xem và xử lý booking DP" + cell.getMaDatPhong() + ".";
+        }
+        if ("STAY".equalsIgnoreCase(cell.getSourceType())) {
+            return "Lưu trú đang ở. Có thể mở màn Check-in / Check-out để xử lý hồ sơ DP" + cell.getMaDatPhong() + ".";
+        }
+        if ("MAINTENANCE".equalsIgnoreCase(cell.getSourceType())) {
+            return "Phòng đang ở trạng thái " + safeValue(cell.getStatusText(), "Bảo trì") + ". Không có booking/lưu trú khả dụng cho ô này.";
+        }
+        return "Phòng hiện đang trống trong ngày đã chọn.";
+    }
+
+    private void openSelectedGanttBooking() {
+        if (selectedGanttCell == null || selectedGanttCell.getMaDatPhong() <= 0
+                || !"BOOKING".equalsIgnoreCase(selectedGanttCell.getSourceType())) {
+            showMessage("Ô đang chọn không có booking chờ check-in để mở.");
+            return;
+        }
+        DatPhongGUI.prepareFocusOnBooking(selectedGanttCell.getMaDatPhong());
+        NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.DAT_PHONG, username, role);
+    }
+
+    private void openSelectedGanttStay() {
+        if (selectedGanttCell == null || selectedGanttCell.getMaDatPhong() <= 0
+                || !"STAY".equalsIgnoreCase(selectedGanttCell.getSourceType())) {
+            showMessage("Ô đang chọn không có lưu trú đang ở để mở.");
+            return;
+        }
+        CheckInOutGUI.prepareFocusOnBooking(selectedGanttCell.getMaDatPhong());
+        NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role);
+    }
+
+    private String buildGanttTooltip(DashboardGanttCell cell) {
+        if (cell == null) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder("<html>");
+        builder.append("Phòng: ").append(safeValue(cell.getSoPhong(), "-"));
+        builder.append("<br>Ngày: ").append(cell.getDate() == null ? "-" : cell.getDate().format(DATE_LABEL_FORMAT));
+        builder.append("<br>Trạng thái: ").append(safeValue(cell.getStatusText(), "-"));
+        if ("BOOKING".equalsIgnoreCase(cell.getSourceType())) {
+            builder.append("<br>Mã đặt phòng: DP").append(cell.getMaDatPhong());
+            builder.append("<br>Khách: ").append(safeValue(cell.getCustomerName(), "-"));
+            builder.append("<br>Từ ")
+                    .append(cell.getFromDate() == null ? "-" : cell.getFromDate().format(DATE_LABEL_FORMAT))
+                    .append(" đến ")
+                    .append(cell.getToDate() == null ? "-" : cell.getToDate().format(DATE_LABEL_FORMAT));
+        } else if ("STAY".equalsIgnoreCase(cell.getSourceType())) {
+            builder.append("<br>Mã lưu trú: LT").append(cell.getMaLuuTru());
+            builder.append("<br>Mã đặt phòng: DP").append(cell.getMaDatPhong());
+            builder.append("<br>Khách: ").append(safeValue(cell.getCustomerName(), "-"));
+            builder.append("<br>Từ ")
+                    .append(cell.getFromDate() == null ? "-" : cell.getFromDate().format(DATE_LABEL_FORMAT))
+                    .append(" đến ")
+                    .append(cell.getToDate() == null ? "-" : cell.getToDate().format(DATE_LABEL_FORMAT));
+        }
+        builder.append("</html>");
+        return builder.toString();
+    }
+
+    private Color resolveGanttCellColor(DashboardGanttCell cell) {
+        if (cell == null) {
+            return CARD_BG;
+        }
+        String statusCode = safeValue(cell.getStatusCode(), "E");
+        if ("M".equalsIgnoreCase(statusCode)) {
+            return new Color(254, 226, 226);
+        }
+        if ("O".equalsIgnoreCase(statusCode)) {
+            return new Color(219, 234, 254);
+        }
+        if ("B".equalsIgnoreCase(statusCode)) {
+            return new Color(254, 249, 195);
+        }
+        return new Color(220, 252, 231);
+    }
+
+    private String resolveGanttCellLabel(DashboardGanttCell cell) {
+        if (cell == null) {
+            return "";
+        }
+        String statusCode = safeValue(cell.getStatusCode(), "E");
+        if ("M".equalsIgnoreCase(statusCode)) {
+            return "BT";
+        }
+        if ("O".equalsIgnoreCase(statusCode)) {
+            return "Ở";
+        }
+        if ("B".equalsIgnoreCase(statusCode)) {
+            return "Đặt";
+        }
+        return "Trống";
+    }
+
     private void loadDashboardData(boolean showMessage) {
-        DashboardSummary summary = dashboardDAO.getDashboardSummary();
+        List<DashboardGanttRow> ganttRows = dashboardDAO.getRoomGanttRows(LocalDate.now(), GANTT_DAY_COUNT);
         String errorMessage = safeValue(dashboardDAO.getLastErrorMessage(), "");
+
+        DashboardSummary summary = dashboardDAO.getDashboardSummary();
+        errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
 
         List<DashboardChartPoint> revenuePoints = dashboardDAO.getRevenueLast7Days();
         errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
@@ -453,6 +1013,7 @@ public class DashboardGUI extends JFrame {
         List<DashboardTaskRow> taskRows = dashboardDAO.getTodayTasks();
         errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
 
+        loadGanttRows(ganttRows);
         loadSummaryCards(summary);
         loadCharts(revenuePoints, bookingPoints);
         loadTaskTable(taskRows);
@@ -725,6 +1286,10 @@ public class DashboardGUI extends JFrame {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
+    private String valueOf(Object value) {
+        return value == null ? "" : value.toString();
+    }
+
     private void showMessage(String message) {
         JOptionPane.showMessageDialog(this, message, "Tổng quan", JOptionPane.INFORMATION_MESSAGE);
     }
@@ -735,6 +1300,47 @@ public class DashboardGUI extends JFrame {
             loadDashboardData(false);
         }
         return rootPanel;
+    }
+
+    private final class DashboardGanttCellRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                                                       boolean hasFocus, int row, int column) {
+            super.getTableCellRendererComponent(table, value, false, false, row, column);
+            setHorizontalAlignment(SwingConstants.CENTER);
+            setFont(BODY_FONT);
+            setForeground(TEXT_PRIMARY);
+            setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+
+            if (value instanceof DashboardGanttRow) {
+                DashboardGanttRow ganttRow = (DashboardGanttRow) value;
+                setText("<html><b>" + safeValue(ganttRow.getSoPhong(), "-") + "</b><br><span style='color:#6b7280;'>"
+                        + safeValue(ganttRow.getTang(), "-") + "</span></html>");
+                setBackground(Color.WHITE);
+                setHorizontalAlignment(SwingConstants.LEFT);
+                return this;
+            }
+
+            if (value instanceof DashboardGanttCell) {
+                DashboardGanttCell cell = (DashboardGanttCell) value;
+                setText(resolveGanttCellLabel(cell));
+                setBackground(resolveGanttCellColor(cell));
+                boolean selected = selectedGanttCell != null
+                        && selectedGanttCell.getMaPhong() == cell.getMaPhong()
+                        && selectedGanttCell.getDate() != null
+                        && selectedGanttCell.getDate().equals(cell.getDate());
+                setBorder(selected
+                        ? BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(BRAND_BLUE, 3, true),
+                        BorderFactory.createLineBorder(Color.WHITE, 1, true))
+                        : BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+                return this;
+            }
+
+            setText(value == null ? "" : value.toString());
+            setBackground(Color.WHITE);
+            return this;
+        }
     }
 
     private static final class MetricCard {

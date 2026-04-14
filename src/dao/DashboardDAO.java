@@ -2,6 +2,8 @@ package dao;
 
 import db.ConnectDB;
 import entity.DashboardChartPoint;
+import entity.DashboardGanttCell;
+import entity.DashboardGanttRow;
 import entity.DashboardSummary;
 import entity.DashboardTaskRow;
 
@@ -37,6 +39,10 @@ public class DashboardDAO {
 
     private static final String INVOICE_STATUS_PENDING = "Ch\u1edd thanh to\u00e1n";
     private static final String PAYMENT_TYPE_DEFAULT = "THANH_TOAN";
+    private static final String GANTT_STATUS_EMPTY = "E";
+    private static final String GANTT_STATUS_BOOKED = "B";
+    private static final String GANTT_STATUS_OCCUPIED = "O";
+    private static final String GANTT_STATUS_MAINTENANCE = "M";
     private static final DateTimeFormatter CHART_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM");
     private static final DateTimeFormatter TASK_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter TASK_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -337,6 +343,25 @@ public class DashboardDAO {
         return rows;
     }
 
+    public List<DashboardGanttRow> getRoomGanttRows(LocalDate startDate, int dayCount) {
+        clearLastError();
+        List<DashboardGanttRow> rows = new ArrayList<DashboardGanttRow>();
+        if (startDate == null || dayCount <= 0) {
+            return rows;
+        }
+
+        Map<Integer, DashboardGanttRow> rowByRoomId = loadBaseGanttRows(startDate, dayCount);
+        rows.addAll(rowByRoomId.values());
+        if (rows.isEmpty()) {
+            return rows;
+        }
+
+        LocalDate endDate = startDate.plusDays(dayCount - 1L);
+        applyOccupiedCells(rowByRoomId, startDate, endDate);
+        applyBookedCells(rowByRoomId, startDate, endDate);
+        return rows;
+    }
+
     private List<DashboardTaskRow> getPendingCheckinTasks() {
         List<DashboardTaskRow> rows = new ArrayList<DashboardTaskRow>();
         String sql = "SELECT TOP 6 dp.maDatPhong, kh.hoTen, dp.ngayNhanPhong, dp.trangThai, "
@@ -483,6 +508,223 @@ public class DashboardDAO {
             setLastError(ex.getMessage());
         }
         return rows;
+    }
+
+    private Map<Integer, DashboardGanttRow> loadBaseGanttRows(LocalDate startDate, int dayCount) {
+        Map<Integer, DashboardGanttRow> rows = new LinkedHashMap<Integer, DashboardGanttRow>();
+        String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.khuVuc, p.sucChuaChuan, p.sucChuaToiDa, p.trangThai, "
+                + "ISNULL(lp.tenLoaiPhong, N'-') AS tenLoaiPhong "
+                + "FROM dbo.Phong p "
+                + "LEFT JOIN dbo.LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong "
+                + "ORDER BY CASE WHEN TRY_CAST(p.soPhong AS INT) IS NULL THEN 1 ELSE 0 END, TRY_CAST(p.soPhong AS INT), p.soPhong";
+
+        try (Connection con = getReadyConnection();
+             PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {
+            if (con == null || stmt == null) {
+                return rows;
+            }
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    DashboardGanttRow row = new DashboardGanttRow();
+                    row.setMaPhong(rs.getInt("maPhong"));
+                    row.setSoPhong(safeTrim(rs.getString("soPhong")));
+                    row.setTang(safeTrim(rs.getString("tang")));
+                    row.setLoaiPhong(safeTrim(rs.getString("tenLoaiPhong")));
+                    row.setKhuVuc(safeTrim(rs.getString("khuVuc")));
+                    row.setSucChuaChuan(rs.getInt("sucChuaChuan"));
+                    row.setSucChuaToiDa(rs.getInt("sucChuaToiDa"));
+                    row.setTrangThaiPhong(safeTrim(rs.getString("trangThai")));
+
+                    for (int i = 0; i < dayCount; i++) {
+                        LocalDate cellDate = startDate.plusDays(i);
+                        DashboardGanttCell cell = new DashboardGanttCell();
+                        cell.setDate(cellDate);
+                        cell.setMaPhong(row.getMaPhong());
+                        cell.setSoPhong(row.getSoPhong());
+                        cell.setTang(row.getTang());
+                        cell.setLoaiPhong(row.getLoaiPhong());
+                        cell.setKhuVuc(row.getKhuVuc());
+                        cell.setPhongTrangThai(row.getTrangThaiPhong());
+                        if (isMaintenanceLike(row.getTrangThaiPhong())) {
+                            cell.setStatusCode(GANTT_STATUS_MAINTENANCE);
+                            cell.setStatusText(row.getTrangThaiPhong().isEmpty() ? ROOM_STATUS_MAINTENANCE : row.getTrangThaiPhong());
+                            cell.setSourceType("MAINTENANCE");
+                            cell.setPriority(4);
+                        } else {
+                            cell.setStatusCode(GANTT_STATUS_EMPTY);
+                            cell.setStatusText("Hoạt động / Trống");
+                            cell.setSourceType("EMPTY");
+                            cell.setPriority(1);
+                        }
+                        row.getCells().add(cell);
+                    }
+                    rows.put(Integer.valueOf(row.getMaPhong()), row);
+                }
+            }
+        } catch (Exception ex) {
+            setLastError(ex.getMessage());
+        }
+        return rows;
+    }
+
+    private void applyOccupiedCells(Map<Integer, DashboardGanttRow> rowByRoomId, LocalDate startDate, LocalDate endDate) {
+        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, "
+                + "ISNULL(kh.hoTen, N'-') AS hoTen, CAST(lt.checkIn AS DATE) AS stayFrom, "
+                + "CAST(COALESCE(lt.checkOut, dp.ngayTraPhong, GETDATE()) AS DATE) AS stayTo "
+                + "FROM dbo.LuuTru lt "
+                + "JOIN dbo.DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
+                + "JOIN dbo.Phong p ON p.maPhong = lt.maPhong "
+                + "LEFT JOIN dbo.KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "WHERE lt.checkIn < ? "
+                + "AND (lt.checkOut IS NULL OR lt.checkOut >= ?)";
+
+        try (Connection con = getReadyConnection();
+             PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {
+            if (con == null || stmt == null) {
+                return;
+            }
+            stmt.setTimestamp(1, Timestamp.valueOf(endDate.plusDays(1L).atStartOfDay()));
+            stmt.setTimestamp(2, Timestamp.valueOf(startDate.atStartOfDay()));
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    int maPhong = rs.getInt("maPhong");
+                    DashboardGanttRow row = rowByRoomId.get(Integer.valueOf(maPhong));
+                    if (row == null) {
+                        continue;
+                    }
+                    LocalDate fromDate = toLocalDate(rs.getDate("stayFrom"));
+                    LocalDate toDate = toLocalDate(rs.getDate("stayTo"));
+                    if (fromDate == null) {
+                        continue;
+                    }
+                    if (toDate == null) {
+                        toDate = endDate;
+                    }
+                    for (DashboardGanttCell cell : row.getCells()) {
+                        if (isDateInside(cell.getDate(), fromDate, toDate)) {
+                            applyCellState(
+                                    cell,
+                                    GANTT_STATUS_OCCUPIED,
+                                    ROOM_STATUS_OCCUPIED,
+                                    "STAY",
+                                    3,
+                                    rs.getInt("maDatPhong"),
+                                    rs.getInt("maLuuTru"),
+                                    rs.getInt("maChiTietDatPhong"),
+                                    safeTrim(rs.getString("hoTen")),
+                                    fromDate,
+                                    toDate
+                            );
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            setLastError(ex.getMessage());
+        }
+    }
+
+    private void applyBookedCells(Map<Integer, DashboardGanttRow> rowByRoomId, LocalDate startDate, LocalDate endDate) {
+        String sql = "SELECT dp.maDatPhong, ctdp.maChiTietDatPhong, ctdp.maPhong, "
+                + "ISNULL(kh.hoTen, N'-') AS hoTen, dp.trangThai, "
+                + "CAST(dp.ngayNhanPhong AS DATE) AS bookingFrom, CAST(dp.ngayTraPhong AS DATE) AS bookingTo "
+                + "FROM dbo.DatPhong dp "
+                + "JOIN dbo.ChiTietDatPhong ctdp ON ctdp.maDatPhong = dp.maDatPhong "
+                + "LEFT JOIN dbo.KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "WHERE ctdp.maPhong IS NOT NULL "
+                + "AND ISNULL(dp.trangThai, N'') IN (?, ?, ?, ?) "
+                + "AND dp.ngayNhanPhong < ? "
+                + "AND dp.ngayTraPhong >= ? "
+                + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
+
+        try (Connection con = getReadyConnection();
+             PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {
+            if (con == null || stmt == null) {
+                return;
+            }
+            stmt.setString(1, BOOKING_STATUS_BOOKED);
+            stmt.setString(2, BOOKING_STATUS_CONFIRMED);
+            stmt.setString(3, BOOKING_STATUS_DEPOSITED);
+            stmt.setString(4, BOOKING_STATUS_PENDING_CHECKIN);
+            stmt.setDate(5, Date.valueOf(endDate.plusDays(1L)));
+            stmt.setDate(6, Date.valueOf(startDate));
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    int maPhong = rs.getInt("maPhong");
+                    DashboardGanttRow row = rowByRoomId.get(Integer.valueOf(maPhong));
+                    if (row == null) {
+                        continue;
+                    }
+                    LocalDate fromDate = toLocalDate(rs.getDate("bookingFrom"));
+                    LocalDate toDate = toLocalDate(rs.getDate("bookingTo"));
+                    if (fromDate == null) {
+                        continue;
+                    }
+                    if (toDate == null) {
+                        toDate = fromDate;
+                    }
+                    String statusText = safeTrim(rs.getString("trangThai"));
+                    if (statusText.isEmpty()) {
+                        statusText = BOOKING_STATUS_PENDING_CHECKIN;
+                    }
+                    for (DashboardGanttCell cell : row.getCells()) {
+                        if (isDateInside(cell.getDate(), fromDate, toDate)) {
+                            applyCellState(
+                                    cell,
+                                    GANTT_STATUS_BOOKED,
+                                    statusText,
+                                    "BOOKING",
+                                    2,
+                                    rs.getInt("maDatPhong"),
+                                    0,
+                                    rs.getInt("maChiTietDatPhong"),
+                                    safeTrim(rs.getString("hoTen")),
+                                    fromDate,
+                                    toDate
+                            );
+                        }
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            setLastError(ex.getMessage());
+        }
+    }
+
+    private void applyCellState(DashboardGanttCell cell, String statusCode, String statusText, String sourceType,
+                                int priority, int maDatPhong, int maLuuTru, int maChiTietDatPhong,
+                                String customerName, LocalDate fromDate, LocalDate toDate) {
+        if (cell == null || priority < cell.getPriority()) {
+            return;
+        }
+        cell.setStatusCode(statusCode);
+        cell.setStatusText(statusText);
+        cell.setSourceType(sourceType);
+        cell.setPriority(priority);
+        cell.setMaDatPhong(maDatPhong);
+        cell.setMaLuuTru(maLuuTru);
+        cell.setMaChiTietDatPhong(maChiTietDatPhong);
+        cell.setCustomerName(customerName);
+        cell.setFromDate(fromDate);
+        cell.setToDate(toDate);
+    }
+
+    private boolean isDateInside(LocalDate targetDate, LocalDate fromDate, LocalDate toDate) {
+        if (targetDate == null || fromDate == null) {
+            return false;
+        }
+        LocalDate normalizedToDate = toDate == null ? fromDate : toDate;
+        return !targetDate.isBefore(fromDate) && !targetDate.isAfter(normalizedToDate);
+    }
+
+    private LocalDate toLocalDate(Date value) {
+        return value == null ? null : value.toLocalDate();
+    }
+
+    private boolean isMaintenanceLike(String trangThai) {
+        String normalized = safeTrim(trangThai);
+        return ROOM_STATUS_MAINTENANCE.equalsIgnoreCase(normalized)
+                || "Không hoạt động".equalsIgnoreCase(normalized);
     }
 
     private double queryRevenueBetween(LocalDate startInclusive, LocalDate endExclusive) {

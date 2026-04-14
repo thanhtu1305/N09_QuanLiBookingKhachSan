@@ -32,6 +32,8 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -62,8 +64,9 @@ public class PhongGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    // Demo khach san duoc chot co 5 tang de dong bo voi du lieu seed.
     private static final String[] FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
-    private static final String[] CREATE_ROOM_FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4"};
+    private static final String[] CREATE_ROOM_FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
     private static final String[] ROOM_STATUS_OPTIONS = {"Hoạt động", "Không hoạt động", "Bảo trì"};
     private static final String[] ZONES = {"Khu A", "Khu B", "Khu C", "Khu VIP"};
     private static final java.util.List<PhongGUI> OPEN_INSTANCES = new java.util.ArrayList<PhongGUI>();
@@ -86,6 +89,8 @@ public class PhongGUI extends JFrame {
     private JComboBox<String> cboTrangThai;
     private JTextField txtTuKhoa;
     private JPanel pnlQuickMapContent;
+    private Integer selectedRoomId;
+    private boolean suppressTableSelectionEvent;
 
     private JLabel lblSoPhong;
     private JLabel lblLoaiPhong;
@@ -293,9 +298,14 @@ public class PhongGUI extends JFrame {
 
         tblPhong.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
+                if (suppressTableSelectionEvent) {
+                    return;
+                }
                 int row = tblPhong.getSelectedRow();
                 if (row >= 0 && row < filteredRooms.size()) {
-                    updateDetailPanel(filteredRooms.get(row));
+                    handleRoomSelection(filteredRooms.get(row), false);
+                } else if (selectedRoomId == null) {
+                    clearDetailPanel();
                 }
             }
         });
@@ -431,12 +441,37 @@ public class PhongGUI extends JFrame {
         JPanel roomPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         roomPanel.setOpaque(false);
         for (RoomRecord room : rooms) {
-            roomPanel.add(createRoomBadge(room.soPhong, toStatusCode(room.trangThai)));
+            roomPanel.add(createRoomBadge(room));
         }
 
         row.add(lblFloor, BorderLayout.WEST);
         row.add(roomPanel, BorderLayout.CENTER);
         return row;
+    }
+
+    private JPanel createRoomBadge(RoomRecord room) {
+        JPanel badge = new JPanel(new BorderLayout());
+        badge.setPreferredSize(new Dimension(82, 40));
+        badge.setBackground(resolveStatusColor(toStatusCode(room.trangThai)));
+        badge.setBorder(createRoomBadgeBorder(room.maPhong == (selectedRoomId == null ? -1 : selectedRoomId.intValue())));
+        badge.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+
+        JLabel lbl = new JLabel("<html><center>" + room.soPhong + "<br>" + resolveStatusText(toStatusCode(room.trangThai)) + "</center></html>", SwingConstants.CENTER);
+        lbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        lbl.setForeground(TEXT_PRIMARY);
+        lbl.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+
+        java.awt.event.MouseAdapter clickHandler = new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                handleRoomSelection(room, true);
+            }
+        };
+        badge.addMouseListener(clickHandler);
+        lbl.addMouseListener(clickHandler);
+
+        badge.add(lbl, BorderLayout.CENTER);
+        return badge;
     }
 
     private JPanel createRoomBadge(String roomCode, String statusCode) {
@@ -451,6 +486,16 @@ public class PhongGUI extends JFrame {
 
         badge.add(lbl, BorderLayout.CENTER);
         return badge;
+    }
+
+    private javax.swing.border.Border createRoomBadgeBorder(boolean selected) {
+        if (selected) {
+            return BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(37, 99, 235), 3, true),
+                    BorderFactory.createLineBorder(new Color(255, 255, 255), 1, true)
+            );
+        }
+        return BorderFactory.createLineBorder(new Color(209, 213, 219), 1, true);
     }
 
     private JPanel buildLegendPanel() {
@@ -622,17 +667,15 @@ public class PhongGUI extends JFrame {
 
     private void populateTangFilter() {
         String selected = valueOf(cboTang.getSelectedItem());
-        List<String> tangs = new ArrayList<String>();
-        for (RoomRecord room : allRooms) {
-            if (room.tang != null && !room.tang.trim().isEmpty() && !tangs.contains(room.tang)) {
-                tangs.add(room.tang);
-            }
-        }
-        Collections.sort(tangs);
         cboTang.removeAllItems();
         cboTang.addItem("Tất cả");
-        for (String tang : tangs) {
-            cboTang.addItem(tang);
+        for (String tang : FLOORS) {
+            for (RoomRecord room : allRooms) {
+                if (tang.equals(room.tang)) {
+                    cboTang.addItem(tang);
+                    break;
+                }
+            }
         }
         restoreSelection(cboTang, selected, "Tất cả");
     }
@@ -675,7 +718,7 @@ public class PhongGUI extends JFrame {
         cboTrangThai.setSelectedIndex(0);
         txtTuKhoa.setText("");
         if (tblPhong != null) {
-            tblPhong.clearSelection();
+            clearTableSelection();
         }
     }
 
@@ -769,9 +812,29 @@ public class PhongGUI extends JFrame {
         }
 
         if (!filteredRooms.isEmpty()) {
-            tblPhong.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredRooms.get(0));
+            int selectedIndex = resolvePreferredSelectionIndex();
+            if (selectedIndex >= 0 && selectedIndex < filteredRooms.size()) {
+                selectTableRow(selectedIndex);
+                updateDetailPanel(filteredRooms.get(selectedIndex));
+                return;
+            }
+        }
+
+        if (selectedRoomId != null) {
+            RoomRecord room = findRoomById(allRooms, selectedRoomId.intValue());
+            if (room != null) {
+                clearTableSelection();
+                updateDetailPanel(room);
+                return;
+            }
+        }
+
+        if (!allRooms.isEmpty()) {
+            selectedRoomId = Integer.valueOf(allRooms.get(0).maPhong);
+            clearTableSelection();
+            updateDetailPanel(allRooms.get(0));
         } else {
+            selectedRoomId = null;
             clearDetailPanel();
         }
     }
@@ -812,6 +875,9 @@ public class PhongGUI extends JFrame {
     }
 
     private void updateDetailPanel(RoomRecord room) {
+        if (room != null) {
+            selectedRoomId = Integer.valueOf(room.maPhong);
+        }
         lblSoPhong.setText(room.soPhong);
         lblLoaiPhong.setText(room.loaiPhong);
         lblTang.setText(room.tang + " - " + room.khuVuc);
@@ -835,6 +901,84 @@ public class PhongGUI extends JFrame {
         txtGhiChu.setText("Không có dữ liệu phù hợp.");
         txtTienNghi.setText("Không có dữ liệu.");
         refreshCurrentView();
+    }
+
+    private void handleRoomSelection(RoomRecord room, boolean syncTableSelection) {
+        if (room == null) {
+            return;
+        }
+        selectedRoomId = Integer.valueOf(room.maPhong);
+        updateDetailPanel(room);
+
+        int rowIndex = findFilteredRoomIndexById(room.maPhong);
+        if (syncTableSelection) {
+            if (rowIndex >= 0) {
+                selectTableRow(rowIndex);
+            } else {
+                clearTableSelection();
+            }
+        }
+        refreshQuickMap();
+    }
+
+    private int resolvePreferredSelectionIndex() {
+        if (selectedRoomId != null) {
+            int selectedIndex = findFilteredRoomIndexById(selectedRoomId.intValue());
+            if (selectedIndex >= 0) {
+                return selectedIndex;
+            }
+        }
+        int currentRow = tblPhong == null ? -1 : tblPhong.getSelectedRow();
+        if (currentRow >= 0 && currentRow < filteredRooms.size()) {
+            return currentRow;
+        }
+        return filteredRooms.isEmpty() ? -1 : 0;
+    }
+
+    private int findFilteredRoomIndexById(int maPhong) {
+        for (int i = 0; i < filteredRooms.size(); i++) {
+            if (filteredRooms.get(i).maPhong == maPhong) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private RoomRecord findRoomById(List<RoomRecord> rooms, int maPhong) {
+        for (RoomRecord room : rooms) {
+            if (room.maPhong == maPhong) {
+                return room;
+            }
+        }
+        return null;
+    }
+
+    private void selectTableRow(int rowIndex) {
+        if (tblPhong == null || rowIndex < 0 || rowIndex >= filteredRooms.size()) {
+            return;
+        }
+        suppressTableSelectionEvent = true;
+        try {
+            tblPhong.setRowSelectionInterval(rowIndex, rowIndex);
+            java.awt.Rectangle cellRect = tblPhong.getCellRect(rowIndex, 0, true);
+            if (cellRect != null) {
+                tblPhong.scrollRectToVisible(cellRect);
+            }
+        } finally {
+            suppressTableSelectionEvent = false;
+        }
+    }
+
+    private void clearTableSelection() {
+        if (tblPhong == null) {
+            return;
+        }
+        suppressTableSelectionEvent = true;
+        try {
+            tblPhong.clearSelection();
+        } finally {
+            suppressTableSelectionEvent = false;
+        }
     }
 
     private RoomRecord getSelectedRoom() {
@@ -960,20 +1104,28 @@ public class PhongGUI extends JFrame {
     }
 
     private void selectRoomById(int maPhong) {
-        for (int i = 0; i < filteredRooms.size(); i++) {
-            if (filteredRooms.get(i).maPhong == maPhong) {
-                tblPhong.setRowSelectionInterval(i, i);
-                updateDetailPanel(filteredRooms.get(i));
-                refreshCurrentView();
-                return;
-            }
+        selectedRoomId = Integer.valueOf(maPhong);
+        int selectedIndex = findFilteredRoomIndexById(maPhong);
+        if (selectedIndex >= 0) {
+            selectTableRow(selectedIndex);
+            updateDetailPanel(filteredRooms.get(selectedIndex));
+            refreshQuickMap();
+            refreshCurrentView();
+            return;
         }
-        if (!filteredRooms.isEmpty()) {
-            tblPhong.setRowSelectionInterval(0, 0);
+        RoomRecord room = findRoomById(allRooms, maPhong);
+        if (room != null) {
+            clearTableSelection();
+            updateDetailPanel(room);
+        } else if (!filteredRooms.isEmpty()) {
+            selectedRoomId = Integer.valueOf(filteredRooms.get(0).maPhong);
+            selectTableRow(0);
             updateDetailPanel(filteredRooms.get(0));
         } else {
+            selectedRoomId = null;
             clearDetailPanel();
         }
+        refreshQuickMap();
         refreshCurrentView();
     }
 
@@ -1036,6 +1188,18 @@ public class PhongGUI extends JFrame {
 
     private String valueOf(Object value) {
         return value == null ? "" : value.toString();
+    }
+
+    private String resolveFloorFromRoomNumber(String soPhong) {
+        String normalized = soPhong == null ? "" : soPhong.trim();
+        if (!normalized.matches("\\d{3}")) {
+            return "";
+        }
+        char floorDigit = normalized.charAt(0);
+        if (floorDigit < '1' || floorDigit > '5') {
+            return "";
+        }
+        return "Tầng " + floorDigit;
     }
 
     private JPanel createDialogCardPanel() {
@@ -1263,6 +1427,17 @@ public class PhongGUI extends JFrame {
             txtSoPhong.requestFocusInWindow();
             return null;
         }
+        if (!soPhong.matches("\\d{3}")) {
+            showValidationMessage("Số phòng phải gồm đúng 3 chữ số.");
+            txtSoPhong.requestFocusInWindow();
+            return null;
+        }
+        String expectedTang = resolveFloorFromRoomNumber(soPhong);
+        if (expectedTang.isEmpty()) {
+            showValidationMessage("Khách sạn chỉ hỗ trợ phòng thuộc tầng 1 đến tầng 5.");
+            txtSoPhong.requestFocusInWindow();
+            return null;
+        }
         if (phongDAO.isSoPhongExists(soPhong, maPhong)) {
             showValidationMessage("Số phòng đã tồn tại.");
             txtSoPhong.requestFocusInWindow();
@@ -1276,7 +1451,12 @@ public class PhongGUI extends JFrame {
             return null;
         }
         if (tang.isEmpty()) {
-            showValidationMessage("Vui lòng chọn tầng.");
+            showValidationMessage("Tầng sẽ được tự động suy ra từ số phòng.");
+            cboTangInput.requestFocusInWindow();
+            return null;
+        }
+        if (!expectedTang.equals(tang)) {
+            showValidationMessage("Tầng phải khớp với chữ số đầu tiên của số phòng.");
             cboTangInput.requestFocusInWindow();
             return null;
         }
@@ -1357,6 +1537,23 @@ public class PhongGUI extends JFrame {
             txtSoPhongDialog = createInputField("");
             cboLoaiPhongDialog = createLoaiPhongDialogComboBox();
             cboTangDialog = createComboBox(CREATE_ROOM_FLOORS);
+            cboTangDialog.setEnabled(false);
+            txtSoPhongDialog.getDocument().addDocumentListener(new DocumentListener() {
+                @Override
+                public void insertUpdate(DocumentEvent e) {
+                    syncTangFromSoPhong();
+                }
+
+                @Override
+                public void removeUpdate(DocumentEvent e) {
+                    syncTangFromSoPhong();
+                }
+
+                @Override
+                public void changedUpdate(DocumentEvent e) {
+                    syncTangFromSoPhong();
+                }
+            });
             txtSucChuaChuanDialog = createInputField("");
             txtSucChuaToiDaDialog = createInputField("");
             cboTrangThaiDialog = createComboBox(ROOM_STATUS_OPTIONS);
@@ -1378,6 +1575,15 @@ public class PhongGUI extends JFrame {
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnSaveNew, btnSave), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+        }
+
+        private void syncTangFromSoPhong() {
+            String tang = resolveFloorFromRoomNumber(txtSoPhongDialog.getText());
+            if (tang.isEmpty()) {
+                cboTangDialog.setSelectedIndex(-1);
+                return;
+            }
+            cboTangDialog.setSelectedItem(tang);
         }
 
         private void submit(boolean keepOpen) {
@@ -1414,7 +1620,7 @@ public class PhongGUI extends JFrame {
             if (cboLoaiPhongDialog.getItemCount() > 0) {
                 cboLoaiPhongDialog.setSelectedIndex(0);
             }
-            cboTangDialog.setSelectedIndex(0);
+            cboTangDialog.setSelectedIndex(-1);
             txtSucChuaChuanDialog.setText("");
             txtSucChuaToiDaDialog.setText("");
             cboTrangThaiDialog.setSelectedIndex(0);

@@ -78,6 +78,7 @@ public class DatPhongGUI extends JFrame {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.forLanguageTag("vi-VN")).withResolverStyle(ResolverStyle.STRICT);
 
     private static final List<DatPhongGUI> OPEN_INSTANCES = new ArrayList<DatPhongGUI>();
+    private static Integer pendingFocusedBookingId;
 
     private final DatPhongDAO datPhongDAO = new DatPhongDAO();
     private final String username;
@@ -751,10 +752,30 @@ public class DatPhongGUI extends JFrame {
         }
 
         if (!filteredBookings.isEmpty()) {
-            tblDatPhong.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredBookings.get(0));
+            int rowToSelect = resolvePreferredSelectionIndex();
+            tblDatPhong.setRowSelectionInterval(rowToSelect, rowToSelect);
+            updateDetailPanel(filteredBookings.get(rowToSelect));
+            clearPendingFocusedBookingIfMatched(filteredBookings.get(rowToSelect).maDatPhong);
         } else {
             clearDetailPanel();
+        }
+    }
+
+    private int resolvePreferredSelectionIndex() {
+        Integer bookingId = pendingFocusedBookingId;
+        if (bookingId != null) {
+            for (int i = 0; i < filteredBookings.size(); i++) {
+                if (filteredBookings.get(i).maDatPhong == bookingId.intValue()) {
+                    return i;
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static synchronized void clearPendingFocusedBookingIfMatched(int maDatPhong) {
+        if (pendingFocusedBookingId != null && pendingFocusedBookingId.intValue() == maDatPhong) {
+            pendingFocusedBookingId = null;
         }
     }
 
@@ -1483,6 +1504,10 @@ public class DatPhongGUI extends JFrame {
                 javax.swing.SwingUtilities.invokeLater(() -> gui.reloadSampleData(false));
             }
         }
+    }
+
+    public static synchronized void prepareFocusOnBooking(int maDatPhong) {
+        pendingFocusedBookingId = maDatPhong > 0 ? Integer.valueOf(maDatPhong) : null;
     }
 
     private abstract class BaseBookingDialog extends JDialog {

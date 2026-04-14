@@ -46,6 +46,24 @@ CREATE TABLE TaiKhoan (
                           FOREIGN KEY (maNhanVien) REFERENCES NhanVien(maNhanVien)
 );
 
+CREATE TABLE TaiKhoanQuyen (
+    maTaiKhoan INT PRIMARY KEY,
+    permDashboard BIT NOT NULL DEFAULT 0,
+    permDatPhong BIT NOT NULL DEFAULT 0,
+    permCheckInOut BIT NOT NULL DEFAULT 0,
+    permThanhToan BIT NOT NULL DEFAULT 0,
+    permKhachHang BIT NOT NULL DEFAULT 0,
+    permPhong BIT NOT NULL DEFAULT 0,
+    permLoaiPhong BIT NOT NULL DEFAULT 0,
+    permBangGia BIT NOT NULL DEFAULT 0,
+    permDichVu BIT NOT NULL DEFAULT 0,
+    permTienNghi BIT NOT NULL DEFAULT 0,
+    permTaiKhoan BIT NOT NULL DEFAULT 0,
+    permNhanVien BIT NOT NULL DEFAULT 0,
+    permBaoCao BIT NOT NULL DEFAULT 0,
+    FOREIGN KEY (maTaiKhoan) REFERENCES TaiKhoan(maTaiKhoan)
+);
+
 CREATE TABLE KhachHang (
                            maKhachHang INT IDENTITY(1,1) PRIMARY KEY,
                            hoTen NVARCHAR(100),
@@ -199,8 +217,16 @@ CREATE TABLE HoaDon (
                         ngayLap DATETIME DEFAULT GETDATE(),
                         tienPhong DECIMAL(15,0),
                         tienDichVu DECIMAL(15,0),
-                        tongTien AS (tienPhong + tienDichVu) PERSISTED,
-                        FOREIGN KEY (maLuuTru) REFERENCES LuuTru(maLuuTru)
+                        phuThu DECIMAL(15,0) NULL CONSTRAINT DF_HoaDon_phuThu DEFAULT 0,
+                        giamGia DECIMAL(15,0) NULL CONSTRAINT DF_HoaDon_giamGia DEFAULT 0,
+                        tienCocTru DECIMAL(15,0) NULL CONSTRAINT DF_HoaDon_tienCocTru DEFAULT 0,
+                        trangThai NVARCHAR(30) NULL CONSTRAINT DF_HoaDon_trangThai DEFAULT N'Chờ thanh toán',
+                        ghiChu NVARCHAR(MAX) NULL,
+                        ngayThanhToan DATETIME NULL,
+                        tongTien AS (ISNULL(tienPhong,0) + ISNULL(tienDichVu,0) + ISNULL(phuThu,0) - ISNULL(giamGia,0)) PERSISTED,
+                        FOREIGN KEY (maLuuTru) REFERENCES LuuTru(maLuuTru),
+                        FOREIGN KEY (maDatPhong) REFERENCES DatPhong(maDatPhong),
+                        FOREIGN KEY (maKhachHang) REFERENCES KhachHang(maKhachHang)
 );
 
 CREATE TABLE ChiTietHoaDon (
@@ -219,6 +245,11 @@ CREATE TABLE ThanhToan (
                            maNhanVien INT,
                            ngayThanhToan DATETIME DEFAULT GETDATE(),
                            soTien DECIMAL(15,0),
+                           phuongThuc NVARCHAR(30) NULL CONSTRAINT DF_ThanhToan_phuongThuc DEFAULT N'Tiền mặt',
+                           soThamChieu NVARCHAR(100) NULL,
+                           ghiChu NVARCHAR(MAX) NULL,
+                           loaiGiaoDich NVARCHAR(30) NULL CONSTRAINT DF_ThanhToan_loaiGiaoDich DEFAULT N'THANH_TOAN',
+                           trangThai NVARCHAR(30) NULL CONSTRAINT DF_ThanhToan_trangThai DEFAULT N'Hoàn tất',
                            FOREIGN KEY (maHoaDon) REFERENCES HoaDon(maHoaDon),
                            FOREIGN KEY (maNhanVien) REFERENCES NhanVien(maNhanVien)
 );
@@ -372,6 +403,7 @@ IF COL_LENGTH('HoaDon', 'tienCocTru') IS NULL ALTER TABLE HoaDon ADD tienCocTru 
 IF COL_LENGTH('HoaDon', 'trangThai') IS NULL ALTER TABLE HoaDon ADD trangThai NVARCHAR(30) NULL;
 IF COL_LENGTH('HoaDon', 'ghiChu') IS NULL ALTER TABLE HoaDon ADD ghiChu NVARCHAR(MAX) NULL;
 IF COL_LENGTH('HoaDon', 'ngayThanhToan') IS NULL ALTER TABLE HoaDon ADD ngayThanhToan DATETIME NULL;
+GO
 
 UPDATE HoaDon
 SET phuThu = ISNULL(phuThu, 0),
@@ -384,6 +416,7 @@ IF COL_LENGTH('ThanhToan', 'phuongThuc') IS NULL ALTER TABLE ThanhToan ADD phuon
 IF COL_LENGTH('ThanhToan', 'soThamChieu') IS NULL ALTER TABLE ThanhToan ADD soThamChieu NVARCHAR(100) NULL;
 IF COL_LENGTH('ThanhToan', 'ghiChu') IS NULL ALTER TABLE ThanhToan ADD ghiChu NVARCHAR(MAX) NULL;
 IF COL_LENGTH('ThanhToan', 'loaiGiaoDich') IS NULL ALTER TABLE ThanhToan ADD loaiGiaoDich NVARCHAR(30) NULL;
+GO
 
 UPDATE ThanhToan
 SET phuongThuc = ISNULL(phuongThuc, N'Tiền mặt'),
@@ -394,6 +427,86 @@ SET phuongThuc = ISNULL(phuongThuc, N'Tiền mặt'),
 IF COL_LENGTH('DatPhong', 'ghiChu') IS NULL ALTER TABLE DatPhong ADD ghiChu NVARCHAR(MAX) NULL;
 UPDATE DatPhong SET ghiChu = ISNULL(ghiChu, N'');
 UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai = N'Trống';
+
+/* ==================== PATCH TUONG THICH BO SUNG ==================== */
+IF OBJECT_ID('dbo.TaiKhoanQuyen', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TaiKhoanQuyen (
+        maTaiKhoan INT PRIMARY KEY,
+        permDashboard BIT NOT NULL DEFAULT 0,
+        permDatPhong BIT NOT NULL DEFAULT 0,
+        permCheckInOut BIT NOT NULL DEFAULT 0,
+        permThanhToan BIT NOT NULL DEFAULT 0,
+        permKhachHang BIT NOT NULL DEFAULT 0,
+        permPhong BIT NOT NULL DEFAULT 0,
+        permLoaiPhong BIT NOT NULL DEFAULT 0,
+        permBangGia BIT NOT NULL DEFAULT 0,
+        permDichVu BIT NOT NULL DEFAULT 0,
+        permTienNghi BIT NOT NULL DEFAULT 0,
+        permTaiKhoan BIT NOT NULL DEFAULT 0,
+        permNhanVien BIT NOT NULL DEFAULT 0,
+        permBaoCao BIT NOT NULL DEFAULT 0,
+        FOREIGN KEY (maTaiKhoan) REFERENCES dbo.TaiKhoan(maTaiKhoan)
+    );
+END
+
+IF OBJECT_ID('dbo.NgayLe', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.NgayLe (
+        maNgayLe INT IDENTITY(1,1) PRIMARY KEY,
+        tenNgayLe NVARCHAR(200) NOT NULL,
+        ngay DATE NOT NULL,
+        moTa NVARCHAR(500) NULL,
+        trangThai NVARCHAR(30) NOT NULL DEFAULT N'Đang áp dụng'
+    );
+END
+
+IF COL_LENGTH('HoaDon', 'phuThu') IS NULL ALTER TABLE HoaDon ADD phuThu DECIMAL(15,0) NULL;
+IF COL_LENGTH('HoaDon', 'giamGia') IS NULL ALTER TABLE HoaDon ADD giamGia DECIMAL(15,0) NULL;
+IF COL_LENGTH('HoaDon', 'tienCocTru') IS NULL ALTER TABLE HoaDon ADD tienCocTru DECIMAL(15,0) NULL;
+IF COL_LENGTH('HoaDon', 'trangThai') IS NULL ALTER TABLE HoaDon ADD trangThai NVARCHAR(30) NULL;
+IF COL_LENGTH('HoaDon', 'ghiChu') IS NULL ALTER TABLE HoaDon ADD ghiChu NVARCHAR(MAX) NULL;
+IF COL_LENGTH('HoaDon', 'ngayThanhToan') IS NULL ALTER TABLE HoaDon ADD ngayThanhToan DATETIME NULL;
+
+IF COL_LENGTH('ThanhToan', 'phuongThuc') IS NULL ALTER TABLE ThanhToan ADD phuongThuc NVARCHAR(30) NULL;
+IF COL_LENGTH('ThanhToan', 'soThamChieu') IS NULL ALTER TABLE ThanhToan ADD soThamChieu NVARCHAR(100) NULL;
+IF COL_LENGTH('ThanhToan', 'ghiChu') IS NULL ALTER TABLE ThanhToan ADD ghiChu NVARCHAR(MAX) NULL;
+IF COL_LENGTH('ThanhToan', 'loaiGiaoDich') IS NULL ALTER TABLE ThanhToan ADD loaiGiaoDich NVARCHAR(30) NULL;
+IF COL_LENGTH('ThanhToan', 'trangThai') IS NULL ALTER TABLE ThanhToan ADD trangThai NVARCHAR(30) NULL;
+GO
+
+IF COL_LENGTH('DatPhong', 'ghiChu') IS NULL ALTER TABLE DatPhong ADD ghiChu NVARCHAR(MAX) NULL;
+
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.ChiTietHoaDon') AND name = 'loaiChiPhi')
+    ALTER TABLE dbo.ChiTietHoaDon ALTER COLUMN loaiChiPhi NVARCHAR(500) NOT NULL;
+GO
+
+UPDATE HoaDon
+SET phuThu = ISNULL(phuThu, 0),
+    giamGia = ISNULL(giamGia, 0),
+    tienCocTru = ISNULL(tienCocTru, 0),
+    trangThai = ISNULL(trangThai, N'Chờ thanh toán'),
+    ghiChu = ISNULL(ghiChu, N'');
+
+UPDATE ThanhToan
+SET phuongThuc = ISNULL(phuongThuc, N'Tiền mặt'),
+    soThamChieu = ISNULL(soThamChieu, N''),
+    ghiChu = ISNULL(ghiChu, N''),
+    loaiGiaoDich = ISNULL(loaiGiaoDich, N'THANH_TOAN'),
+    trangThai = ISNULL(trangThai, N'Hoàn tất');
+
+UPDATE DatPhong SET ghiChu = ISNULL(ghiChu, N'');
+UPDATE Phong SET trangThai = N'Hoạt động' WHERE trangThai = N'Trống';
+
+IF NOT EXISTS (SELECT 1 FROM dbo.NgayLe WHERE ngay = '2026-01-01')
+    INSERT INTO dbo.NgayLe (tenNgayLe, ngay, moTa, trangThai) VALUES (N'Tết Dương lịch', '2026-01-01', N'Nghỉ lễ đầu năm', N'Đang áp dụng');
+IF NOT EXISTS (SELECT 1 FROM dbo.NgayLe WHERE ngay = '2026-04-30')
+    INSERT INTO dbo.NgayLe (tenNgayLe, ngay, moTa, trangThai) VALUES (N'Ngày Giải phóng miền Nam', '2026-04-30', N'Ngày lễ quốc gia', N'Đang áp dụng');
+IF NOT EXISTS (SELECT 1 FROM dbo.NgayLe WHERE ngay = '2026-05-01')
+    INSERT INTO dbo.NgayLe (tenNgayLe, ngay, moTa, trangThai) VALUES (N'Quốc tế Lao động', '2026-05-01', N'Ngày lễ quốc gia', N'Đang áp dụng');
+IF NOT EXISTS (SELECT 1 FROM dbo.NgayLe WHERE ngay = '2026-09-02')
+    INSERT INTO dbo.NgayLe (tenNgayLe, ngay, moTa, trangThai) VALUES (N'Quốc khánh', '2026-09-02', N'Ngày lễ quốc gia', N'Đang áp dụng');
+GO
 
 /* ==================== SEED DEMO FULL FIXED ==================== */
 

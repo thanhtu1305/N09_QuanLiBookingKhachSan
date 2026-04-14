@@ -163,7 +163,6 @@ public class BaoCaoPhongGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Xem báo cáo", BRAND_GREEN, Color.WHITE, e -> loadRoomData(true)));
         card.add(createPrimaryButton("Xuất file", BRAND_BLUE, Color.WHITE, e -> showInfo("Đã sẵn sàng xuất báo cáo phòng.")));
-        card.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE, e -> resetFilters()));
         return card;
     }
 
@@ -194,8 +193,10 @@ public class BaoCaoPhongGUI extends JFrame {
         lblSearch.setForeground(TEXT_MUTED);
 
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(210, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Loại phòng hoặc trạng thái");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> loadRoomData(false));
+        ScreenUIHelper.installAutoFilter(() -> loadRoomData(false), cboNgay, cboThang, cboNam);
 
         right.add(lblSearch);
         right.add(Box.createVerticalStrut(4));
@@ -360,7 +361,6 @@ public class BaoCaoPhongGUI extends JFrame {
                 TEXT_MUTED,
                 "F1 Xem báo cáo",
                 "F2 Xuất file",
-                "F5 Làm mới",
                 "Enter Xem chi tiết"
         );
     }

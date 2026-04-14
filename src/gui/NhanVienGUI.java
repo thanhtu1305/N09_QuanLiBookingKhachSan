@@ -202,7 +202,6 @@ public class NhanVienGUI extends JFrame {
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Thêm nhân viên", ACCENT_GREEN, Color.WHITE, e -> openNhanVienDialog(null)));
-        card.add(createPrimaryButton("Cập nhật", ACCENT_BLUE, Color.WHITE, e -> openEditSelectedNhanVien()));
         card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedNhanVien()));
         return card;
     }
@@ -214,8 +213,9 @@ public class NhanVienGUI extends JFrame {
         cboChucVuFilter = createComboBox(prependAll(STAFF_ROLE_OPTIONS));
         cboTrangThaiFilter = createComboBox(prependAll(TRANG_THAI_OPTIONS));
         txtHoTenFilter = createInputField("");
-        txtHoTenFilter.setPreferredSize(new Dimension(260, 34));
+        ScreenUIHelper.applySearchFieldSize(txtHoTenFilter);
         ScreenUIHelper.installLiveSearch(txtHoTenFilter, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboChucVuFilter, cboTrangThaiFilter);
 
         left.add(createFieldGroup("Chức vụ", cboChucVuFilter));
         left.add(createFieldGroup("Trạng thái", cboTrangThaiFilter));
@@ -549,6 +549,7 @@ public class NhanVienGUI extends JFrame {
             if (showMessage) {
                 JOptionPane.showMessageDialog(this, "Vui lòng chọn một nhân viên.", "Thông báo", JOptionPane.WARNING_MESSAGE);
             }
+            return null;
         }
         return displayedNhanVien.get(row);
     }

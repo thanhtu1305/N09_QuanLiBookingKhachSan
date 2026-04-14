@@ -166,10 +166,8 @@ public class TienNghiGUI extends JFrame {
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Thêm tiện nghi", new Color(22, 163, 74), Color.WHITE, e -> openCreateAmenityDialog()));
-        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateAmenityDialog()));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateAmenityDialog()));
         card.add(createPrimaryButton("Xóa tiện nghi", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedAmenity()));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -182,8 +180,10 @@ public class TienNghiGUI extends JFrame {
         cboNhomTienNghi = createComboBox(new String[]{"Tất cả", "Cơ bản", "Giải trí", "Phòng tắm", "Tiện nghi bổ sung", "An toàn"});
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Đang áp dụng", "Ngừng áp dụng"});
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(290, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Mã tiện nghi / tên tiện nghi");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboNhomTienNghi, cboTrangThai);
 
         left.add(createFieldGroup("Nhóm tiện nghi", cboNhomTienNghi));
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
@@ -201,7 +201,6 @@ public class TienNghiGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -252,9 +251,7 @@ public class TienNghiGUI extends JFrame {
         tblTienNghi.setGridColor(BORDER_SOFT);
         tblTienNghi.setShowGrid(true);
         tblTienNghi.setFillsViewportHeight(true);
-        tblTienNghi.getTableHeader().setFont(new Font("Segoe UI", Font.BOLD, 13));
-        tblTienNghi.getTableHeader().setBackground(new Color(243, 244, 246));
-        tblTienNghi.getTableHeader().setForeground(TEXT_PRIMARY);
+        ScreenUIHelper.styleTableHeader(tblTienNghi);
 
         tblTienNghi.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
@@ -1037,12 +1034,12 @@ public class TienNghiGUI extends JFrame {
             content.add(card, BorderLayout.CENTER);
 
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            JButton btnSave = createPrimaryButton(amenity == null ? "Lưu" : "Lưu cập nhật", new Color(22, 163, 74), Color.WHITE, e -> submit(false));
             if (amenity == null) {
+                JButton btnSave = createPrimaryButton("Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit(false));
                 JButton btnSaveAndNew = createOutlineButton("Lưu và tạo mới", new Color(37, 99, 235), e -> submit(true));
                 content.add(buildDialogButtons(btnCancel, btnSaveAndNew, btnSave), BorderLayout.SOUTH);
             } else {
-                content.add(buildDialogButtons(btnCancel, btnSave), BorderLayout.SOUTH);
+                content.add(buildDialogButtons(btnCancel), BorderLayout.SOUTH);
             }
             add(content, BorderLayout.CENTER);
         }

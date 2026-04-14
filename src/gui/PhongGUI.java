@@ -192,13 +192,10 @@ public class PhongGUI extends JFrame {
         JButton btnDoiTrangThai = createPrimaryButton("Đổi trạng thái", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomDialog());
         JButton btnXoaPhong = createPrimaryButton("Xóa phòng", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedRoom());
         JButton btnGanLoaiPhong = createPrimaryButton("Gán loại phòng", new Color(99, 102, 241), Color.WHITE, e -> openAssignRoomTypeDialog());
-        JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
-
         card.add(btnThemPhong);
         card.add(btnDoiTrangThai);
         card.add(btnXoaPhong);
         card.add(btnGanLoaiPhong);
-        card.add(btnTimKiem);
         return card;
     }
 
@@ -212,7 +209,9 @@ public class PhongGUI extends JFrame {
         cboLoaiPhong = createComboBox(new String[]{"Tất cả"});
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Đã đặt", "Đang ở", "Không hoạt động", "Bảo trì"});
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(260, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboTang, cboLoaiPhong, cboTrangThai);
         txtTuKhoa.setToolTipText("Số phòng / mã phòng");
 
         left.add(createFieldGroup("Tầng", cboTang));
@@ -232,7 +231,6 @@ public class PhongGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);

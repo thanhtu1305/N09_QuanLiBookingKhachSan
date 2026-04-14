@@ -11,11 +11,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class CheckInOutDAO {
+    private static boolean schemaEnsured = false;
     private static final String SELECT_BASE =
             "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.checkOut, lt.soNguoi, lt.giaPhong, lt.tienCoc, "
                     + "dp.trangThai AS trangThaiDatPhong, kh.hoTen AS tenKhachHang, kh.soDienThoai AS soDienThoaiKhach, "
@@ -95,6 +99,13 @@ public class CheckInOutDAO {
 
         String status = safeTrim(trangThaiDatPhong);
         String sql = SELECT_BASE + " WHERE (? = '' OR dp.trangThai = ?) ORDER BY lt.maLuuTru DESC";
+        try {
+            ensureExtendedSchema(con);
+        } catch (Exception e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return result;
+        }
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setString(1, status);
             stmt.setString(2, status);
@@ -300,12 +311,20 @@ public class CheckInOutDAO {
             return items;
         }
 
-        String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, " +
-                "ISNULL(p.soPhong, N'ChĂ†Â°a gÄ‚Â¡n') AS soPhong, " +
+        String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, dp.maKhachHang AS maKhachHangChinh, " +
+                "ISNULL(p.soPhong, N'Chưa gán') AS soPhong, " +
                 "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong, N'-') AS tenLoaiPhong, " +
-                "dp.trangThai AS trangThaiDatPhong, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat " +
+                "dp.trangThai AS trangThaiDatPhong, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, " +
+                "roomGuest.maKhachHang AS maKhachHangDaiDien, " +
+                "khMain.hoTen AS tenKhachMacDinh, khMain.soDienThoai AS soDienThoaiMacDinh, khMain.cccdPassport AS cccdPassportMacDinh, " +
+                "khMain.ngaySinh AS ngaySinhMacDinh, khMain.email AS emailMacDinh, khMain.diaChi AS diaChiMacDinh, khMain.ghiChu AS ghiChuMacDinh, " +
+                "khRep.hoTen AS tenKhachDaiDien, khRep.soDienThoai AS soDienThoaiDaiDien, khRep.cccdPassport AS cccdPassportDaiDien, " +
+                "khRep.ngaySinh AS ngaySinhDaiDien, khRep.email AS emailDaiDien, khRep.diaChi AS diaChiDaiDien, khRep.ghiChu AS ghiChuDaiDien " +
                 "FROM ChiTietDatPhong ctdp " +
                 "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "LEFT JOIN KhachHang khMain ON khMain.maKhachHang = dp.maKhachHang " +
+                "LEFT JOIN ChiTietDatPhongKhachDaiDien roomGuest ON roomGuest.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                "LEFT JOIN KhachHang khRep ON khRep.maKhachHang = roomGuest.maKhachHang " +
                 "LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong " +
                 "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong " +
                 "LEFT JOIN BangGia bg ON bg.maBangGia = dp.maBangGia " +
@@ -327,6 +346,22 @@ public class CheckInOutDAO {
                     item.setSoNguoi(rs.getInt("soNguoi"));
                     item.setGiaPhong(rs.getDouble("giaPhong"));
                     item.setTienCoc(rs.getDouble("tienCoc"));
+                    item.setMaKhachHangChinh(rs.getObject("maKhachHangChinh") == null ? 0 : rs.getInt("maKhachHangChinh"));
+                    item.setMaKhachHangDaiDien(rs.getObject("maKhachHangDaiDien") == null ? 0 : rs.getInt("maKhachHangDaiDien"));
+                    item.setTenKhachMacDinh(safeTrim(rs.getString("tenKhachMacDinh")));
+                    item.setSoDienThoaiMacDinh(safeTrim(rs.getString("soDienThoaiMacDinh")));
+                    item.setCccdPassportMacDinh(safeTrim(rs.getString("cccdPassportMacDinh")));
+                    item.setNgaySinhMacDinh(rs.getDate("ngaySinhMacDinh") == null ? null : rs.getDate("ngaySinhMacDinh").toLocalDate());
+                    item.setEmailMacDinh(safeTrim(rs.getString("emailMacDinh")));
+                    item.setDiaChiMacDinh(safeTrim(rs.getString("diaChiMacDinh")));
+                    item.setGhiChuMacDinh(safeTrim(rs.getString("ghiChuMacDinh")));
+                    item.setTenKhachDaiDien(safeTrim(rs.getString("tenKhachDaiDien")));
+                    item.setSoDienThoaiDaiDien(safeTrim(rs.getString("soDienThoaiDaiDien")));
+                    item.setCccdPassportDaiDien(safeTrim(rs.getString("cccdPassportDaiDien")));
+                    item.setNgaySinhDaiDien(rs.getDate("ngaySinhDaiDien") == null ? null : rs.getDate("ngaySinhDaiDien").toLocalDate());
+                    item.setEmailDaiDien(safeTrim(rs.getString("emailDaiDien")));
+                    item.setDiaChiDaiDien(safeTrim(rs.getString("diaChiDaiDien")));
+                    item.setGhiChuDaiDien(safeTrim(rs.getString("ghiChuDaiDien")));
                     item.setTrangThai(resolveCheckInItemStatus(
                             item.getMaPhong(),
                             safeTrim(rs.getString("trangThaiDatPhong")),
@@ -344,11 +379,22 @@ public class CheckInOutDAO {
     }
 
     public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
+        return checkInBookingDetails(maDatPhong, maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien, null);
+    }
+
+    public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien, Map<Integer, RoomRepresentativeInfo> representativeByDetail) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
         if (con == null || bookingId == null) {
             setLastError(con == null ? "KhÄ‚Â´ng thĂ¡Â»Æ’ kĂ¡ÂºÂ¿t nĂ¡Â»â€˜i cĂ†Â¡ sĂ¡Â»Å¸ dĂ¡Â»Â¯ liĂ¡Â»â€¡u." : "MÄ‚Â£ Ă„â€˜Ă¡ÂºÂ·t phÄ‚Â²ng khÄ‚Â´ng hĂ¡Â»Â£p lĂ¡Â»â€¡.");
+            return 0;
+        }
+        try {
+            ensureExtendedSchema(con);
+        } catch (Exception e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
             return 0;
         }
         List<Integer> detailIds = sanitizeDetailIds(maChiTietDatPhongIds);
@@ -358,7 +404,7 @@ public class CheckInOutDAO {
         }
 
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc ")
+        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, dp.maKhachHang ")
                 .append("FROM ChiTietDatPhong ctdp ")
                 .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
                 .append("WHERE ctdp.maDatPhong = ? ")
@@ -374,6 +420,8 @@ public class CheckInOutDAO {
 
         try {
             con.setAutoCommit(false);
+            Map<Integer, RoomRepresentativeInfo> normalizedRepresentatives = representativeByDetail == null ? new LinkedHashMap<Integer, RoomRepresentativeInfo>() : representativeByDetail;
+            validateRepresentativeInputs(con, bookingId.intValue(), detailIds, normalizedRepresentatives);
             int affected = 0;
             try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
                  PreparedStatement insertStmt = con.prepareStatement(
@@ -404,6 +452,7 @@ public class CheckInOutDAO {
 
                         roomStmt.setInt(1, maPhong);
                         roomStmt.executeUpdate();
+                        persistRepresentativeForDetail(con, maChiTietDatPhong, bookingId.intValue(), rs.getObject("maKhachHang") == null ? 0 : rs.getInt("maKhachHang"), normalizedRepresentatives.get(Integer.valueOf(maChiTietDatPhong)));
                     }
                 }
             }
@@ -429,7 +478,7 @@ public class CheckInOutDAO {
         }
     }
 
-        public boolean checkInFromBooking(String maDatPhong, String maPhong, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
+    public boolean checkInFromBooking(String maDatPhong, String maPhong, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
@@ -529,6 +578,241 @@ public class CheckInOutDAO {
             }
         }
         new DatPhongDAO().refreshRoomStatuses(con, roomIds);
+    }
+
+
+    private void ensureExtendedSchema(Connection con) throws Exception {
+        if (schemaEnsured || con == null) {
+            return;
+        }
+        executeSql(con,
+                "IF OBJECT_ID(N'dbo.ChiTietDatPhongKhachDaiDien', N'U') IS NULL " +
+                        "BEGIN CREATE TABLE ChiTietDatPhongKhachDaiDien(" +
+                        "maChiTietDatPhong INT NOT NULL PRIMARY KEY, " +
+                        "maKhachHang INT NOT NULL, " +
+                        "ngayTao DATETIME NOT NULL CONSTRAINT DF_ChiTietDatPhongKhachDaiDien_ngayTao DEFAULT GETDATE()) END");
+        schemaEnsured = true;
+    }
+
+    private void executeSql(Connection con, String sql) throws Exception {
+        try (Statement st = con.createStatement()) {
+            st.execute(sql);
+        }
+    }
+
+    private void validateRepresentativeInputs(Connection con,
+                                              int maDatPhong,
+                                              List<Integer> detailIds,
+                                              Map<Integer, RoomRepresentativeInfo> representativeByDetail) throws SQLException {
+        if (con == null || detailIds == null || detailIds.isEmpty()) {
+            return;
+        }
+        int primaryDetailId = findPrimaryDetailId(con, maDatPhong);
+        for (Integer detailId : detailIds) {
+            if (detailId == null || detailId.intValue() <= 0 || detailId.intValue() == primaryDetailId) {
+                continue;
+            }
+            RoomRepresentativeInfo representative = representativeByDetail == null ? null : representativeByDetail.get(Integer.valueOf(detailId.intValue()));
+            if (representative == null || isBlank(representative.getHoTen()) || isBlank(representative.getCccdPassport())) {
+                throw new SQLException("Phong phu phai co khach dai dien rieng voi ho ten va CCCD/Passport truoc khi check-in.");
+            }
+        }
+    }
+
+    private void persistRepresentativeForDetail(Connection con,
+                                                int maChiTietDatPhong,
+                                                int maDatPhong,
+                                                int maKhachHangChinh,
+                                                RoomRepresentativeInfo representative) throws SQLException {
+        if (con == null || maChiTietDatPhong <= 0 || maDatPhong <= 0) {
+            return;
+        }
+        int primaryDetailId = findPrimaryDetailId(con, maDatPhong);
+        if (maChiTietDatPhong == primaryDetailId && (representative == null || !representative.hasInput())) {
+            deleteRepresentativeForDetail(con, maChiTietDatPhong);
+            return;
+        }
+        if (representative == null || !representative.hasInput()) {
+            return;
+        }
+        int maKhachHang = findOrCreateRepresentativeCustomer(con, representative, maKhachHangChinh);
+        upsertRepresentativeForDetail(con, maChiTietDatPhong, maKhachHang);
+    }
+
+    private int findPrimaryDetailId(Connection con, int maDatPhong) throws SQLException {
+        String sql = "SELECT TOP 1 ctdp.maChiTietDatPhong FROM ChiTietDatPhong ctdp " +
+                "LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong " +
+                "WHERE ctdp.maDatPhong = ? " +
+                "ORDER BY CASE WHEN TRY_CAST(p.soPhong AS INT) IS NULL THEN 1 ELSE 0 END, TRY_CAST(p.soPhong AS INT), p.soPhong, ctdp.maChiTietDatPhong";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maDatPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
+        }
+        return 0;
+    }
+
+    private void upsertRepresentativeForDetail(Connection con, int maChiTietDatPhong, int maKhachHang) throws SQLException {
+        String sql = "MERGE ChiTietDatPhongKhachDaiDien AS target " +
+                "USING (SELECT ? AS maChiTietDatPhong, ? AS maKhachHang) AS source " +
+                "ON target.maChiTietDatPhong = source.maChiTietDatPhong " +
+                "WHEN MATCHED THEN UPDATE SET maKhachHang = source.maKhachHang " +
+                "WHEN NOT MATCHED THEN INSERT(maChiTietDatPhong, maKhachHang) VALUES(source.maChiTietDatPhong, source.maKhachHang);";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maChiTietDatPhong);
+            ps.setInt(2, maKhachHang);
+            ps.executeUpdate();
+        }
+    }
+
+    private void deleteRepresentativeForDetail(Connection con, int maChiTietDatPhong) throws SQLException {
+        try (PreparedStatement ps = con.prepareStatement("DELETE FROM ChiTietDatPhongKhachDaiDien WHERE maChiTietDatPhong = ?")) {
+            ps.setInt(1, maChiTietDatPhong);
+            ps.executeUpdate();
+        }
+    }
+
+    private int findOrCreateRepresentativeCustomer(Connection con, RoomRepresentativeInfo representative, int maKhachHangChinh) throws SQLException {
+        Integer existing = findCustomerIdByCccd(con, representative.getCccdPassport());
+        if (existing == null) {
+            existing = findCustomerIdByPhone(con, representative.getSoDienThoai());
+        }
+        if (existing != null && existing.intValue() > 0) {
+            updateRepresentativeCustomer(con, existing.intValue(), representative);
+            return existing.intValue();
+        }
+        if (maKhachHangChinh > 0 && isRepresentativeOfMainCustomer(con, maKhachHangChinh, representative)) {
+            return maKhachHangChinh;
+        }
+        return insertRepresentativeCustomer(con, representative);
+    }
+
+    private boolean isRepresentativeOfMainCustomer(Connection con, int maKhachHangChinh, RoomRepresentativeInfo representative) throws SQLException {
+        String sql = "SELECT hoTen, soDienThoai, cccdPassport FROM KhachHang WHERE maKhachHang = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maKhachHangChinh);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return false;
+                String cccd = safeTrim(rs.getString("cccdPassport"));
+                String phone = safeTrim(rs.getString("soDienThoai"));
+                String name = safeTrim(rs.getString("hoTen"));
+                if (!isBlank(representative.getCccdPassport()) && representative.getCccdPassport().equalsIgnoreCase(cccd)) {
+                    return true;
+                }
+                return !isBlank(representative.getSoDienThoai()) && representative.getSoDienThoai().equalsIgnoreCase(phone)
+                        && safeTrim(representative.getHoTen()).equalsIgnoreCase(name);
+            }
+        }
+    }
+
+    private Integer findCustomerIdByCccd(Connection con, String cccdPassport) throws SQLException {
+        String value = safeTrim(cccdPassport);
+        if (value.isEmpty()) return null;
+        try (PreparedStatement ps = con.prepareStatement("SELECT TOP 1 maKhachHang FROM KhachHang WHERE cccdPassport = ? ORDER BY maKhachHang DESC")) {
+            ps.setString(1, value);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Integer.valueOf(rs.getInt(1));
+            }
+        }
+        return null;
+    }
+
+    private Integer findCustomerIdByPhone(Connection con, String soDienThoai) throws SQLException {
+        String value = safeTrim(soDienThoai);
+        if (value.isEmpty()) return null;
+        try (PreparedStatement ps = con.prepareStatement("SELECT TOP 1 maKhachHang FROM KhachHang WHERE soDienThoai = ? ORDER BY maKhachHang DESC")) {
+            ps.setString(1, value);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return Integer.valueOf(rs.getInt(1));
+            }
+        }
+        return null;
+    }
+
+    private int insertRepresentativeCustomer(Connection con, RoomRepresentativeInfo representative) throws SQLException {
+        String sql = "INSERT INTO KhachHang(hoTen, gioiTinh, ngaySinh, soDienThoai, email, cccdPassport, diaChi, quocTich, loaiKhach, hangKhach, trangThai, nguoiTao, ghiChu) " +
+                "VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, N'Hoạt động', N'CheckInOut', ?)";
+        try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, safeTrim(representative.getHoTen()));
+            if (representative.getNgaySinh() == null) {
+                ps.setNull(2, java.sql.Types.DATE);
+            } else {
+                ps.setDate(2, java.sql.Date.valueOf(representative.getNgaySinh()));
+            }
+            ps.setString(3, nullIfEmpty(representative.getSoDienThoai()));
+            ps.setString(4, nullIfEmpty(representative.getEmail()));
+            ps.setString(5, nullIfEmpty(representative.getCccdPassport()));
+            ps.setString(6, nullIfEmpty(representative.getDiaChi()));
+            ps.setString(7, nullIfEmpty(representative.getGhiChu()));
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        }
+        throw new SQLException("Khong the tao khach dai dien.");
+    }
+
+    private void updateRepresentativeCustomer(Connection con, int maKhachHang, RoomRepresentativeInfo representative) throws SQLException {
+        String sql = "UPDATE KhachHang SET hoTen = ?, ngaySinh = ?, soDienThoai = ?, email = ?, cccdPassport = ?, diaChi = ?, ghiChu = ? WHERE maKhachHang = ?";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, safeTrim(representative.getHoTen()));
+            if (representative.getNgaySinh() == null) {
+                ps.setNull(2, java.sql.Types.DATE);
+            } else {
+                ps.setDate(2, java.sql.Date.valueOf(representative.getNgaySinh()));
+            }
+            ps.setString(3, nullIfEmpty(representative.getSoDienThoai()));
+            ps.setString(4, nullIfEmpty(representative.getEmail()));
+            ps.setString(5, nullIfEmpty(representative.getCccdPassport()));
+            ps.setString(6, nullIfEmpty(representative.getDiaChi()));
+            ps.setString(7, nullIfEmpty(representative.getGhiChu()));
+            ps.setInt(8, maKhachHang);
+            ps.executeUpdate();
+        }
+    }
+
+    public CustomerLookupResult findCustomerByCccd(String cccdPassport) {
+        clearLastError();
+        String value = safeTrim(cccdPassport);
+        if (value.isEmpty()) return null;
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("Khong the ket noi co so du lieu.");
+            return null;
+        }
+        String sql = "SELECT TOP 1 hoTen, soDienThoai, cccdPassport, ngaySinh, email, diaChi, ghiChu FROM KhachHang WHERE cccdPassport = ? ORDER BY maKhachHang DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, value);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    CustomerLookupResult result = new CustomerLookupResult();
+                    result.setHoTen(safeTrim(rs.getString("hoTen")));
+                    result.setSoDienThoai(safeTrim(rs.getString("soDienThoai")));
+                    result.setCccdPassport(safeTrim(rs.getString("cccdPassport")));
+                    result.setNgaySinh(rs.getDate("ngaySinh") == null ? null : rs.getDate("ngaySinh").toLocalDate());
+                    result.setEmail(safeTrim(rs.getString("email")));
+                    result.setDiaChi(safeTrim(rs.getString("diaChi")));
+                    result.setGhiChu(safeTrim(rs.getString("ghiChu")));
+                    return result;
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private String nullIfEmpty(String value) {
+        String trimmed = safeTrim(value);
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private void fillStatement(PreparedStatement stmt, LuuTru luuTru) throws SQLException {
@@ -821,6 +1105,7 @@ public class CheckInOutDAO {
         return detailIds;
     }
 
+
     public static final class CheckInBookingItem {
         private int maChiTietDatPhong;
         private int maPhong;
@@ -830,76 +1115,129 @@ public class CheckInOutDAO {
         private double giaPhong;
         private double tienCoc;
         private String trangThai;
+        private int maKhachHangChinh;
+        private int maKhachHangDaiDien;
+        private String tenKhachMacDinh;
+        private String soDienThoaiMacDinh;
+        private String cccdPassportMacDinh;
+        private LocalDate ngaySinhMacDinh;
+        private String emailMacDinh;
+        private String diaChiMacDinh;
+        private String ghiChuMacDinh;
+        private String tenKhachDaiDien;
+        private String soDienThoaiDaiDien;
+        private String cccdPassportDaiDien;
+        private LocalDate ngaySinhDaiDien;
+        private String emailDaiDien;
+        private String diaChiDaiDien;
+        private String ghiChuDaiDien;
 
-        public int getMaChiTietDatPhong() {
-            return maChiTietDatPhong;
-        }
+        public int getMaChiTietDatPhong() { return maChiTietDatPhong; }
+        public void setMaChiTietDatPhong(int maChiTietDatPhong) { this.maChiTietDatPhong = maChiTietDatPhong; }
+        public int getMaPhong() { return maPhong; }
+        public void setMaPhong(int maPhong) { this.maPhong = maPhong; }
+        public String getSoPhong() { return soPhong; }
+        public void setSoPhong(String soPhong) { this.soPhong = soPhong; }
+        public String getTenLoaiPhong() { return tenLoaiPhong; }
+        public void setTenLoaiPhong(String tenLoaiPhong) { this.tenLoaiPhong = tenLoaiPhong; }
+        public int getSoNguoi() { return soNguoi; }
+        public void setSoNguoi(int soNguoi) { this.soNguoi = soNguoi; }
+        public double getGiaPhong() { return giaPhong; }
+        public void setGiaPhong(double giaPhong) { this.giaPhong = giaPhong; }
+        public double getTienCoc() { return tienCoc; }
+        public void setTienCoc(double tienCoc) { this.tienCoc = tienCoc; }
+        public String getTrangThai() { return trangThai; }
+        public void setTrangThai(String trangThai) { this.trangThai = trangThai; }
+        public boolean canCheckIn() { return maChiTietDatPhong > 0 && maPhong > 0 && "Chờ check-in".equalsIgnoreCase(trangThai); }
+        public int getMaKhachHangChinh() { return maKhachHangChinh; }
+        public void setMaKhachHangChinh(int maKhachHangChinh) { this.maKhachHangChinh = maKhachHangChinh; }
+        public int getMaKhachHangDaiDien() { return maKhachHangDaiDien; }
+        public void setMaKhachHangDaiDien(int maKhachHangDaiDien) { this.maKhachHangDaiDien = maKhachHangDaiDien; }
+        public String getTenKhachMacDinh() { return tenKhachMacDinh; }
+        public void setTenKhachMacDinh(String tenKhachMacDinh) { this.tenKhachMacDinh = tenKhachMacDinh; }
+        public String getSoDienThoaiMacDinh() { return soDienThoaiMacDinh; }
+        public void setSoDienThoaiMacDinh(String soDienThoaiMacDinh) { this.soDienThoaiMacDinh = soDienThoaiMacDinh; }
+        public String getCccdPassportMacDinh() { return cccdPassportMacDinh; }
+        public void setCccdPassportMacDinh(String cccdPassportMacDinh) { this.cccdPassportMacDinh = cccdPassportMacDinh; }
+        public LocalDate getNgaySinhMacDinh() { return ngaySinhMacDinh; }
+        public void setNgaySinhMacDinh(LocalDate ngaySinhMacDinh) { this.ngaySinhMacDinh = ngaySinhMacDinh; }
+        public String getEmailMacDinh() { return emailMacDinh; }
+        public void setEmailMacDinh(String emailMacDinh) { this.emailMacDinh = emailMacDinh; }
+        public String getDiaChiMacDinh() { return diaChiMacDinh; }
+        public void setDiaChiMacDinh(String diaChiMacDinh) { this.diaChiMacDinh = diaChiMacDinh; }
+        public String getGhiChuMacDinh() { return ghiChuMacDinh; }
+        public void setGhiChuMacDinh(String ghiChuMacDinh) { this.ghiChuMacDinh = ghiChuMacDinh; }
+        public String getTenKhachDaiDien() { return tenKhachDaiDien; }
+        public void setTenKhachDaiDien(String tenKhachDaiDien) { this.tenKhachDaiDien = tenKhachDaiDien; }
+        public String getSoDienThoaiDaiDien() { return soDienThoaiDaiDien; }
+        public void setSoDienThoaiDaiDien(String soDienThoaiDaiDien) { this.soDienThoaiDaiDien = soDienThoaiDaiDien; }
+        public String getCccdPassportDaiDien() { return cccdPassportDaiDien; }
+        public void setCccdPassportDaiDien(String cccdPassportDaiDien) { this.cccdPassportDaiDien = cccdPassportDaiDien; }
+        public LocalDate getNgaySinhDaiDien() { return ngaySinhDaiDien; }
+        public void setNgaySinhDaiDien(LocalDate ngaySinhDaiDien) { this.ngaySinhDaiDien = ngaySinhDaiDien; }
+        public String getEmailDaiDien() { return emailDaiDien; }
+        public void setEmailDaiDien(String emailDaiDien) { this.emailDaiDien = emailDaiDien; }
+        public String getDiaChiDaiDien() { return diaChiDaiDien; }
+        public void setDiaChiDaiDien(String diaChiDaiDien) { this.diaChiDaiDien = diaChiDaiDien; }
+        public String getGhiChuDaiDien() { return ghiChuDaiDien; }
+        public void setGhiChuDaiDien(String ghiChuDaiDien) { this.ghiChuDaiDien = ghiChuDaiDien; }
+    }
 
-        public void setMaChiTietDatPhong(int maChiTietDatPhong) {
-            this.maChiTietDatPhong = maChiTietDatPhong;
-        }
+    public static final class RoomRepresentativeInfo {
+        private String hoTen;
+        private String soDienThoai;
+        private String cccdPassport;
+        private LocalDate ngaySinh;
+        private String email;
+        private String diaChi;
+        private String ghiChu;
 
-        public int getMaPhong() {
-            return maPhong;
+        public String getHoTen() { return hoTen; }
+        public void setHoTen(String hoTen) { this.hoTen = hoTen; }
+        public String getSoDienThoai() { return soDienThoai; }
+        public void setSoDienThoai(String soDienThoai) { this.soDienThoai = soDienThoai; }
+        public String getCccdPassport() { return cccdPassport; }
+        public void setCccdPassport(String cccdPassport) { this.cccdPassport = cccdPassport; }
+        public LocalDate getNgaySinh() { return ngaySinh; }
+        public void setNgaySinh(LocalDate ngaySinh) { this.ngaySinh = ngaySinh; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getDiaChi() { return diaChi; }
+        public void setDiaChi(String diaChi) { this.diaChi = diaChi; }
+        public String getGhiChu() { return ghiChu; }
+        public void setGhiChu(String ghiChu) { this.ghiChu = ghiChu; }
+        public boolean hasInput() {
+            return !(isBlank(hoTen) && isBlank(soDienThoai) && isBlank(cccdPassport) && ngaySinh == null && isBlank(email) && isBlank(diaChi) && isBlank(ghiChu));
         }
+        private boolean isBlank(String value) { return value == null || value.trim().isEmpty(); }
+    }
 
-        public void setMaPhong(int maPhong) {
-            this.maPhong = maPhong;
-        }
+    public static final class CustomerLookupResult {
+        private String hoTen;
+        private String soDienThoai;
+        private String cccdPassport;
+        private LocalDate ngaySinh;
+        private String email;
+        private String diaChi;
+        private String ghiChu;
 
-        public String getSoPhong() {
-            return soPhong;
-        }
+        public String getHoTen() { return hoTen; }
+        public void setHoTen(String hoTen) { this.hoTen = hoTen; }
+        public String getSoDienThoai() { return soDienThoai; }
+        public void setSoDienThoai(String soDienThoai) { this.soDienThoai = soDienThoai; }
+        public String getCccdPassport() { return cccdPassport; }
+        public void setCccdPassport(String cccdPassport) { this.cccdPassport = cccdPassport; }
+        public LocalDate getNgaySinh() { return ngaySinh; }
+        public void setNgaySinh(LocalDate ngaySinh) { this.ngaySinh = ngaySinh; }
+        public String getEmail() { return email; }
+        public void setEmail(String email) { this.email = email; }
+        public String getDiaChi() { return diaChi; }
+        public void setDiaChi(String diaChi) { this.diaChi = diaChi; }
+        public String getGhiChu() { return ghiChu; }
+        public void setGhiChu(String ghiChu) { this.ghiChu = ghiChu; }
+    }
 
-        public void setSoPhong(String soPhong) {
-            this.soPhong = soPhong;
-        }
-
-        public String getTenLoaiPhong() {
-            return tenLoaiPhong;
-        }
-
-        public void setTenLoaiPhong(String tenLoaiPhong) {
-            this.tenLoaiPhong = tenLoaiPhong;
-        }
-
-        public int getSoNguoi() {
-            return soNguoi;
-        }
-
-        public void setSoNguoi(int soNguoi) {
-            this.soNguoi = soNguoi;
-        }
-
-        public double getGiaPhong() {
-            return giaPhong;
-        }
-
-        public void setGiaPhong(double giaPhong) {
-            this.giaPhong = giaPhong;
-        }
-
-        public double getTienCoc() {
-            return tienCoc;
-        }
-
-        public void setTienCoc(double tienCoc) {
-            this.tienCoc = tienCoc;
-        }
-
-        public String getTrangThai() {
-            return trangThai;
-        }
-
-        public void setTrangThai(String trangThai) {
-            this.trangThai = trangThai;
-        }
-
-        public boolean canCheckIn() {
-            return maChiTietDatPhong > 0 && maPhong > 0 && "Ch\u1edd check-in".equalsIgnoreCase(trangThai);
-        }
+    private static String safeStaticTrim(String value) {
+        return value == null ? "" : value.trim();
     }
 }
-
-
-

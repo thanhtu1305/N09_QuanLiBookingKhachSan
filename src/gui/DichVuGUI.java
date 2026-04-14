@@ -163,7 +163,6 @@ public class DichVuGUI extends JFrame {
         card.add(primary("Thêm dịch vụ", new Color(22, 163, 74), e -> openServiceDialog(null)));
         card.add(primary("Xóa dịch vụ", new Color(220, 38, 38), e -> deleteSelectedService()));
         card.add(primary("Sử dụng dịch vụ", new Color(99, 102, 241), e -> openUsageDialog(getSelectedService(false))));
-        card.add(primary("Tìm kiếm", new Color(15, 118, 110), e -> applyFilters(true)));
         if (card.getComponentCount() >= 3 && card.getComponent(2) instanceof JButton) {
             ((JButton) card.getComponent(2)).setText("Ghi nhận sử dụng dịch vụ");
         }
@@ -179,8 +178,9 @@ public class DichVuGUI extends JFrame {
         left.add(field("Đơn vị", cboDonVi));
 
         txtTuKhoa = input("");
-        txtTuKhoa.setPreferredSize(new Dimension(300, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboDonVi);
 
         JPanel right = new JPanel();
         right.setOpaque(false);
@@ -456,37 +456,39 @@ public class DichVuGUI extends JFrame {
 
             add(dialogHeader(editing == null ? "Thêm dịch vụ mới" : "Cập nhật dịch vụ", "Nhập đúng dữ liệu của bảng DichVu."), BorderLayout.NORTH);
             add(cardWrap(form), BorderLayout.CENTER);
-            add(buttonBar(
-                    outline("Hủy", new Color(107, 114, 128), e -> dispose()),
-                    primary(editing == null ? "Lưu" : "Lưu cập nhật", new Color(22, 163, 74), e -> {
-                        if (safe(txtTen.getText()).isEmpty()) {
-                            warn("Tên dịch vụ không được rỗng.");
-                            return;
-                        }
-                        Double donGia = parseNonNegative(txtDonGia.getText(), "Đơn giá phải là số hợp lệ >= 0.");
-                        if (donGia == null) {
-                            return;
-                        }
-                        if (safe(txtDonVi.getText()).isEmpty()) {
-                            warn("Đơn vị không được rỗng.");
-                            return;
-                        }
+            if (editing == null) {
+                add(buttonBar(
+                        outline("Hủy", new Color(107, 114, 128), e -> dispose()),
+                        primary("Lưu", new Color(22, 163, 74), e -> {
+                            if (safe(txtTen.getText()).isEmpty()) {
+                                warn("Tên dịch vụ không được rỗng.");
+                                return;
+                            }
+                            Double donGia = parseNonNegative(txtDonGia.getText(), "Đơn giá phải là số hợp lệ >= 0.");
+                            if (donGia == null) {
+                                return;
+                            }
+                            if (safe(txtDonVi.getText()).isEmpty()) {
+                                warn("Đơn vị không được rỗng.");
+                                return;
+                            }
 
-                        DichVu dichVu = editing == null
-                                ? new DichVu(safe(txtTen.getText()), donGia, safe(txtDonVi.getText()))
-                                : new DichVu(editing.getMaDichVu(), safe(txtTen.getText()), donGia, safe(txtDonVi.getText()));
+                            DichVu dichVu = new DichVu(safe(txtTen.getText()), donGia, safe(txtDonVi.getText()));
+                            if (!dichVuDAO.insert(dichVu)) {
+                                error("Không thể thêm dịch vụ.");
+                                return;
+                            }
 
-                        boolean ok = editing == null ? dichVuDAO.insert(dichVu) : dichVuDAO.update(dichVu);
-                        if (!ok) {
-                            error(editing == null ? "Không thể thêm dịch vụ." : "Không thể cập nhật dịch vụ.");
-                            return;
-                        }
-
-                        loadServices(false, false);
-                        info(editing == null ? "Thêm dịch vụ thành công." : "Cập nhật dịch vụ thành công.");
-                        dispose();
-                    })
-            ), BorderLayout.SOUTH);
+                            loadServices(false, false);
+                            info("Thêm dịch vụ thành công.");
+                            dispose();
+                        })
+                ), BorderLayout.SOUTH);
+            } else {
+                add(buttonBar(
+                        outline("Hủy", new Color(107, 114, 128), e -> dispose())
+                ), BorderLayout.SOUTH);
+            }
 
             ScreenUIHelper.prepareDialog(this, owner, 560, 340);
         }
@@ -602,7 +604,6 @@ public class DichVuGUI extends JFrame {
             add(buttonBar(
                     outline("Đóng", new Color(107, 114, 128), e -> dispose()),
                     primary("Xóa", new Color(220, 38, 38), e -> deleteUsage()),
-                    primary("Cập nhật", new Color(37, 99, 235), e -> saveUsage(true)),
                     primary("Thêm", new Color(22, 163, 74), e -> saveUsage(false))
             ), BorderLayout.SOUTH);
 

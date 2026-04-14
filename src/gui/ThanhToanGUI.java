@@ -218,7 +218,6 @@ public class ThanhToanGUI extends JFrame {
         card.add(createPrimaryButton("In hóa đơn", new Color(37, 99, 235), Color.WHITE, e -> openInvoicePreviewDialog()));
         card.add(createPrimaryButton("Áp giảm giá", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDiscountDialog()));
         card.add(createPrimaryButton("Hoàn cọc", new Color(220, 38, 38), Color.WHITE, e -> openDepositRefundDialog()));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -233,7 +232,11 @@ public class ThanhToanGUI extends JFrame {
         txtTuNgay = new AppDatePickerField("", false);
         txtDenNgay = new AppDatePickerField("", false);
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(290, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installLiveSearch(txtTuNgay, () -> applyFilters(false));
+        ScreenUIHelper.installLiveSearch(txtDenNgay, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboTrangThai, cboPhuongThuc);
 
         left.add(createFieldGroup("Trạng thái hóa đơn", cboTrangThai));
         left.add(createFieldGroup("Phương thức thanh toán", cboPhuongThuc));
@@ -253,7 +256,6 @@ public class ThanhToanGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);
@@ -391,7 +393,7 @@ public class ThanhToanGUI extends JFrame {
         addDetailRow(body, "Số phòng", lblSoPhong);
         addDetailRow(body, "Check-in", lblCheckInThucTe);
         addDetailRow(body, "Check-out", lblCheckOutThucTe);
-        addDetailRow(body, "Thời lượng lưu trú", lblSoGioLuuTru);
+        addDetailRow(body, "Số giờ lưu trú", lblSoGioLuuTru);
         addDetailRow(body, "Loại ngày", lblLoaiNgayApDung);
         addDetailRow(body, "Loại giá", lblLoaiGiaApDung);
         addDetailRow(body, "Tiền phòng cuối", lblTienPhongCuoiCung);
@@ -680,7 +682,7 @@ public class ThanhToanGUI extends JFrame {
                     invoice.getNgayNhanPhong().toLocalDateTime(),
                     invoice.getNgayTraPhong().toLocalDateTime()
             ).toHours());
-            summary.soGioLuuTru = hours + " giờ";
+            summary.soGioLuuTru = String.valueOf(hours);
         }
 
         for (ChiTietDong line : invoice.getChiTiet()) {
@@ -688,30 +690,16 @@ public class ThanhToanGUI extends JFrame {
             if (!value.toLowerCase(Locale.ROOT).contains("tien phong")) {
                 continue;
             }
-            String[] parts = value.split("\\s-\\s");
-            if (parts.length >= 3) {
-                summary.soGioLuuTru = parts[parts.length - 2].trim();
-                summary.loaiNgay = parts[parts.length - 1].trim();
-                summary.loaiGia = resolveDisplayedStayType(summary.soGioLuuTru);
+            String[] parts = value.split("\\|");
+            if (parts.length >= 4) {
+                summary.loaiNgay = parts[1].trim();
+                summary.loaiGia = parts[2].trim();
+                summary.soGioLuuTru = parts[3].trim();
             }
             summary.tienPhongCuoi = ThanhToan.formatMoney(line.getThanhTien() > 0d ? line.getThanhTien() : line.getDonGia());
             break;
         }
         return summary;
-    }
-
-    private String resolveDisplayedStayType(String durationLabel) {
-        String normalized = safeValue(durationLabel, "").toLowerCase(Locale.ROOT);
-        if (normalized.contains("đêm")) {
-            return "Qua đêm";
-        }
-        if (normalized.contains("ngày")) {
-            return "Theo ngày";
-        }
-        if (normalized.contains("giờ")) {
-            return "Theo giờ";
-        }
-        return "-";
     }
 
     private void clearDetailPanel() {
@@ -759,9 +747,6 @@ public class ThanhToanGUI extends JFrame {
                 showWarning("Hóa đơn này đã thanh toán. Bạn chỉ có thể in hóa đơn.");
                 return;
             }
-            if (!ensureInvoiceReadyForPayment(invoice)) {
-                return;
-            }
             new PaymentDialog(this, invoice).setVisible(true);
         }
     }
@@ -769,9 +754,6 @@ public class ThanhToanGUI extends JFrame {
     private void openDiscountDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
-            if (!ensureInvoiceReadyForPayment(invoice)) {
-                return;
-            }
             new DiscountDialog(this, invoice).setVisible(true);
         }
     }
@@ -779,9 +761,6 @@ public class ThanhToanGUI extends JFrame {
     private void openDepositRefundDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
-            if (!ensureInvoiceReadyForPayment(invoice)) {
-                return;
-            }
             new DepositRefundDialog(this, invoice).setVisible(true);
         }
     }
@@ -856,19 +835,6 @@ public class ThanhToanGUI extends JFrame {
             m.invoke(null);
         } catch (Throwable ignored) {
         }
-    }
-
-    private boolean ensureInvoiceReadyForPayment(ThanhToan invoice) {
-        if (invoice == null) {
-            return false;
-        }
-        if (thanhToanDAO.isInvoiceReadyForPayment(invoice.getMaHoaDon())) {
-            return true;
-        }
-        showWarning(safeValue(thanhToanDAO.getLastErrorMessage(),
-                "Đơn này vẫn còn phòng chưa check-out, chưa thể thanh toán toàn bộ."));
-        reloadData(false);
-        return false;
     }
 
     private abstract class BasePaymentDialog extends JDialog {

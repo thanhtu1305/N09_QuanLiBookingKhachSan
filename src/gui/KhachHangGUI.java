@@ -183,10 +183,8 @@ public class KhachHangGUI extends JFrame {
 
     private JPanel buildActionBar() {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Cập nhật", new Color(37, 99, 235), Color.WHITE, e -> openUpdateCustomerDialog()));
         card.add(createPrimaryButton("Ngừng giao dịch", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateCustomerDialog()));
         card.add(createPrimaryButton("Xem lịch sử", new Color(99, 102, 241), Color.WHITE, e -> openCustomerHistoryDialog()));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -200,9 +198,10 @@ public class KhachHangGUI extends JFrame {
         cboHangKhach = createComboBox(new String[]{"Tất cả", "Thường", "VIP", "Đồng", "Bạc", "Vàng", "Kim cương"});
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Ngừng giao dịch"});
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(320, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Mã khách hàng / tên / số điện thoại / CCCD");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboLoaiKhach, cboHangKhach, cboTrangThai);
 
         left.add(createFieldGroup("Loại khách", cboLoaiKhach));
         left.add(createFieldGroup("Hạng khách", cboHangKhach));
@@ -1210,8 +1209,7 @@ public class KhachHangGUI extends JFrame {
                 JButton btnSaveBooking = createOutlineButton("Lưu và tạo booking", new Color(99, 102, 241), e -> submit("booking"));
                 content.add(buildDialogButtons(btnCancel, btnSaveBooking, btnSaveNew, btnSave), BorderLayout.SOUTH);
             } else {
-                JButton btnUpdate = createPrimaryButton("Lưu cập nhật", new Color(37, 99, 235), Color.WHITE, e -> submit("update"));
-                content.add(buildDialogButtons(btnCancel, btnUpdate), BorderLayout.SOUTH);
+                content.add(buildDialogButtons(btnCancel), BorderLayout.SOUTH);
             }
             add(content, BorderLayout.CENTER);
         }

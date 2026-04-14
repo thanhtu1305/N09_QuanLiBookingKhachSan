@@ -190,8 +190,6 @@ public class DashboardGUI extends JFrame {
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role)));
         card.add(createPrimaryButton("Thanh toán", BRAND_RED, Color.WHITE, e ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role)));
-        card.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE, e ->
-                loadDashboardData(true)));
         return card;
     }
 
@@ -684,7 +682,6 @@ public class DashboardGUI extends JFrame {
                 "F2 Check-in",
                 "F3 Check-out",
                 "F4 Thanh toán",
-                "F5 Làm mới",
                 "Enter Mở công việc"
         );
     }
@@ -698,8 +695,6 @@ public class DashboardGUI extends JFrame {
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.CHECK_IN_OUT, username, role));
         ScreenUIHelper.registerShortcut(this, "F4", "dashboard-f4", () ->
                 NavigationUtil.navigate(this, ScreenKey.DASHBOARD, ScreenKey.THANH_TOAN, username, role));
-        ScreenUIHelper.registerShortcut(this, "F5", "dashboard-f5", () ->
-                loadDashboardData(true));
         ScreenUIHelper.registerShortcut(this, "ENTER", "dashboard-enter", this::openSelectedTask);
     }
 

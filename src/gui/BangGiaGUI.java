@@ -182,7 +182,6 @@ public class BangGiaGUI extends JFrame {
         card.add(createPrimaryButton("Thêm bảng giá", new Color(22, 163, 74), Color.WHITE, e -> openBangGiaDialog(null)));
         card.add(createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> updateSelectedStatus()));
         card.add(createPrimaryButton("Xem chi tiết", new Color(99, 102, 241), Color.WHITE, e -> openViewSelectedBangGia()));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -210,8 +209,11 @@ public class BangGiaGUI extends JFrame {
         right.add(lblSearch);
         right.add(Box.createVerticalStrut(4));
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(260, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installLiveSearch(txtNgayBatDauFilter, () -> applyFilters(false));
+        ScreenUIHelper.installLiveSearch(txtNgayKetThucFilter, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboLoaiPhong, cboLoaiNgay, cboTrangThai);
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);

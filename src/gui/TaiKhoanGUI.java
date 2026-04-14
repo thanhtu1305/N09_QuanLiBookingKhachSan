@@ -364,7 +364,6 @@ public class TaiKhoanGUI extends JFrame {
         card.add(createPrimaryButton("Đặt lại mật khẩu", new Color(37, 99, 235), Color.WHITE, e -> openResetPasswordDialog()));
         card.add(createPrimaryButton("Phân quyền", new Color(59, 130, 246), Color.WHITE, e -> openPermissionDialog()));
         card.add(createPrimaryButton("Khóa / Mở tài khoản", new Color(245, 158, 11), TEXT_PRIMARY, e -> openToggleAccountDialog()));
-        card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -377,8 +376,10 @@ public class TaiKhoanGUI extends JFrame {
         cboVaiTro = createComboBox(prependAll(ROLE_OPTIONS));
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Khóa"});
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(320, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Tên đăng nhập / nhân viên");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboVaiTro, cboTrangThai);
 
         left.add(createFieldGroup("Vai trò", cboVaiTro));
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
@@ -396,7 +397,6 @@ public class TaiKhoanGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("Lọc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);

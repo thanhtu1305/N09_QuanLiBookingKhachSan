@@ -3,6 +3,7 @@ package gui.common;
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -45,6 +46,7 @@ import java.util.Enumeration;
 
 public final class ScreenUIHelper {
     private static final String DIALOG_PREPARED_KEY = "dialogPrepared";
+    private static final Dimension SEARCH_FIELD_SIZE = new Dimension(280, 34);
     private static final Color TABLE_HEADER_BG = new Color(44, 94, 143);
     private static final Color TABLE_HEADER_FG = Color.WHITE;
     private static final Color TABLE_HEADER_BORDER = new Color(122, 162, 202);
@@ -336,6 +338,32 @@ public final class ScreenUIHelper {
                 filterAction.run();
             }
         });
+    }
+
+    public static void installLiveSearch(AppDatePickerField dateField, Runnable filterAction) {
+        if (dateField == null || filterAction == null) {
+            return;
+        }
+        dateField.addTextChangeListener(filterAction);
+    }
+
+    @SafeVarargs
+    public static void installAutoFilter(Runnable filterAction, JComboBox<?>... comboBoxes) {
+        if (filterAction == null || comboBoxes == null) {
+            return;
+        }
+        for (JComboBox<?> comboBox : comboBoxes) {
+            if (comboBox != null) {
+                comboBox.addActionListener(e -> filterAction.run());
+            }
+        }
+    }
+
+    public static void applySearchFieldSize(JTextField textField) {
+        if (textField == null) {
+            return;
+        }
+        textField.setPreferredSize(new Dimension(SEARCH_FIELD_SIZE));
     }
 
     private static void ensureScrollableDialogContent(JDialog dialog) {

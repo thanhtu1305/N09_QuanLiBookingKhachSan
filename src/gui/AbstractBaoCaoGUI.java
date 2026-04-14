@@ -18,8 +18,10 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.RowFilter;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -58,6 +60,7 @@ public abstract class AbstractBaoCaoGUI extends JFrame {
     private JComboBox<String> cboNhomTheo;
     private JComboBox<String> cboTrangThai;
     private JTextField txtTimKiem;
+    private TableRowSorter<DefaultTableModel> reportTableSorter;
 
     protected AbstractBaoCaoGUI(String username, String role, ScreenKey currentScreen,
                                 String frameTitle, String pageTitle, String pageSubtitle,
@@ -149,8 +152,6 @@ public abstract class AbstractBaoCaoGUI extends JFrame {
                 e -> showInfo("Đang mở dữ liệu chi tiết cho " + frameTitle.toLowerCase() + ".")));
         card.add(createPrimaryButton("Xuất file", new Color(37, 99, 235), Color.WHITE,
                 e -> showInfo("Đã sẵn sàng xuất file cho " + frameTitle.toLowerCase() + ".")));
-        card.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE,
-                e -> resetFilters()));
         return card;
     }
 
@@ -177,7 +178,8 @@ public abstract class AbstractBaoCaoGUI extends JFrame {
         lblSearch.setForeground(TEXT_MUTED);
 
         txtTimKiem = createInputField("");
-        txtTimKiem.setPreferredSize(new Dimension(220, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTimKiem);
+        ScreenUIHelper.installLiveSearch(txtTimKiem, this::applySearchFilter);
 
         right.add(lblSearch);
         right.add(Box.createVerticalStrut(4));
@@ -260,6 +262,8 @@ public abstract class AbstractBaoCaoGUI extends JFrame {
         }
 
         reportTable = new JTable(tableModel);
+        reportTableSorter = new TableRowSorter<DefaultTableModel>(tableModel);
+        reportTable.setRowSorter(reportTableSorter);
         reportTable.setFont(BODY_FONT);
         reportTable.setRowHeight(30);
         reportTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -394,6 +398,18 @@ public abstract class AbstractBaoCaoGUI extends JFrame {
                 new EmptyBorder(12, 14, 12, 14)
         ));
         return panel;
+    }
+
+    private void applySearchFilter() {
+        if (reportTableSorter == null || txtTimKiem == null) {
+            return;
+        }
+        String keyword = txtTimKiem.getText() == null ? "" : txtTimKiem.getText().trim();
+        if (keyword.isEmpty()) {
+            reportTableSorter.setRowFilter(null);
+            return;
+        }
+        reportTableSorter.setRowFilter(RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(keyword)));
     }
 
     protected JPanel createCompactCardPanel(FlowLayout layout) {

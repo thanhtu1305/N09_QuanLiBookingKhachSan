@@ -186,15 +186,12 @@ public class LoaiPhongGUI extends JFrame {
         JButton btnNgungApDung = createPrimaryButton("Ngừng áp dụng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDeactivateRoomTypeDialog());
         JButton btnTienNghiMacDinh = createPrimaryButton("Tiện nghi mặc định", new Color(99, 102, 241), Color.WHITE, e -> openDefaultAmenitiesDialog());
         JButton btnXoaLoaiPhong = createPrimaryButton("Xóa loại phòng", new Color(220, 38, 38), Color.WHITE, e -> deleteSelectedRoomType());
-        JButton btnTimKiem = createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true));
-
         btnTienNghiMacDinh.setToolTipText("Thiết lập bộ tiện nghi mặc định áp dụng chung cho mọi phòng thuộc loại này.");
 
         card.add(btnThemLoaiPhong);
         card.add(btnNgungApDung);
         card.add(btnTienNghiMacDinh);
         card.add(btnXoaLoaiPhong);
-        card.add(btnTimKiem);
         return card;
     }
 
@@ -206,9 +203,10 @@ public class LoaiPhongGUI extends JFrame {
 
         cboTrangThai = createComboBox(new String[]{"Tất cả", "Đang áp dụng", "Ngừng áp dụng"});
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(290, 34));
+        ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Mã loại / tên loại phòng");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboTrangThai);
 
         left.add(createFieldGroup("Trạng thái", cboTrangThai));
 
@@ -1155,9 +1153,8 @@ public class LoaiPhongGUI extends JFrame {
             card.add(form, BorderLayout.CENTER);
             content.add(card, BorderLayout.CENTER);
 
-            JButton btnSave = createPrimaryButton("Lưu cập nhật", new Color(37, 99, 235), Color.WHITE, e -> submit());
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnSave), BorderLayout.SOUTH);
+            content.add(buildDialogButtons(btnCancel), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
         }
 

@@ -39,8 +39,7 @@ public class BaoCaoGUI extends AbstractBaoCaoGUI {
                         {"Khách hàng", "Khách quay lại", "41%", "Tăng 5%"}
                 },
                 "F1 Xem chi tiết",
-                "F2 Xuất file",
-                "F5 Làm mới"
+                "F2 Xuất file"
         );
     }
 }

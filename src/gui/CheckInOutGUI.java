@@ -1437,13 +1437,13 @@ public class CheckInOutGUI extends JFrame {
                         safeValue(item.getTenLoaiPhong(), "-"),
                         safeValue(item.getTrangThai(), "-"),
                         item.getSoNguoi(),
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        "",
-                        ""
+                        safeValue(item.getCccdPassport(), ""),
+                        safeValue(item.getHoTenKhach(), ""),
+                        safeValue(item.getSoDienThoai(), ""),
+                        safeValue(item.getNgaySinh(), ""),
+                        safeValue(item.getEmail(), ""),
+                        safeValue(item.getDiaChi(), ""),
+                        safeValue(item.getGhiChu(), "")
                 });
             }
             selectFirstPendingRoom();
@@ -1550,6 +1550,30 @@ public class CheckInOutGUI extends JFrame {
             return targets;
         }
 
+        private Map<Integer, KhachHang> buildCustomerInputs(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            Map<Integer, KhachHang> customers = new LinkedHashMap<Integer, KhachHang>();
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                int row = bookingItems.indexOf(item);
+                if (row < 0 || row >= roomTableModel.getRowCount()) {
+                    continue;
+                }
+                customers.put(Integer.valueOf(item.getMaChiTietDatPhong()), buildCustomerFromRow(row));
+            }
+            return customers;
+        }
+
+        private KhachHang buildCustomerFromRow(int row) {
+            KhachHang khachHang = new KhachHang();
+            khachHang.setCccdPassport(valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim());
+            khachHang.setHoTen(valueOf(roomTableModel.getValueAt(row, COL_HO_TEN)).trim());
+            khachHang.setSoDienThoai(valueOf(roomTableModel.getValueAt(row, COL_SDT)).trim());
+            khachHang.setNgaySinh(valueOf(roomTableModel.getValueAt(row, COL_NGAY_SINH)).trim());
+            khachHang.setEmail(valueOf(roomTableModel.getValueAt(row, COL_EMAIL)).trim());
+            khachHang.setDiaChi(valueOf(roomTableModel.getValueAt(row, COL_DIA_CHI)).trim());
+            khachHang.setGhiChu(valueOf(roomTableModel.getValueAt(row, COL_GHI_CHU)).trim());
+            return khachHang;
+        }
+
         private void submit(boolean checkInAll) {
             if (tblRooms.isEditing() && tblRooms.getCellEditor() != null) {
                 tblRooms.getCellEditor().stopCellEditing();
@@ -1586,12 +1610,14 @@ public class CheckInOutGUI extends JFrame {
             for (CheckInOutDAO.CheckInBookingItem item : targets) {
                 detailIds.add(Integer.valueOf(item.getMaChiTietDatPhong()));
             }
+            Map<Integer, KhachHang> customerInputs = buildCustomerInputs(targets);
 
             int affected = checkInOutDAO.checkInBookingDetails(
                     String.valueOf(record.maDatPhong),
                     detailIds,
                     checkIn,
-                    checkOut
+                    checkOut,
+                    customerInputs
             );
             if (affected <= 0) {
                 String message = safeValue(checkInOutDAO.getLastErrorMessage(), "");

@@ -210,8 +210,6 @@ public class CheckInOutGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Check-in", new Color(22, 163, 74), Color.WHITE, e -> openCheckInDialog()));
         card.add(createPrimaryButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), Color.WHITE, e -> openAddServiceDialog()));
-        card.add(createPrimaryButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openChangeRoomDialog()));
-        card.add(createPrimaryButton("Gia h\u1ea1n", new Color(59, 130, 246), Color.WHITE, e -> openExtendDialog()));
         card.add(createPrimaryButton("Check-out", new Color(220, 38, 38), Color.WHITE, e -> openCheckOutDialog()));
         card.add(createPrimaryButton("T\u00ecm ki\u1ebfm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
@@ -277,8 +275,6 @@ public class CheckInOutGUI extends JFrame {
                 TEXT_MUTED,
                 "F1 Check-in",
                 "F2 Th\u00eam d\u1ecbch v\u1ee5",
-                "F3 \u0110\u1ed5i ph\u00f2ng",
-                "F4 Gia h\u1ea1n",
                 "F5 Check-out",
                 "Enter Xem chi ti\u1ebft"
         );
@@ -2472,8 +2468,6 @@ public class CheckInOutGUI extends JFrame {
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "cio-f1", this::openCheckInDialog);
         ScreenUIHelper.registerShortcut(this, "F2", "cio-f2", this::openAddServiceDialog);
-        ScreenUIHelper.registerShortcut(this, "F3", "cio-f3", this::openChangeRoomDialog);
-        ScreenUIHelper.registerShortcut(this, "F4", "cio-f4", this::openExtendDialog);
         ScreenUIHelper.registerShortcut(this, "F5", "cio-f5", this::openCheckOutDialog);
         ScreenUIHelper.registerShortcut(this, "ENTER", "cio-enter", () -> {
             StayRecord record = getSelectedRecord();

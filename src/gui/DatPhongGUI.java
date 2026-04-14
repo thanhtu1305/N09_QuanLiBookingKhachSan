@@ -203,8 +203,6 @@ public class DatPhongGUI extends JFrame {
         JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         card.add(createPrimaryButton("Tạo booking", new Color(22, 163, 74), Color.WHITE, e -> openCreateBookingDialog()));
         card.add(createPrimaryButton("Xác nhận", new Color(37, 99, 235), Color.WHITE, e -> openConfirmBookingDialog()));
-        card.add(createPrimaryButton("Nhận cọc", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDepositDialog()));
-        card.add(createPrimaryButton("Cập nhật", new Color(59, 130, 246), Color.WHITE, e -> openUpdateBookingDialog()));
         card.add(createPrimaryButton("Hủy booking", new Color(220, 38, 38), Color.WHITE, e -> openCancelBookingDialog()));
         card.add(createPrimaryButton("Tìm kiếm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
@@ -313,8 +311,6 @@ public class DatPhongGUI extends JFrame {
                 }
             }
         });
-        ScreenUIHelper.registerTableDoubleClick(tblDatPhong, this::openUpdateBookingDialog);
-
         JScrollPane scrollPane = new JScrollPane(tblDatPhong);
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
         scrollPane.getVerticalScrollBar().setUnitIncrement(18);
@@ -430,9 +426,7 @@ public class DatPhongGUI extends JFrame {
                 BORDER_SOFT,
                 TEXT_MUTED,
                 "F1 Tạo booking",
-                "F2 Cập nhật",
                 "F3 Xác nhận",
-                "F4 Nhận cọc",
                 "F5 Hủy booking",
                 "Enter Xem chi tiết"
         );
@@ -905,9 +899,7 @@ public class DatPhongGUI extends JFrame {
 
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "datphong-f1", this::openCreateBookingDialog);
-        ScreenUIHelper.registerShortcut(this, "F2", "datphong-f2", this::openUpdateBookingDialog);
         ScreenUIHelper.registerShortcut(this, "F3", "datphong-f3", this::openConfirmBookingDialog);
-        ScreenUIHelper.registerShortcut(this, "F4", "datphong-f4", this::openDepositDialog);
         ScreenUIHelper.registerShortcut(this, "F5", "datphong-f5", this::openCancelBookingDialog);
         ScreenUIHelper.registerShortcut(this, "ENTER", "datphong-enter", this::openViewBookingDialog);
     }

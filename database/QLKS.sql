@@ -284,14 +284,8 @@ VALUES
 (4,1),(4,2),(4,3),(4,4),(4,10),(4,11),(4,12),(4,17);
 GO
 
-INSERT INTO Phong (maLoaiPhong, soPhong, tang, khuVuc, sucChuaChuan, sucChuaToiDa, trangThai)
-VALUES
-(1, '101', N'Tầng 1', N'Khu A', 2, 3, N'Hoạt động'),
-(1, '102', N'Tầng 1', N'Khu A', 2, 3, N'Đã đặt'),
-(2, '201', N'Tầng 2', N'Khu A', 2, 4, N'Đang ở'),
-(2, '202', N'Tầng 2', N'Khu B', 2, 4, N'Hoạt động'),
-(3, '301', N'Tầng 3', N'Khu VIP', 3, 5, N'Bảo trì'),
-(4, '401', N'Tầng 4', N'Khu Family', 4, 6, N'Hoạt động');
+-- Du lieu phong demo duoc chuan hoa o block dbo.Phong ben duoi
+-- de dam bao khach san chi co 5 tang va quy mo 30 phong.
 GO
 
 INSERT INTO BangGia (tenBangGia, maLoaiPhong, ngayBatDau, ngayKetThuc, loaiNgay, trangThai)
@@ -602,18 +596,36 @@ WHERE x.maLoaiPhong IS NOT NULL AND x.maTienNghi IS NOT NULL
 INSERT INTO dbo.Phong (maLoaiPhong, soPhong, tang, khuVuc, sucChuaChuan, sucChuaToiDa, trangThai)
 SELECT v.maLoaiPhong, v.soPhong, v.tang, v.khuVuc, v.sucChuaChuan, v.sucChuaToiDa, v.trangThai
 FROM (VALUES
-          (@lpStandard, '101', N'Tầng 1', N'Khu A', 2, 3, N'Hoạt động'),
+          (@lpDon,      '101', N'Tầng 1', N'Khu A', 1, 2, N'Hoạt động'),
           (@lpStandard, '102', N'Tầng 1', N'Khu A', 2, 3, N'Đã đặt'),
-          (@lpDeluxe,   '201', N'Tầng 2', N'Khu A', 2, 4, N'Đang ở'),
-          (@lpDeluxe,   '202', N'Tầng 2', N'Khu B', 2, 4, N'Hoạt động'),
-          (@lpSuite,    '301', N'Tầng 3', N'Khu VIP', 3, 5, N'Bảo trì'),
-          (@lpFamily,   '401', N'Tầng 4', N'Khu Family', 4, 6, N'Hoạt động'),
           (@lpDon,      '103', N'Tầng 1', N'Khu A', 1, 2, N'Hoạt động'),
-          (@lpDon,      '104', N'Tầng 1', N'Khu B', 1, 2, N'Hoạt động'),
+          (@lpDoi,      '104', N'Tầng 1', N'Khu B', 2, 4, N'Hoạt động'),
+          (@lpStandard, '105', N'Tầng 1', N'Khu B', 2, 3, N'Hoạt động'),
+          (@lpDoi,      '106', N'Tầng 1', N'Khu C', 2, 4, N'Hoạt động'),
+          (@lpDeluxe,   '201', N'Tầng 2', N'Khu A', 2, 4, N'Đang ở'),
+          (@lpDeluxe,   '202', N'Tầng 2', N'Khu A', 2, 4, N'Hoạt động'),
           (@lpDoi,      '203', N'Tầng 2', N'Khu B', 2, 4, N'Đã đặt'),
           (@lpDoi,      '204', N'Tầng 2', N'Khu B', 2, 4, N'Hoạt động'),
+          (@lpStandard, '205', N'Tầng 2', N'Khu C', 2, 3, N'Hoạt động'),
+          (@lpStandard, '206', N'Tầng 2', N'Khu C', 2, 3, N'Hoạt động'),
+          (@lpSuite,    '301', N'Tầng 3', N'Khu VIP', 3, 5, N'Hoạt động'),
           (@lpSuite,    '302', N'Tầng 3', N'Khu VIP', 3, 5, N'Hoạt động'),
-          (@lpFamily,   '402', N'Tầng 4', N'Khu Family', 4, 6, N'Đang ở')
+          (@lpDeluxe,   '303', N'Tầng 3', N'Khu B', 2, 4, N'Hoạt động'),
+          (@lpDeluxe,   '304', N'Tầng 3', N'Khu B', 2, 4, N'Hoạt động'),
+          (@lpFamily,   '305', N'Tầng 3', N'Khu Family', 4, 6, N'Hoạt động'),
+          (@lpStandard, '306', N'Tầng 3', N'Khu C', 2, 3, N'Hoạt động'),
+          (@lpFamily,   '401', N'Tầng 4', N'Khu Family', 4, 6, N'Hoạt động'),
+          (@lpFamily,   '402', N'Tầng 4', N'Khu Family', 4, 6, N'Đang ở'),
+          (@lpFamily,   '403', N'Tầng 4', N'Khu Family', 4, 6, N'Hoạt động'),
+          (@lpDeluxe,   '404', N'Tầng 4', N'Khu B', 2, 4, N'Hoạt động'),
+          (@lpStandard, '405', N'Tầng 4', N'Khu C', 2, 3, N'Hoạt động'),
+          (@lpSuite,    '406', N'Tầng 4', N'Khu VIP', 3, 5, N'Hoạt động'),
+          (@lpFamily,   '501', N'Tầng 5', N'Khu Family', 4, 6, N'Hoạt động'),
+          (@lpSuite,    '502', N'Tầng 5', N'Khu VIP', 3, 5, N'Hoạt động'),
+          (@lpSuite,    '503', N'Tầng 5', N'Khu VIP', 3, 5, N'Bảo trì'),
+          (@lpSuite,    '504', N'Tầng 5', N'Khu VIP', 3, 5, N'Hoạt động'),
+          (@lpDeluxe,   '505', N'Tầng 5', N'Khu C', 2, 4, N'Hoạt động'),
+          (@lpDoi,      '506', N'Tầng 5', N'Khu C', 2, 4, N'Hoạt động')
      ) v(maLoaiPhong, soPhong, tang, khuVuc, sucChuaChuan, sucChuaToiDa, trangThai)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.Phong p WHERE p.soPhong = v.soPhong);
 

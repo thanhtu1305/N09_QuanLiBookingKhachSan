@@ -62,8 +62,9 @@ public class PhongGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    // Demo khach san duoc chot co 5 tang de dong bo voi du lieu seed.
     private static final String[] FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
-    private static final String[] CREATE_ROOM_FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4"};
+    private static final String[] CREATE_ROOM_FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
     private static final String[] ROOM_STATUS_OPTIONS = {"Hoạt động", "Không hoạt động", "Bảo trì"};
     private static final String[] ZONES = {"Khu A", "Khu B", "Khu C", "Khu VIP"};
     private static final java.util.List<PhongGUI> OPEN_INSTANCES = new java.util.ArrayList<PhongGUI>();
@@ -624,17 +625,15 @@ public class PhongGUI extends JFrame {
 
     private void populateTangFilter() {
         String selected = valueOf(cboTang.getSelectedItem());
-        List<String> tangs = new ArrayList<String>();
-        for (RoomRecord room : allRooms) {
-            if (room.tang != null && !room.tang.trim().isEmpty() && !tangs.contains(room.tang)) {
-                tangs.add(room.tang);
-            }
-        }
-        Collections.sort(tangs);
         cboTang.removeAllItems();
         cboTang.addItem("Tất cả");
-        for (String tang : tangs) {
-            cboTang.addItem(tang);
+        for (String tang : FLOORS) {
+            for (RoomRecord room : allRooms) {
+                if (tang.equals(room.tang)) {
+                    cboTang.addItem(tang);
+                    break;
+                }
+            }
         }
         restoreSelection(cboTang, selected, "Tất cả");
     }
@@ -1279,6 +1278,11 @@ public class PhongGUI extends JFrame {
         }
         if (tang.isEmpty()) {
             showValidationMessage("Vui lòng chọn tầng.");
+            cboTangInput.requestFocusInWindow();
+            return null;
+        }
+        if (!java.util.Arrays.asList(FLOORS).contains(tang)) {
+            showValidationMessage("Hệ thống chỉ hỗ trợ Tầng 1 đến Tầng 5.");
             cboTangInput.requestFocusInWindow();
             return null;
         }

@@ -265,6 +265,21 @@ public final class ScreenUIHelper {
         return candidate;
     }
 
+    public static Window resolveWindowOwner(Component candidate) {
+        Window ancestor = candidate == null ? null : SwingUtilities.getWindowAncestor(candidate);
+        if (ancestor != null) {
+            return resolveWindowOwner(ancestor);
+        }
+        if (candidate instanceof Window) {
+            return resolveWindowOwner((Window) candidate);
+        }
+        AppFrame appFrame = AppFrame.get();
+        if (appFrame.isDisplayable() || appFrame.isShowing()) {
+            return appFrame;
+        }
+        return null;
+    }
+
     public static void registerTableDoubleClick(JTable table, Runnable action) {
         if (table == null || action == null) {
             return;
@@ -300,19 +315,46 @@ public final class ScreenUIHelper {
             if (target == null) {
                 return;
             }
-            if (target instanceof Container) {
-                ((Container) target).revalidate();
-            }
-            if (target instanceof RootPaneContainer) {
-                ((RootPaneContainer) target).getRootPane().revalidate();
-                ((RootPaneContainer) target).getRootPane().repaint();
-            }
+            refreshComponentTree(target);
             if (target instanceof Frame) {
                 ((Frame) target).toFront();
                 ((Frame) target).requestFocus();
             }
-            target.repaint();
         });
+    }
+
+    public static void refreshComponentTree(Component component) {
+        if (component == null) {
+            return;
+        }
+        if (component instanceof Container) {
+            ((Container) component).revalidate();
+        }
+        if (component instanceof RootPaneContainer) {
+            ((RootPaneContainer) component).getRootPane().revalidate();
+            ((RootPaneContainer) component).getRootPane().repaint();
+        }
+        component.repaint();
+    }
+
+    public static void showMessageDialog(Component parent, String message, String title, int messageType) {
+        Runnable showTask = () -> {
+            Window owner = resolveWindowOwner(parent);
+            JOptionPane.showMessageDialog(owner, message, title, messageType);
+            refreshComponentTree(parent != null ? parent : owner);
+            if (owner != null && owner != parent) {
+                refreshComponentTree(owner);
+            }
+        };
+        if (SwingUtilities.isEventDispatchThread()) {
+            showTask.run();
+        } else {
+            try {
+                SwingUtilities.invokeAndWait(showTask);
+            } catch (Exception e) {
+                throw new IllegalStateException("Khong the hien thi thong bao Swing.", e);
+            }
+        }
     }
 
     public static void installLiveSearch(JTextField textField, Runnable filterAction) {

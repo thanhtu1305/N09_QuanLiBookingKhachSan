@@ -38,6 +38,7 @@ import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
+import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
@@ -50,6 +51,7 @@ import java.awt.Font;
 import java.awt.Frame;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.KeyboardFocusManager;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -112,6 +114,7 @@ public class CheckInOutGUI extends JFrame {
     private JLabel lblDichVuPhatSinh;
     private JTextArea txtGhiChu;
     private JPanel realtimeMapPanel;
+    private SwingWorker<ReloadPayload, Void> reloadWorker;
 
     public CheckInOutGUI() {
         this("guest", "L\u1ec5 t\u00e2n");
@@ -419,7 +422,7 @@ public class CheckInOutGUI extends JFrame {
         realtimeMapPanel = new JPanel();
         realtimeMapPanel.setOpaque(false);
         realtimeMapPanel.setLayout(new BoxLayout(realtimeMapPanel, BoxLayout.Y_AXIS));
-        refreshRealtimeMap();
+        renderRealtimeMap(new ArrayList<FloorRoomGroup>());
 
         card.add(lblTitle, BorderLayout.NORTH);
         card.add(realtimeMapPanel, BorderLayout.CENTER);
@@ -628,31 +631,70 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void reloadSampleData(boolean showMessage) {
-        loadStayData();
+        if (reloadWorker != null && !reloadWorker.isDone()) {
+            reloadWorker.cancel(true);
+        }
+        setBusyState(true);
+        reloadWorker = new SwingWorker<ReloadPayload, Void>() {
+            @Override
+            protected ReloadPayload doInBackground() {
+                return loadReloadPayload();
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    applyReloadPayload(get(), showMessage);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    showInfo("Kh\u00f4ng th\u1ec3 l\u00e0m m\u1edbi d\u1eef li\u1ec7u check-in / check-out.");
+                } finally {
+                    setBusyState(false);
+                }
+            }
+        };
+        reloadWorker.execute();
+    }
+
+    private ReloadPayload loadReloadPayload() {
+        ReloadPayload payload = new ReloadPayload();
+        Map<Integer, StayRecord> grouped = new LinkedHashMap<Integer, StayRecord>();
+        loadPendingBookings(grouped, payload.errors);
+        loadActiveStays(grouped, payload.errors);
+        for (StayRecord record : grouped.values()) {
+            record.refreshAggregateState();
+            payload.records.add(record);
+        }
+        payload.roomMap = loadRealtimeMapData(payload.errors);
+        return payload;
+    }
+
+    private void applyReloadPayload(ReloadPayload payload, boolean showMessage) {
+        allRecords.clear();
+        if (payload != null) {
+            allRecords.addAll(payload.records);
+        }
         cboTrangThai.setSelectedIndex(0);
         cboTang.setSelectedIndex(0);
         cboLoaiPhong.setSelectedIndex(0);
         cboCaLam.setSelectedIndex(0);
         txtTuKhoa.setText("");
         applyFilters(false);
-        refreshRealtimeMap();
+        renderRealtimeMap(payload == null ? new ArrayList<FloorRoomGroup>() : payload.roomMap);
+        ScreenUIHelper.refreshComponentTree(rootPanel);
+        if (payload != null) {
+            for (String error : payload.errors) {
+                if (error != null && !error.trim().isEmpty()) {
+                    showInfo(error);
+                }
+            }
+        }
         if (showMessage) {
             showInfo("\u0110\u00e3 l\u00e0m m\u1edbi d\u1eef li\u1ec7u check-in / check-out.");
         }
     }
 
-        private void loadStayData() {
-        allRecords.clear();
-        Map<Integer, StayRecord> grouped = new LinkedHashMap<Integer, StayRecord>();
-        loadPendingBookings(grouped);
-        loadActiveStays(grouped);
-        for (StayRecord record : grouped.values()) {
-            record.refreshAggregateState();
-        }
-        allRecords.addAll(grouped.values());
-    }
-
-    private void loadPendingBookings(Map<Integer, StayRecord> grouped) {
+    private void loadPendingBookings(Map<Integer, StayRecord> grouped, List<String> errors) {
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             return;
@@ -713,11 +755,11 @@ public class CheckInOutGUI extends JFrame {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            showInfo("Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch booking ch\u1edd check-in.");
+            errors.add("Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch booking ch\u1edd check-in.");
         }
     }
 
-    private void loadActiveStays(Map<Integer, StayRecord> grouped) {
+    private void loadActiveStays(Map<Integer, StayRecord> grouped, List<String> errors) {
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             return;
@@ -787,11 +829,11 @@ public class CheckInOutGUI extends JFrame {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            showInfo("Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u l\u01b0u tr\u00fa.");
+            errors.add("Kh\u00f4ng th\u1ec3 t\u1ea3i d\u1eef li\u1ec7u l\u01b0u tr\u00fa.");
         }
     }
 
-    private void loadCompletedBookings(Map<Integer, StayRecord> grouped) {
+    private void loadCompletedBookings(Map<Integer, StayRecord> grouped, List<String> errors) {
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             return;
@@ -845,7 +887,7 @@ public class CheckInOutGUI extends JFrame {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            showInfo("Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch booking \u0111\u00e3 check-out.");
+            errors.add("Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch booking \u0111\u00e3 check-out.");
         }
     }
 
@@ -1027,46 +1069,53 @@ public class CheckInOutGUI extends JFrame {
         new CheckOutDialog(this, record).setVisible(true);
     }
 
-    private void refreshRealtimeMap() {
+    private List<FloorRoomGroup> loadRealtimeMapData(List<String> errors) {
+        List<FloorRoomGroup> floorGroups = new ArrayList<FloorRoomGroup>();
+        Map<String, FloorRoomGroup> grouped = new LinkedHashMap<String, FloorRoomGroup>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return floorGroups;
+        }
+        String sql = "SELECT soPhong, tang, trangThai FROM Phong ORDER BY TRY_CAST(REPLACE(tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(soPhong AS INT), soPhong";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String tang = safeValue(rs.getString("tang"), "Kh\u00e1c");
+                FloorRoomGroup group = grouped.get(tang);
+                if (group == null) {
+                    group = new FloorRoomGroup(tang);
+                    grouped.put(tang, group);
+                }
+                group.rooms.add(new RoomBadge(
+                        safeValue(rs.getString("soPhong"), "-"),
+                        toStatusCode(safeValue(rs.getString("trangThai"), "B\u1ea3o tr\u00ec"))
+                ));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            errors.add("Kh\u00f4ng th\u1ec3 c\u1eadp nh\u1eadt s\u01a1 \u0111\u1ed3 ph\u00f2ng th\u1eddi gian th\u1ef1c.");
+        }
+        floorGroups.addAll(grouped.values());
+        return floorGroups;
+    }
+
+    private void renderRealtimeMap(List<FloorRoomGroup> floorGroups) {
         if (realtimeMapPanel == null) {
             return;
         }
         realtimeMapPanel.removeAll();
-
-        List<String> floors = new ArrayList<String>();
-        List<List<RoomBadge>> floorRooms = new ArrayList<List<RoomBadge>>();
-        Connection con = ConnectDB.getConnection();
-        if (con != null) {
-            String sql = "SELECT soPhong, tang, trangThai FROM Phong ORDER BY TRY_CAST(REPLACE(tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(soPhong AS INT), soPhong";
-            try (PreparedStatement ps = con.prepareStatement(sql);
-                 ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    String tang = safeValue(rs.getString("tang"), "Kh\u00e1c");
-                    int idx = floors.indexOf(tang);
-                    if (idx < 0) {
-                        floors.add(tang);
-                        floorRooms.add(new ArrayList<RoomBadge>());
-                        idx = floors.size() - 1;
-                    }
-                    floorRooms.get(idx).add(new RoomBadge(safeValue(rs.getString("soPhong"), "-"), toStatusCode(safeValue(rs.getString("trangThai"), "B\u1ea3o tr\u00ec"))));
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-
-        for (int i = 0; i < floors.size(); i++) {
-            realtimeMapPanel.add(buildRoomRow(floors.get(i), floorRooms.get(i)));
-            if (i < floors.size() - 1) {
+        for (int i = 0; i < floorGroups.size(); i++) {
+            FloorRoomGroup group = floorGroups.get(i);
+            realtimeMapPanel.add(buildRoomRow(group.floorName, group.rooms));
+            if (i < floorGroups.size() - 1) {
                 realtimeMapPanel.add(Box.createVerticalStrut(8));
             }
         }
-        if (!floors.isEmpty()) {
+        if (!floorGroups.isEmpty()) {
             realtimeMapPanel.add(Box.createVerticalStrut(10));
         }
         realtimeMapPanel.add(buildLegendPanel());
-        realtimeMapPanel.revalidate();
-        realtimeMapPanel.repaint();
+        ScreenUIHelper.refreshComponentTree(realtimeMapPanel);
     }
 
     private Color resolveStatusColor(String code) {
@@ -1118,7 +1167,18 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void showInfo(String message) {
-        JOptionPane.showMessageDialog(this, message, "Th\u00f4ng b\u00e1o", JOptionPane.INFORMATION_MESSAGE);
+        java.awt.Window activeWindow = KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow();
+        Component owner = activeWindow != null && activeWindow.isShowing()
+                ? activeWindow
+                : (rootPanel != null ? rootPanel : this);
+        ScreenUIHelper.showMessageDialog(owner, message, "Th\u00f4ng b\u00e1o", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void setBusyState(boolean busy) {
+        Component target = rootPanel != null ? rootPanel : getRootPane();
+        if (target != null) {
+            target.setCursor(busy ? java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.WAIT_CURSOR) : java.awt.Cursor.getDefaultCursor());
+        }
     }
 
     private String safeValue(String value, String fallback) {
@@ -2635,6 +2695,21 @@ public class CheckInOutGUI extends JFrame {
 
         private boolean isLate() {
             return lateHours > 0L;
+        }
+    }
+
+    private static final class ReloadPayload {
+        private final List<StayRecord> records = new ArrayList<StayRecord>();
+        private final List<String> errors = new ArrayList<String>();
+        private List<FloorRoomGroup> roomMap = new ArrayList<FloorRoomGroup>();
+    }
+
+    private static final class FloorRoomGroup {
+        private final String floorName;
+        private final List<RoomBadge> rooms = new ArrayList<RoomBadge>();
+
+        private FloorRoomGroup(String floorName) {
+            this.floorName = floorName;
         }
     }
 

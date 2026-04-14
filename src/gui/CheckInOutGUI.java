@@ -703,15 +703,15 @@ public class CheckInOutGUI extends JFrame {
         String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, ctdp.soNguoi, " +
                 "ctdp.maPhong, ISNULL(p.soPhong, N'Ch\u01b0a g\u00e1n') AS soPhong, ISNULL(p.tang, N'-') AS tang, " +
                 "ISNULL(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhong " +
-                "FROM DatPhong dp " +
-                "JOIN ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "FROM dbo.DatPhong dp " +
+                "JOIN dbo.ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong " +
                 "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang " +
-                "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong " +
+                "LEFT JOIN dbo.Phong p ON ctdp.maPhong = p.maPhong " +
                 "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia " +
                 "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong " +
                 "WHERE ISNULL(dp.trangThai, N'') IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang \u1edf', N'Check-out m\u1ed9t ph\u1ea7n', N'\u0110\u00e3 check-in') " +
-                "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) " +
+                "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) " +
                 "ORDER BY dp.maDatPhong DESC, ctdp.maChiTietDatPhong ASC";
 
         try (PreparedStatement ps = con.prepareStatement(sql);
@@ -766,11 +766,11 @@ public class CheckInOutGUI extends JFrame {
         }
         String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai AS trangThaiDatPhong, dp.ngayTraPhong, ctdp.soNguoi, " +
                 "ISNULL(SUM(sddv.thanhTien), 0) AS tienDichVu, lt.checkIn, lt.checkOut " +
-                "FROM LuuTru lt " +
-                "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
-                "JOIN ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                "FROM dbo.LuuTru lt " +
+                "JOIN dbo.DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
+                "JOIN dbo.ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang " +
-                "JOIN Phong p ON lt.maPhong = p.maPhong " +
+                "JOIN dbo.Phong p ON lt.maPhong = p.maPhong " +
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "LEFT JOIN SuDungDichVu sddv ON lt.maLuuTru = sddv.maLuuTru " +
                 "WHERE lt.checkOut IS NULL " +
@@ -842,11 +842,11 @@ public class CheckInOutGUI extends JFrame {
         String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, ctdp.soNguoi, " +
                 "ctdp.maPhong, ISNULL(p.soPhong, N'Ch\u01b0a g\u00e1n') AS soPhong, ISNULL(p.tang, N'-') AS tang, " +
                 "ISNULL(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhong, " +
-                "ISNULL((SELECT SUM(sddv.thanhTien) FROM LuuTru lt2 LEFT JOIN SuDungDichVu sddv ON sddv.maLuuTru = lt2.maLuuTru WHERE lt2.maDatPhong = dp.maDatPhong), 0) AS tienDichVu " +
-                "FROM DatPhong dp " +
-                "JOIN ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "ISNULL((SELECT SUM(sddv.thanhTien) FROM dbo.LuuTru lt2 LEFT JOIN SuDungDichVu sddv ON sddv.maLuuTru = lt2.maLuuTru WHERE lt2.maDatPhong = dp.maDatPhong), 0) AS tienDichVu " +
+                "FROM dbo.DatPhong dp " +
+                "JOIN dbo.ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong " +
                 "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang " +
-                "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong " +
+                "LEFT JOIN dbo.Phong p ON ctdp.maPhong = p.maPhong " +
                 "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia " +
                 "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong " +
@@ -1076,7 +1076,7 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return floorGroups;
         }
-        String sql = "SELECT soPhong, tang, trangThai FROM Phong ORDER BY TRY_CAST(REPLACE(tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(soPhong AS INT), soPhong";
+        String sql = "SELECT soPhong, tang, trangThai FROM dbo.Phong ORDER BY TRY_CAST(REPLACE(tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(soPhong AS INT), soPhong";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {

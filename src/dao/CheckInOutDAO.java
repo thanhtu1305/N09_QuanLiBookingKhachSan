@@ -11,23 +11,30 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CheckInOutDAO {
+    private static final String SQL_INSERT_LUU_TRU =
+            "INSERT INTO dbo.LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    private static final String SQL_UPDATE_PHONG_DANG_O =
+            "UPDATE dbo.Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? AND trangThai <> N'B\u1ea3o tr\u00ec'";
+    private static final String SQL_UPDATE_DAT_PHONG_TRANG_THAI =
+            "UPDATE dbo.DatPhong SET trangThai = ? WHERE maDatPhong = ?";
     private static final String SELECT_BASE =
             "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.checkOut, lt.soNguoi, lt.giaPhong, lt.tienCoc, "
                     + "dp.trangThai AS trangThaiDatPhong, kh.hoTen AS tenKhachHang, kh.soDienThoai AS soDienThoaiKhach, "
                     + "p.soPhong, p.tang, p.trangThai AS trangThaiPhong, "
                     + "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhong "
-                    + "FROM LuuTru lt "
-                    + "LEFT JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong "
+                    + "FROM dbo.LuuTru lt "
+                    + "LEFT JOIN dbo.DatPhong dp ON lt.maDatPhong = dp.maDatPhong "
                     + "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang "
-                    + "LEFT JOIN Phong p ON lt.maPhong = p.maPhong "
+                    + "LEFT JOIN dbo.Phong p ON lt.maPhong = p.maPhong "
                     + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
-                    + "LEFT JOIN ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
-                    + "LEFT JOIN DatPhong dp2 ON ctdp.maDatPhong = dp2.maDatPhong "
+                    + "LEFT JOIN dbo.ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                    + "LEFT JOIN dbo.DatPhong dp2 ON ctdp.maDatPhong = dp2.maDatPhong "
                     + "LEFT JOIN BangGia bg ON dp2.maBangGia = bg.maBangGia "
                     + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong";
     private static final String STATUS_BOOKED = "\u0110\u00e3 \u0111\u1eb7t";
@@ -59,7 +66,7 @@ public class CheckInOutDAO {
         if (con == null || maDatPhong <= 0) {
             return;
         }
-        updateBookingStatus(con, Integer.valueOf(maDatPhong), resolveBookingStatusForBooking(con, maDatPhong));
+            updateBookingTrangThai(con, Integer.valueOf(maDatPhong), resolveBookingStatusForBooking(con, maDatPhong));
     }
 
     public List<LuuTru> getAll() {
@@ -142,7 +149,7 @@ public class CheckInOutDAO {
             return false;
         }
 
-        String sql = "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        String sql = SQL_INSERT_LUU_TRU;
         try {
             con.setAutoCommit(false);
             try (PreparedStatement stmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -160,7 +167,7 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
+            updateBookingTrangThai(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -183,7 +190,7 @@ public class CheckInOutDAO {
             return false;
         }
 
-        String sql = "UPDATE LuuTru SET maChiTietDatPhong = ?, maDatPhong = ?, maPhong = ?, checkIn = ?, checkOut = ?, soNguoi = ?, giaPhong = ?, tienCoc = ? WHERE maLuuTru = ?";
+        String sql = "UPDATE dbo.LuuTru SET maChiTietDatPhong = ?, maDatPhong = ?, maPhong = ?, checkIn = ?, checkOut = ?, soNguoi = ?, giaPhong = ?, tienCoc = ? WHERE maLuuTru = ?";
         try {
             con.setAutoCommit(false);
             try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -196,7 +203,7 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
+            updateBookingTrangThai(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -226,7 +233,7 @@ public class CheckInOutDAO {
 
         try {
             con.setAutoCommit(false);
-            try (PreparedStatement stmt = con.prepareStatement("DELETE FROM LuuTru WHERE maLuuTru = ?")) {
+            try (PreparedStatement stmt = con.prepareStatement("DELETE FROM dbo.LuuTru WHERE maLuuTru = ?")) {
                 stmt.setInt(1, id.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
@@ -235,7 +242,7 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(existing.getMaDatPhong()), "ÄĂ£ xĂ¡c nháº­n");
+            updateBookingTrangThai(con, parseIntOrNull(existing.getMaDatPhong()), "ÄĂ£ xĂ¡c nháº­n");
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -304,13 +311,13 @@ public class CheckInOutDAO {
                 "ISNULL(p.soPhong, N'ChĂ†Â°a gÄ‚Â¡n') AS soPhong, " +
                 "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong, N'-') AS tenLoaiPhong, " +
                 "dp.trangThai AS trangThaiDatPhong, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat " +
-                "FROM ChiTietDatPhong ctdp " +
-                "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                "LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong " +
+                "FROM dbo.ChiTietDatPhong ctdp " +
+                "JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "LEFT JOIN dbo.Phong p ON p.maPhong = ctdp.maPhong " +
                 "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong " +
                 "LEFT JOIN BangGia bg ON bg.maBangGia = dp.maBangGia " +
                 "LEFT JOIN LoaiPhong lp2 ON lp2.maLoaiPhong = bg.maLoaiPhong " +
-                "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut FROM LuuTru lt " +
+                "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut FROM dbo.LuuTru lt " +
                 "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt " +
                 "WHERE ctdp.maDatPhong = ? " +
@@ -359,10 +366,10 @@ public class CheckInOutDAO {
 
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc ")
-                .append("FROM ChiTietDatPhong ctdp ")
-                .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
+                .append("FROM dbo.ChiTietDatPhong ctdp ")
+                .append("JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
                 .append("WHERE ctdp.maDatPhong = ? ")
-                .append("AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) ")
+                .append("AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) ")
                 .append("AND ctdp.maChiTietDatPhong IN (");
         for (int i = 0; i < detailIds.size(); i++) {
             if (i > 0) {
@@ -376,9 +383,8 @@ public class CheckInOutDAO {
             con.setAutoCommit(false);
             int affected = 0;
             try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
-                 PreparedStatement insertStmt = con.prepareStatement(
-                         "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                 PreparedStatement roomStmt = con.prepareStatement("UPDATE Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? AND trangThai <> N'B\u1ea3o tr\u00ec'")) {
+                 PreparedStatement insertStmt = con.prepareStatement(SQL_INSERT_LUU_TRU);
+                 PreparedStatement roomStmt = con.prepareStatement(SQL_UPDATE_PHONG_DANG_O)) {
                 int index = 1;
                 selectStmt.setInt(index++, bookingId.intValue());
                 for (Integer detailId : detailIds) {
@@ -396,7 +402,7 @@ public class CheckInOutDAO {
                         insertStmt.setInt(2, bookingId.intValue());
                         insertStmt.setInt(3, maPhong);
                         insertStmt.setTimestamp(4, toTimestamp(thoiGianCheckIn));
-                        insertStmt.setTimestamp(5, null);
+                        insertStmt.setNull(5, Types.TIMESTAMP);
                         insertStmt.setInt(6, rs.getInt("soNguoi"));
                         insertStmt.setDouble(7, rs.getDouble("giaPhong"));
                         insertStmt.setDouble(8, rs.getDouble("tienCoc"));
@@ -442,7 +448,7 @@ public class CheckInOutDAO {
         String findDetailSql = "SELECT TOP 1 ctdp.maChiTietDatPhong "
                 + "FROM ChiTietDatPhong ctdp "
                 + "WHERE ctdp.maDatPhong = ? AND ctdp.maPhong = ? "
-                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) "
+                + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) "
                 + "ORDER BY ctdp.maChiTietDatPhong ASC";
 
         try (PreparedStatement stmt = con.prepareStatement(findDetailSql)) {
@@ -481,7 +487,7 @@ public class CheckInOutDAO {
 
         try {
             con.setAutoCommit(false);
-            try (PreparedStatement stmt = con.prepareStatement("UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ?")) {
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.LuuTru SET checkOut = ? WHERE maLuuTru = ?")) {
                 stmt.setTimestamp(1, toTimestamp(thoiGianCheckOutThucTe));
                 stmt.setInt(2, stayId.intValue());
                 if (stmt.executeUpdate() <= 0) {
@@ -522,7 +528,7 @@ public class CheckInOutDAO {
 
     private void refreshAllRoomStatuses(Connection con) throws SQLException {
         List<Integer> roomIds = new ArrayList<Integer>();
-        try (PreparedStatement ps = con.prepareStatement("SELECT maPhong FROM Phong");
+        try (PreparedStatement ps = con.prepareStatement("SELECT maPhong FROM dbo.Phong");
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 roomIds.add(Integer.valueOf(rs.getInt("maPhong")));
@@ -567,7 +573,7 @@ public class CheckInOutDAO {
         if (maPhong == null) {
             return;
         }
-        try (PreparedStatement stmt = con.prepareStatement("UPDATE Phong SET trangThai = ? WHERE maPhong = ? AND trangThai <> N'Bảo trì'")) {
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.Phong SET trangThai = ? WHERE maPhong = ? AND trangThai <> N'Bảo trì'")) {
             stmt.setString(1, trangThai);
             stmt.setInt(2, maPhong.intValue());
             stmt.executeUpdate();
@@ -578,7 +584,18 @@ public class CheckInOutDAO {
         if (maDatPhong == null) {
             return;
         }
-        try (PreparedStatement stmt = con.prepareStatement("UPDATE DatPhong SET trangThai = ? WHERE maDatPhong = ?")) {
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.DatPhong SET trangThai = ? WHERE maDatPhong = ?")) {
+            stmt.setString(1, trangThai);
+            stmt.setInt(2, maDatPhong.intValue());
+            stmt.executeUpdate();
+        }
+    }
+
+    private void updateBookingTrangThai(Connection con, Integer maDatPhong, String trangThai) throws SQLException {
+        if (maDatPhong == null) {
+            return;
+        }
+        try (PreparedStatement stmt = con.prepareStatement(SQL_UPDATE_DAT_PHONG_TRANG_THAI)) {
             stmt.setString(1, trangThai);
             stmt.setInt(2, maDatPhong.intValue());
             stmt.executeUpdate();
@@ -587,7 +604,7 @@ public class CheckInOutDAO {
 
     private void refreshBookingStatusAfterCheckIn(Connection con, int maDatPhong) throws SQLException {
         String resolvedStatus = resolveBookingStatus(con, maDatPhong, null);
-        updateBookingStatus(con, Integer.valueOf(maDatPhong), resolvedStatus);
+        updateBookingTrangThai(con, Integer.valueOf(maDatPhong), resolvedStatus);
     }
 
     private void refreshBookingStatusAfterCheckout(Connection con, Integer maDatPhong) throws SQLException {
@@ -595,7 +612,7 @@ public class CheckInOutDAO {
             return;
         }
         String resolvedStatus = resolveBookingStatus(con, maDatPhong.intValue(), null);
-        updateBookingStatus(con, maDatPhong, resolvedStatus);
+        updateBookingTrangThai(con, maDatPhong, resolvedStatus);
     }
 
     private void updateBookingExpectedCheckOut(Connection con, int maDatPhong, LocalDateTime thoiGianCheckOutDuKien) throws SQLException {
@@ -603,7 +620,7 @@ public class CheckInOutDAO {
             return;
         }
         try (PreparedStatement stmt = con.prepareStatement(
-                "UPDATE DatPhong SET ngayTraPhong = ? WHERE maDatPhong = ?")) {
+                "UPDATE dbo.DatPhong SET ngayTraPhong = ? WHERE maDatPhong = ?")) {
             stmt.setTimestamp(1, Timestamp.valueOf(thoiGianCheckOutDuKien));
             stmt.setInt(2, maDatPhong);
             stmt.executeUpdate();
@@ -615,7 +632,7 @@ public class CheckInOutDAO {
             return false;
         }
         try (PreparedStatement stmt = con.prepareStatement(
-                "SELECT COUNT(1) FROM LuuTru WHERE maDatPhong = ? AND checkOut IS NULL")) {
+                "SELECT COUNT(1) FROM dbo.LuuTru WHERE maDatPhong = ? AND checkOut IS NULL")) {
             stmt.setInt(1, maDatPhong.intValue());
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
@@ -628,11 +645,11 @@ public class CheckInOutDAO {
 
     private boolean hasPendingCheckInDetails(Connection con, int maDatPhong) throws SQLException {
         String sql = "SELECT COUNT(1) "
-                + "FROM ChiTietDatPhong ctdp "
-                + "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
+                + "FROM dbo.ChiTietDatPhong ctdp "
+                + "JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
                 + "WHERE ctdp.maDatPhong = ? "
                 + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in') "
-                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
+                + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maDatPhong);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -654,11 +671,11 @@ public class CheckInOutDAO {
                 + "SUM(CASE WHEN stayStats.coDangO = 1 THEN 1 ELSE 0 END) AS soChiTietDangO, "
                 + "SUM(CASE WHEN stayStats.coDaCheckOut = 1 THEN 1 ELSE 0 END) AS soChiTietDaCheckOut, "
                 + "SUM(CASE WHEN stayStats.coLuuTru = 1 THEN 1 ELSE 0 END) AS soChiTietDaPhatSinhLuuTru "
-                + "FROM ChiTietDatPhong ctdp "
+                + "FROM dbo.ChiTietDatPhong ctdp "
                 + "OUTER APPLY ( "
-                + "    SELECT CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NULL) THEN 1 ELSE 0 END AS coDangO, "
-                + "           CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NOT NULL) THEN 1 ELSE 0 END AS coDaCheckOut, "
-                + "           CASE WHEN EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) THEN 1 ELSE 0 END AS coLuuTru "
+                + "    SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NULL) THEN 1 ELSE 0 END AS coDangO, "
+                + "           CASE WHEN EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NOT NULL) THEN 1 ELSE 0 END AS coDaCheckOut, "
+                + "           CASE WHEN EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) THEN 1 ELSE 0 END AS coLuuTru "
                 + ") stayStats "
                 + "WHERE ctdp.maDatPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -694,7 +711,7 @@ public class CheckInOutDAO {
 
     private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement(
-                "SELECT COUNT(1) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'') = N'Đã thanh toán'")) {
+                "SELECT COUNT(1) FROM dbo.HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'') = N'Đã thanh toán'")) {
             stmt.setInt(1, maDatPhong);
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next() && rs.getInt(1) > 0;

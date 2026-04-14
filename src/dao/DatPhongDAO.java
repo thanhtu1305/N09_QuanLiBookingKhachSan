@@ -317,7 +317,7 @@ public class DatPhongDAO {
 
         try {
             con.setAutoCommit(false);
-            String sql = "UPDATE DatPhong SET trangThai = ? WHERE maDatPhong = ?";
+            String sql = "UPDATE dbo.DatPhong SET trangThai = ? WHERE maDatPhong = ?";
             try (PreparedStatement stmt = con.prepareStatement(sql)) {
                 stmt.setString(1, safeTrim(trangThai));
                 stmt.setInt(2, id.intValue());
@@ -428,21 +428,21 @@ public class DatPhongDAO {
         }
 
         String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
-                "FROM Phong p " +
+                "FROM dbo.Phong p " +
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "WHERE (p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng') OR (? IS NOT NULL AND p.maPhong = ?)) " +
                 "AND NOT EXISTS ( " +
-                "    SELECT 1 FROM LuuTru ltActive " +
+                "    SELECT 1 FROM dbo.LuuTru ltActive " +
                 "    WHERE ltActive.maPhong = p.maPhong " +
                 "      AND ltActive.checkOut IS NULL " +
                 "      AND (? IS NULL OR ltActive.maDatPhong <> ?) " +
                 ") " +
                 "AND NOT EXISTS ( " +
                 "    SELECT 1 " +
-                "    FROM ChiTietDatPhong ctdp " +
-                "    JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
+                "    FROM dbo.ChiTietDatPhong ctdp " +
+                "    JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
                 "    OUTER APPLY (SELECT TOP 1 lt.maLuuTru " +
-                "                 FROM LuuTru lt " +
+                "                 FROM dbo.LuuTru lt " +
                 "                 WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "                 ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt " +
                 "    WHERE ctdp.maPhong = p.maPhong " +
@@ -512,9 +512,9 @@ public class DatPhongDAO {
                 + "p.soPhong, p.tang, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, "
                 + "COALESCE(CAST(p.maLoaiPhong AS NVARCHAR(20)), CAST(bg.maLoaiPhong AS NVARCHAR(20))) AS maLoaiPhongResolved, "
                 + "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhongResolved "
-                + "FROM ChiTietDatPhong ctdp "
-                + "JOIN DatPhong dp ON ctdp.maDatPhong = dp.maDatPhong "
-                + "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong "
+                + "FROM dbo.ChiTietDatPhong ctdp "
+                + "JOIN dbo.DatPhong dp ON ctdp.maDatPhong = dp.maDatPhong "
+                + "LEFT JOIN dbo.Phong p ON ctdp.maPhong = p.maPhong "
                 + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
                 + "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia "
                 + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong "
@@ -523,7 +523,7 @@ public class DatPhongDAO {
                 + "               AND bgRoom.trangThai = N'Đang áp dụng' "
                 + "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved "
                 + "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut "
-                + "             FROM LuuTru lt "
+                + "             FROM dbo.LuuTru lt "
                 + "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
                 + "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt "
                 + "WHERE ctdp.maDatPhong = ? "
@@ -678,7 +678,7 @@ public class DatPhongDAO {
         if (uniqueRoomIds.isEmpty()) {
             return;
         }
-        try (PreparedStatement stmt = con.prepareStatement("UPDATE Phong SET trangThai = ? WHERE maPhong = ?")) {
+        try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.Phong SET trangThai = ? WHERE maPhong = ?")) {
             for (Integer roomId : uniqueRoomIds) {
                 String status = resolveOperationalRoomStatus(con, roomId.intValue());
                 if (status.isEmpty()) {
@@ -731,7 +731,7 @@ public class DatPhongDAO {
 
     private boolean hasActiveStayForRoom(Connection con, int maPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement(
-                "SELECT COUNT(1) FROM LuuTru WHERE maPhong = ? AND checkOut IS NULL")) {
+                "SELECT COUNT(1) FROM dbo.LuuTru WHERE maPhong = ? AND checkOut IS NULL")) {
             stmt.setInt(1, maPhong);
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next() && rs.getInt(1) > 0;
@@ -741,11 +741,11 @@ public class DatPhongDAO {
 
     private boolean hasBookedAssignmentForRoom(Connection con, int maPhong) throws SQLException {
         String sql = "SELECT COUNT(1) "
-                + "FROM ChiTietDatPhong ctdp "
-                + "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
+                + "FROM dbo.ChiTietDatPhong ctdp "
+                + "JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
                 + "WHERE ctdp.maPhong = ? "
                 + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Check-out một phần', N'Đã check-in') "
-                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
+                + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maPhong);
             try (ResultSet rs = stmt.executeQuery()) {

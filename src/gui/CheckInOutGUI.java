@@ -9,6 +9,7 @@ import db.ConnectDB;
 import entity.ChiTietBangGia;
 import entity.DatPhongConflictInfo;
 import entity.DichVu;
+import entity.KhachHang;
 import entity.SuDungDichVu;
 import gui.common.AppBranding;
 import gui.common.AppFonts;
@@ -1333,6 +1334,13 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private final class CheckInDialog extends BaseStayDialog {
+        private static final int COL_CCCD = 4;
+        private static final int COL_HO_TEN = 5;
+        private static final int COL_SDT = 6;
+        private static final int COL_NGAY_SINH = 7;
+        private static final int COL_EMAIL = 8;
+        private static final int COL_DIA_CHI = 9;
+        private static final int COL_GHI_CHU = 10;
         private final StayRecord record;
         private final List<CheckInOutDAO.CheckInBookingItem> bookingItems = new ArrayList<CheckInOutDAO.CheckInBookingItem>();
         private final JTable tblRooms;
@@ -1341,6 +1349,7 @@ public class CheckInOutGUI extends JFrame {
         private final AppTimePickerField txtGioVao;
         private final AppDatePickerField txtNgayRa;
         private final AppTimePickerField txtGioRa;
+        private boolean updatingCustomerCells;
 
         private CheckInDialog(Frame owner, StayRecord record) {
             super(owner, "Check-in", 820, 540);
@@ -1374,15 +1383,19 @@ public class CheckInOutGUI extends JFrame {
             addFormRow(form, gbc, 7, "Gi\u1edd ra d\u1ef1 ki\u1ebfn", txtGioRa);
 
             roomTableModel = new DefaultTableModel(
-                    new Object[]{"Ph\u00f2ng", "Lo\u1ea1i ph\u00f2ng", "Tr\u1ea1ng th\u00e1i", "S\u1ed1 ng\u01b0\u1eddi"}, 0) {
+                    new Object[]{"Ph\u00f2ng", "Lo\u1ea1i ph\u00f2ng", "Tr\u1ea1ng th\u00e1i", "S\u1ed1 ng\u01b0\u1eddi",
+                            "CCCD/Passport", "H\u1ecd t\u00ean KH", "S\u0110T", "Ng\u00e0y sinh", "Email", "\u0110\u1ecba ch\u1ec9", "Ghi ch\u00fa"}, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
-                    return false;
+                    return column >= COL_CCCD;
                 }
             };
             tblRooms = new JTable(roomTableModel);
             tblRooms.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             tblRooms.setRowHeight(28);
+            tblRooms.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+            configureRoomTableColumns();
+            registerCustomerAutoFillListener();
             refillRoomTable();
 
             JPanel card = createDialogCardPanel();
@@ -1423,10 +1436,84 @@ public class CheckInOutGUI extends JFrame {
                         safeValue(item.getSoPhong(), "-"),
                         safeValue(item.getTenLoaiPhong(), "-"),
                         safeValue(item.getTrangThai(), "-"),
-                        item.getSoNguoi()
+                        item.getSoNguoi(),
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        ""
                 });
             }
             selectFirstPendingRoom();
+        }
+
+        private void configureRoomTableColumns() {
+            tblRooms.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+
+            int[] preferredWidths = {70, 110, 100, 60, 120, 160, 105, 95, 170, 190, 180};
+            int[] minWidths = {55, 90, 90, 50, 105, 130, 90, 85, 130, 140, 140};
+            int[] maxWidths = {85, 160, 140, 70, 150, 260, 130, 110, 260, 320, 320};
+            for (int i = 0; i < preferredWidths.length && i < tblRooms.getColumnModel().getColumnCount(); i++) {
+                tblRooms.getColumnModel().getColumn(i).setPreferredWidth(preferredWidths[i]);
+                tblRooms.getColumnModel().getColumn(i).setMinWidth(minWidths[i]);
+                tblRooms.getColumnModel().getColumn(i).setMaxWidth(maxWidths[i]);
+            }
+        }
+
+        private void registerCustomerAutoFillListener() {
+            roomTableModel.addTableModelListener(e -> {
+                if (updatingCustomerCells
+                        || e.getType() != javax.swing.event.TableModelEvent.UPDATE
+                        || e.getColumn() != COL_CCCD) {
+                    return;
+                }
+                int row = e.getFirstRow();
+                if (row < 0 || row >= roomTableModel.getRowCount()) {
+                    return;
+                }
+                handleCccdEdited(row);
+            });
+        }
+
+        private void handleCccdEdited(int row) {
+            String cccdPassport = valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim();
+            if (cccdPassport.isEmpty()) {
+                return;
+            }
+
+            KhachHang khachHang = checkInOutDAO.findCustomerByCccdPassport(cccdPassport);
+            if (khachHang != null) {
+                fillCustomerRow(row, khachHang);
+                return;
+            }
+
+            javax.swing.SwingUtilities.invokeLater(() ->
+                    showInfo("Kh\u00e1ch ch\u01b0a c\u00f3 trong h\u1ec7 th\u1ed1ng. Vui l\u00f2ng nh\u1eadp th\u00f4ng tin."));
+        }
+
+        private void fillCustomerRow(int row, KhachHang khachHang) {
+            updatingCustomerCells = true;
+            try {
+                roomTableModel.setValueAt(safeValue(khachHang.getCccdPassport(), ""), row, COL_CCCD);
+                roomTableModel.setValueAt(safeValue(khachHang.getHoTen(), ""), row, COL_HO_TEN);
+                roomTableModel.setValueAt(safeValue(khachHang.getSoDienThoai(), ""), row, COL_SDT);
+                roomTableModel.setValueAt(formatCustomerBirthDate(khachHang), row, COL_NGAY_SINH);
+                roomTableModel.setValueAt(safeValue(khachHang.getEmail(), ""), row, COL_EMAIL);
+                roomTableModel.setValueAt(safeValue(khachHang.getDiaChi(), ""), row, COL_DIA_CHI);
+                roomTableModel.setValueAt(safeValue(khachHang.getGhiChu(), ""), row, COL_GHI_CHU);
+            } finally {
+                updatingCustomerCells = false;
+            }
+        }
+
+        private String formatCustomerBirthDate(KhachHang khachHang) {
+            if (khachHang == null) {
+                return "";
+            }
+            LocalDate ngaySinh = khachHang.getNgaySinhAsLocalDate();
+            return ngaySinh == null ? safeValue(khachHang.getNgaySinh(), "") : formatDate(ngaySinh);
         }
 
         private void selectFirstPendingRoom() {
@@ -1464,6 +1551,10 @@ public class CheckInOutGUI extends JFrame {
         }
 
         private void submit(boolean checkInAll) {
+            if (tblRooms.isEditing() && tblRooms.getCellEditor() != null) {
+                tblRooms.getCellEditor().stopCellEditing();
+            }
+
             LocalDate ngayVao = txtNgayVao.getDateValue();
             LocalDate ngayRa = txtNgayRa.getDateValue();
             LocalTime gioVao = txtGioVao.getTimeValue();
@@ -1485,6 +1576,9 @@ public class CheckInOutGUI extends JFrame {
                 showInfo(checkInAll
                         ? "\u0110\u01a1n n\u00e0y kh\u00f4ng c\u00f2n ph\u00f2ng n\u00e0o s\u1eb5n s\u00e0ng check-in."
                         : "Vui l\u00f2ng ch\u1ecdn ph\u00f2ng \u0111\u00e3 \u0111\u01b0\u1ee3c g\u00e1n \u0111\u1ec3 check-in.");
+                return;
+            }
+            if (!validateRequiredCustomerInfo(targets)) {
                 return;
             }
 
@@ -1513,6 +1607,29 @@ public class CheckInOutGUI extends JFrame {
                     ? "\u0110\u00e3 check-in c\u00e1c ph\u00f2ng \u0111ang ch\u1edd trong \u0111\u01a1n."
                     : "\u0110\u00e3 check-in ph\u00f2ng \u0111\u00e3 ch\u1ecdn. C\u00e1c ph\u00f2ng c\u00f2n l\u1ea1i gi\u1eef nguy\u00ean tr\u1ea1ng th\u00e1i.");
             dispose();
+        }
+
+        private boolean validateRequiredCustomerInfo(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                int row = bookingItems.indexOf(item);
+                if (row < 0 || row >= roomTableModel.getRowCount()) {
+                    continue;
+                }
+
+                String cccdPassport = valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim();
+                String hoTen = valueOf(roomTableModel.getValueAt(row, COL_HO_TEN)).trim();
+                if (!cccdPassport.isEmpty() && !hoTen.isEmpty()) {
+                    continue;
+                }
+
+                tblRooms.setRowSelectionInterval(row, row);
+                tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, COL_CCCD, true));
+                showInfo("Ph\u00f2ng " + safeValue(item.getSoPhong(), "-")
+                        + " ch\u01b0a \u0111\u1ee7 th\u00f4ng tin kh\u00e1ch h\u00e0ng. "
+                        + "B\u1eaft bu\u1ed9c c\u00f3 CCCD/Passport v\u00e0 H\u1ecd t\u00ean KH tr\u01b0\u1edbc khi check-in.");
+                return false;
+            }
+            return true;
         }
     }
 

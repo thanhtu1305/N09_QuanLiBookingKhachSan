@@ -1,6 +1,7 @@
 package dao;
 
 import db.ConnectDB;
+import entity.KhachHang;
 import entity.LuuTru;
 import entity.Phong;
 
@@ -11,11 +12,14 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CheckInOutDAO {
+    private static final DateTimeFormatter DISPLAY_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final String SELECT_BASE =
             "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.checkOut, lt.soNguoi, lt.giaPhong, lt.tienCoc, "
                     + "dp.trangThai AS trangThaiDatPhong, kh.hoTen AS tenKhachHang, kh.soDienThoai AS soDienThoaiKhach, "
@@ -44,6 +48,7 @@ public class CheckInOutDAO {
     private static final String STATUS_CANCELLED_BOOKING = "H\u1ee7y booking";
     private static final String STATUS_ROOM_ACTIVE = "Ho\u1ea1t \u0111\u1ed9ng";
     private static final String STATUS_ROOM_OCCUPIED = "\u0110ang \u1edf";
+    private static boolean representativeGuestSchemaEnsured = false;
 
     private String lastErrorMessage = "";
 
@@ -341,6 +346,39 @@ public class CheckInOutDAO {
             e.printStackTrace();
         }
         return items;
+    }
+
+    public KhachHang findCustomerByCccdPassport(String cccdPassport) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        String value = safeTrim(cccdPassport);
+        if (con == null || value.isEmpty()) {
+            return null;
+        }
+
+        String sql = "SELECT TOP 1 maKhachHang, hoTen, soDienThoai, ngaySinh, email, cccdPassport, diaChi, ghiChu "
+                + "FROM KhachHang WHERE cccdPassport = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setString(1, value);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    KhachHang khachHang = new KhachHang();
+                    khachHang.setMaKhachHang(String.valueOf(rs.getInt("maKhachHang")));
+                    khachHang.setHoTen(safeTrim(rs.getString("hoTen")));
+                    khachHang.setSoDienThoai(safeTrim(rs.getString("soDienThoai")));
+                    khachHang.setNgaySinh(rs.getDate("ngaySinh") == null ? "" : rs.getDate("ngaySinh").toLocalDate().toString());
+                    khachHang.setEmail(safeTrim(rs.getString("email")));
+                    khachHang.setCccdPassport(safeTrim(rs.getString("cccdPassport")));
+                    khachHang.setDiaChi(safeTrim(rs.getString("diaChi")));
+                    khachHang.setGhiChu(safeTrim(rs.getString("ghiChu")));
+                    return khachHang;
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
     }
 
     public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {

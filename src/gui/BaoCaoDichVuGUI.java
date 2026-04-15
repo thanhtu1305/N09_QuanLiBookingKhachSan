@@ -197,6 +197,8 @@ public class BaoCaoDichVuGUI extends JFrame {
         ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Tên dịch vụ");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> loadServiceData(false));
+        ScreenUIHelper.installLiveSearch(txtTuNgay, () -> loadServiceData(false));
+        ScreenUIHelper.installLiveSearch(txtDenNgay, () -> loadServiceData(false));
         ScreenUIHelper.installAutoFilter(() -> loadServiceData(false), cboCheDoLoc, cboThang, cboNam);
 
         right.add(lblSearch);

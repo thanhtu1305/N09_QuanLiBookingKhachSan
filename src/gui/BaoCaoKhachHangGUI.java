@@ -210,6 +210,8 @@ public class BaoCaoKhachHangGUI extends JFrame {
         ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Tên khách, mã khách, quốc tịch hoặc nhóm");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> loadCustomerReport(false));
+        ScreenUIHelper.installLiveSearch(txtTuNgay, () -> loadCustomerReport(false));
+        ScreenUIHelper.installLiveSearch(txtDenNgay, () -> loadCustomerReport(false));
         ScreenUIHelper.installAutoFilter(() -> loadCustomerReport(false), cboCheDoLoc, cboThang, cboNam, cboNhomKhach);
 
         right.add(lblSearch);

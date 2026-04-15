@@ -197,6 +197,8 @@ public class BaoCaoDatPhongGUI extends JFrame {
         ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Ngày hoặc trạng thái booking");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> loadBookingData(false));
+        ScreenUIHelper.installLiveSearch(txtTuNgay, () -> loadBookingData(false));
+        ScreenUIHelper.installLiveSearch(txtDenNgay, () -> loadBookingData(false));
         ScreenUIHelper.installAutoFilter(() -> loadBookingData(false), cboCheDoLoc, cboThang, cboNam);
 
         right.add(lblSearch);

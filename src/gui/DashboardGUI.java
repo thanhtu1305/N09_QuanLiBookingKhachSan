@@ -335,8 +335,6 @@ public class DashboardGUI extends JFrame {
 
         controls.add(createFieldGroup("Tầng", cboGanttTang));
         controls.add(createFieldGroup("Loại phòng", cboGanttLoaiPhong));
-        controls.add(createPrimaryButton("Làm mới", new Color(15, 118, 110), Color.WHITE, e -> loadDashboardData(true)));
-
         header.add(titleRow);
         header.add(Box.createVerticalStrut(8));
         header.add(controls);

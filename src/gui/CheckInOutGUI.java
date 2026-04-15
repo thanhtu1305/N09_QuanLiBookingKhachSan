@@ -212,7 +212,6 @@ public class CheckInOutGUI extends JFrame {
         card.add(createPrimaryButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openChangeRoomDialog()));
         card.add(createPrimaryButton("Gia h\u1ea1n", new Color(59, 130, 246), Color.WHITE, e -> openExtendDialog()));
         card.add(createPrimaryButton("Check-out", new Color(220, 38, 38), Color.WHITE, e -> openCheckOutDialog()));
-        card.add(createPrimaryButton("T\u00ecm ki\u1ebfm", new Color(15, 118, 110), Color.WHITE, e -> applyFilters(true)));
         return card;
     }
 
@@ -229,6 +228,8 @@ public class CheckInOutGUI extends JFrame {
         txtTuKhoa = createInputField("");
         txtTuKhoa.setPreferredSize(new Dimension(280, 34));
         txtTuKhoa.setToolTipText("M\u00e3 \u0111\u1eb7t ph\u00f2ng / s\u1ed1 ph\u00f2ng / t\u00ean kh\u00e1ch");
+        ScreenUIHelper.installAutoFilter(() -> applyFilters(false), cboTrangThai, cboTang, cboLoaiPhong, cboCaLam);
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
 
         left.add(createFieldGroup("Tr\u1ea1ng th\u00e1i", cboTrangThai));
         left.add(createFieldGroup("T\u1ea7ng", cboTang));
@@ -248,7 +249,6 @@ public class CheckInOutGUI extends JFrame {
         JPanel searchRow = new JPanel(new BorderLayout(8, 0));
         searchRow.setOpaque(false);
         searchRow.add(txtTuKhoa, BorderLayout.CENTER);
-        searchRow.add(createOutlineButton("L\u1ecdc ngay", new Color(59, 130, 246), e -> applyFilters(true)), BorderLayout.EAST);
         right.add(searchRow);
 
         card.add(left, BorderLayout.CENTER);

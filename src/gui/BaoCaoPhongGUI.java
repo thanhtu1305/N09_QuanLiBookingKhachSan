@@ -196,6 +196,8 @@ public class BaoCaoPhongGUI extends JFrame {
         ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Loại phòng hoặc trạng thái");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> loadRoomData(false));
+        ScreenUIHelper.installLiveSearch(txtTuNgay, () -> loadRoomData(false));
+        ScreenUIHelper.installLiveSearch(txtDenNgay, () -> loadRoomData(false));
         ScreenUIHelper.installAutoFilter(() -> loadRoomData(false), cboNgay, cboThang, cboNam);
 
         right.add(lblSearch);

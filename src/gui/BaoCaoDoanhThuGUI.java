@@ -196,6 +196,8 @@ public class BaoCaoDoanhThuGUI extends JFrame {
         ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         txtTuKhoa.setToolTipText("Ngày hoặc nội dung ghi chú");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> loadRevenueData(false));
+        ScreenUIHelper.installLiveSearch(txtTuNgay, () -> loadRevenueData(false));
+        ScreenUIHelper.installLiveSearch(txtDenNgay, () -> loadRevenueData(false));
         ScreenUIHelper.installAutoFilter(() -> loadRevenueData(false), cboCheDoLoc, cboThang, cboNam);
 
         right.add(lblSearch);

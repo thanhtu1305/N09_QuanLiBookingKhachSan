@@ -13,6 +13,7 @@ public class ThanhToan implements Serializable {
     private String maHoaDon;
     private String maLuuTru;
     private String maDatPhong;
+    private String maChiTietDatPhong;
     private String maKhachHang;
     private String maNhanVien;
 
@@ -27,6 +28,7 @@ public class ThanhToan implements Serializable {
     private String soThamChieu;
     private String thongTinThanhToanKetHop;
     private String ghiChu;
+    private String loaiHoaDon;
     private String trangThai;
 
     private Timestamp ngayLap;
@@ -85,6 +87,14 @@ public class ThanhToan implements Serializable {
 
     public void setMaDatPhong(String maDatPhong) {
         this.maDatPhong = maDatPhong;
+    }
+
+    public String getMaChiTietDatPhong() {
+        return maChiTietDatPhong;
+    }
+
+    public void setMaChiTietDatPhong(String maChiTietDatPhong) {
+        this.maChiTietDatPhong = maChiTietDatPhong;
     }
 
     public String getMaKhachHang() {
@@ -189,6 +199,14 @@ public class ThanhToan implements Serializable {
 
     public void setGhiChu(String ghiChu) {
         this.ghiChu = ghiChu;
+    }
+
+    public String getLoaiHoaDon() {
+        return loaiHoaDon;
+    }
+
+    public void setLoaiHoaDon(String loaiHoaDon) {
+        this.loaiHoaDon = loaiHoaDon;
     }
 
     public String getTrangThai() {
@@ -317,6 +335,11 @@ public class ThanhToan implements Serializable {
 
     public double getSoTienCoTheHoanCoc() {
         return Math.max(0d, tienCoc - tienCocTru - tienCocDaHoan);
+    }
+
+    public boolean isHoaDonTheoPhong() {
+        return (maChiTietDatPhong != null && !maChiTietDatPhong.trim().isEmpty())
+                || (loaiHoaDon != null && "PHONG".equalsIgnoreCase(loaiHoaDon.trim()));
     }
 
     public String getPhongVaSoDong() {

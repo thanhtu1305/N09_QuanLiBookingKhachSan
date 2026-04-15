@@ -1019,6 +1019,7 @@ public class ThanhToanDAO {
         invoice.setMaHoaDon(String.valueOf(rs.getInt("maHoaDon")));
         invoice.setMaLuuTru(rs.getObject("maLuuTru") == null ? "" : String.valueOf(rs.getInt("maLuuTru")));
         invoice.setMaDatPhong(rs.getObject("maDatPhong") == null ? "" : String.valueOf(rs.getInt("maDatPhong")));
+        invoice.setMaChiTietDatPhong(readOptionalIntAsString(rs, "maChiTietDatPhong"));
         invoice.setMaKhachHang(rs.getObject("maKhachHang") == null ? "" : String.valueOf(rs.getInt("maKhachHang")));
         invoice.setMaHoSo(isBlank(invoice.getMaDatPhong()) ? "-" : "LT-DP" + invoice.getMaDatPhong());
         invoice.setKhachHang(safeTrim(rs.getString("hoTen")));
@@ -1036,9 +1037,34 @@ public class ThanhToanDAO {
         invoice.setGiamGia(rs.getDouble("giamGia"));
         invoice.setTienCocTru(rs.getDouble("tienCocTru"));
         invoice.setTienCoc(rs.getDouble("tienCocGoc"));
+        invoice.setLoaiHoaDon(readOptionalString(rs, "loaiHoaDon"));
         invoice.setTrangThai(safeTrim(rs.getString("trangThai")));
         invoice.setGhiChu(safeTrim(rs.getString("ghiChu")));
         return invoice;
+    }
+
+    private String readOptionalIntAsString(ResultSet rs, String columnName) throws SQLException {
+        if (!hasColumn(rs, columnName) || rs.getObject(columnName) == null) {
+            return "";
+        }
+        int value = rs.getInt(columnName);
+        return value > 0 ? String.valueOf(value) : "";
+    }
+
+    private String readOptionalString(ResultSet rs, String columnName) throws SQLException {
+        if (!hasColumn(rs, columnName)) {
+            return "";
+        }
+        return safeTrim(rs.getString(columnName));
+    }
+
+    private boolean hasColumn(ResultSet rs, String columnName) {
+        try {
+            rs.findColumn(columnName);
+            return true;
+        } catch (SQLException ex) {
+            return false;
+        }
     }
 
     private boolean isWeekend(LocalDate date) {
@@ -1647,7 +1673,7 @@ public class ThanhToanDAO {
     }
 
     private String buildInvoiceHeaderQuery(String whereClause) {
-        return "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.maChiTietDatPhong, hd.ngayLap, hd.ngayThanhToan, " +
+        return "SELECT hd.maHoaDon, hd.maLuuTru, hd.maDatPhong, hd.maKhachHang, hd.maChiTietDatPhong, ISNULL(hd.loaiHoaDon, N'') AS loaiHoaDon, hd.ngayLap, hd.ngayThanhToan, " +
                 "hd.tienPhong, hd.tienDichVu, ISNULL(hd.phuThu,0) AS phuThu, ISNULL(hd.giamGia,0) AS giamGia, " +
                 "ISNULL(hd.tienCocTru,0) AS tienCocTru, ISNULL(hd.trangThai,N'Chá» thanh toÃ¡n') AS trangThai, " +
                 "ISNULL(hd.ghiChu,N'') AS ghiChu, kh.hoTen, kh.soDienThoai, kh.email, kh.cccdPassport, " +

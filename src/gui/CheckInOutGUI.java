@@ -5,6 +5,7 @@ import dao.CheckInOutDAO;
 import dao.DatPhongDAO;
 import dao.DichVuDAO;
 import dao.SuDungDichVuDAO;
+import dao.ThanhToanDAO;
 import db.ConnectDB;
 import entity.ChiTietBangGia;
 import entity.DatPhongConflictInfo;
@@ -2278,6 +2279,12 @@ public class CheckInOutGUI extends JFrame {
                     return;
                 }
                 refreshBookingStatusAfterCheckout(con, record.maDatPhong);
+                List<Integer> invoiceIds = new ThanhToanDAO().prepareInvoicesForCheckout(
+                        con,
+                        record.maDatPhong,
+                        collectStayIds(targets),
+                        checkOutAll
+                );
                 boolean bookingFinished = isBookingReadyForFinalPayment(con, record.maDatPhong);
                 synchronizeOperationalStatuses(con);
                 con.commit();
@@ -2286,8 +2293,14 @@ public class CheckInOutGUI extends JFrame {
                 DatPhongGUI.refreshAllOpenInstances();
                 refreshKhachHangViewsSafely();
                 CheckInOutGUI.refreshAllOpenInstances();
+                String focusInvoiceId = resolveFocusInvoiceId(invoiceIds);
+                if (focusInvoiceId != null) {
+                    ThanhToanGUI.requestInvoiceFocus(focusInvoiceId);
+                } else {
+                    ThanhToanGUI.refreshAllOpenInstances();
+                }
 
-                if (bookingFinished) {
+                if (focusInvoiceId != null || bookingFinished) {
                     NavigationUtil.navigate(
                             CheckInOutGUI.this,
                             ScreenKey.CHECK_IN_OUT,
@@ -2336,6 +2349,27 @@ public class CheckInOutGUI extends JFrame {
                 targets.add(selected);
             }
             return targets;
+        }
+
+        private List<Integer> collectStayIds(List<CheckoutStayItem> items) {
+            List<Integer> stayIds = new ArrayList<Integer>();
+            if (items == null) {
+                return stayIds;
+            }
+            for (CheckoutStayItem item : items) {
+                if (item != null && item.maLuuTru > 0) {
+                    stayIds.add(Integer.valueOf(item.maLuuTru));
+                }
+            }
+            return stayIds;
+        }
+
+        private String resolveFocusInvoiceId(List<Integer> invoiceIds) {
+            if (invoiceIds == null || invoiceIds.isEmpty()) {
+                return null;
+            }
+            Integer invoiceId = invoiceIds.get(0);
+            return invoiceId == null || invoiceId.intValue() <= 0 ? null : String.valueOf(invoiceId);
         }
 
         private void refreshLateCheckoutPreview(AppDatePickerField txtNgayRa, AppTimePickerField txtGioRa) {

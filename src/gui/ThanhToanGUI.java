@@ -77,6 +77,7 @@ public class ThanhToanGUI extends JFrame {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private static final List<ThanhToanGUI> OPEN_INSTANCES = new ArrayList<ThanhToanGUI>();
+    private static String pendingInvoiceSelectionId;
 
     private final String username;
     private final String role;
@@ -506,6 +507,7 @@ public class ThanhToanGUI extends JFrame {
         txtDenNgay.setText("");
         txtTuKhoa.setText("");
         applyFilters(false);
+        applyPendingInvoiceSelection();
         if (showMessage) {
             showSuccess("Đã làm mới dữ liệu thanh toán.");
         }
@@ -596,6 +598,9 @@ public class ThanhToanGUI extends JFrame {
         }
         String soPhong = safeValue(invoice.getSoPhong(), "-");
         if ("-".equals(soPhong)) {
+            return soPhong;
+        }
+        if (invoice.isHoaDonTheoPhong()) {
             return soPhong;
         }
         String[] parts = soPhong.split(",");
@@ -803,6 +808,13 @@ public class ThanhToanGUI extends JFrame {
         }
     }
 
+    private void applyPendingInvoiceSelection() {
+        String maHoaDon = consumePendingInvoiceSelection();
+        if (!isBlank(maHoaDon)) {
+            selectInvoice(maHoaDon);
+        }
+    }
+
     private void registerShortcuts() {
         ScreenUIHelper.registerShortcut(this, "F1", "thanhtoan-f1", this::openPaymentDialog);
         ScreenUIHelper.registerShortcut(this, "F2", "thanhtoan-f2", this::openInvoicePreviewDialog);
@@ -819,6 +831,28 @@ public class ThanhToanGUI extends JFrame {
         for (ThanhToanGUI gui : snapshot) {
             javax.swing.SwingUtilities.invokeLater(() -> gui.reloadData(false));
         }
+    }
+
+    public static void requestInvoiceFocus(String maHoaDon) {
+        synchronized (ThanhToanGUI.class) {
+            pendingInvoiceSelectionId = maHoaDon == null ? null : maHoaDon.trim();
+        }
+        List<ThanhToanGUI> snapshot;
+        synchronized (OPEN_INSTANCES) {
+            snapshot = new ArrayList<ThanhToanGUI>(OPEN_INSTANCES);
+        }
+        for (ThanhToanGUI gui : snapshot) {
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                gui.reloadData(false);
+                gui.selectInvoice(maHoaDon);
+            });
+        }
+    }
+
+    private static synchronized String consumePendingInvoiceSelection() {
+        String value = pendingInvoiceSelectionId;
+        pendingInvoiceSelectionId = null;
+        return value;
     }
 
     private void refreshLinkedViews() {

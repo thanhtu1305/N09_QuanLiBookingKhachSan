@@ -1751,6 +1751,21 @@ public class DatPhongGUI extends JFrame {
             tblBookingDetailDialog.setRowHeight(30);
             tblBookingDetailDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             tblBookingDetailDialog.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+            tblBookingDetailDialog.setToolTipText("Double click để cập nhật dòng chi tiết");
+            tblBookingDetailDialog.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (e.getClickCount() != 2 || tblBookingDetailDialog == null) {
+                        return;
+                    }
+                    int row = tblBookingDetailDialog.rowAtPoint(e.getPoint());
+                    if (row < 0 || row >= detailRows.size()) {
+                        return;
+                    }
+                    tblBookingDetailDialog.setRowSelectionInterval(row, row);
+                    editSelectedDetailRow();
+                }
+            });
             applyBookingDetailColumnWidths();
             ScreenUIHelper.styleTableHeader(tblBookingDetailDialog);
             tblBookingDetailDialog.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
@@ -1783,7 +1798,6 @@ public class DatPhongGUI extends JFrame {
             JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
             actions.setOpaque(false);
             actions.add(createPrimaryButton("Thêm dòng phòng", new Color(59, 130, 246), Color.WHITE, e -> openBookingDetailDialog(null)));
-            actions.add(createOutlineButton("Sửa dòng", new Color(245, 158, 11), e -> editSelectedDetailRow()));
             actions.add(createOutlineButton("Xóa dòng", new Color(220, 38, 38), e -> removeSelectedDetailRow()));
 
             lblDetailSummary = new JLabel();

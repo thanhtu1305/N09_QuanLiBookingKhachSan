@@ -276,7 +276,6 @@ public class DashboardGUI extends JFrame {
 
         JPanel ganttSection = buildGanttSection();
         ganttSection.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ganttSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, ganttSection.getPreferredSize().height));
 
         JPanel taskSection = buildTaskSection();
         taskSection.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -393,7 +392,7 @@ public class DashboardGUI extends JFrame {
         tblGantt.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tblGantt.setGridColor(BORDER_SOFT);
         tblGantt.setShowGrid(true);
-        tblGantt.setFillsViewportHeight(false);
+        tblGantt.setFillsViewportHeight(true);
         tblGantt.setDefaultRenderer(Object.class, new DashboardGanttCellRenderer());
         ScreenUIHelper.styleTableHeader(tblGantt);
         tblGantt.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -423,7 +422,6 @@ public class DashboardGUI extends JFrame {
         ganttScrollPane.getVerticalScrollBar().setBlockIncrement(tblGantt.getRowHeight() * 4);
         int ganttViewportHeight = resolveGanttViewportHeightByRows();
         ganttScrollPane.setPreferredSize(new Dimension(0, ganttViewportHeight));
-        ganttScrollPane.setMinimumSize(new Dimension(0, ganttViewportHeight));
         ganttScrollPane.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
             @Override
             public void componentResized(java.awt.event.ComponentEvent e) {
@@ -910,7 +908,6 @@ public class DashboardGUI extends JFrame {
         tblGantt.getColumnModel().getColumn(0).setMinWidth(minRoomWidth);
         tblGantt.getColumnModel().getColumn(0).setPreferredWidth(roomWidth);
 
-        int appliedTableWidth = roomWidth;
         for (int i = 1; i < columnCount; i++) {
             int dayWidth = baseDayWidth + (extraPixels > 0 ? 1 : 0);
             if (extraPixels > 0) {
@@ -918,15 +915,7 @@ public class DashboardGUI extends JFrame {
             }
             tblGantt.getColumnModel().getColumn(i).setMinWidth(minDayWidth);
             tblGantt.getColumnModel().getColumn(i).setPreferredWidth(dayWidth);
-            appliedTableWidth += dayWidth;
         }
-
-        int preferredHeight = tblGantt.getPreferredSize() == null ? 0 : tblGantt.getPreferredSize().height;
-        if (preferredHeight <= 0) {
-            preferredHeight = tblGantt.getRowHeight() * Math.max(1, tblGantt.getRowCount() + 1);
-        }
-        tblGantt.setPreferredScrollableViewportSize(new Dimension(appliedTableWidth, resolveGanttViewportHeightByRows()));
-        tblGantt.setPreferredSize(new Dimension(appliedTableWidth, preferredHeight));
         tblGantt.revalidate();
         if (tblGantt.getTableHeader() != null) {
             tblGantt.getTableHeader().revalidate();

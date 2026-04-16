@@ -45,6 +45,7 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
@@ -114,6 +115,8 @@ public class CheckInOutGUI extends JFrame {
     private JLabel lblDichVuPhatSinh;
     private JTextArea txtGhiChu;
     private JPanel realtimeMapPanel;
+    private final Map<String, JPanel> realtimeRoomBadges = new LinkedHashMap<String, JPanel>();
+    private String selectedRealtimeRoomCode;
 
     public CheckInOutGUI() {
         this("guest", "L\u1ec5 t\u00e2n");
@@ -328,7 +331,7 @@ public class CheckInOutGUI extends JFrame {
             if (!e.getValueIsAdjusting()) {
                 int row = tblLuuTru.getSelectedRow();
                 if (row >= 0 && row < filteredRecords.size()) {
-                    updateDetailPanel(filteredRecords.get(row));
+                    updateDetailPanel(filteredRecords.get(row), null);
                 }
             }
         });
@@ -440,7 +443,7 @@ public class CheckInOutGUI extends JFrame {
         JPanel roomPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         roomPanel.setOpaque(false);
         for (RoomBadge room : rooms) {
-            roomPanel.add(createRoomBadge(room.roomCode, room.statusCode));
+            roomPanel.add(createRoomBadge(room));
         }
 
         row.add(lblFloor, BorderLayout.WEST);
@@ -448,17 +451,34 @@ public class CheckInOutGUI extends JFrame {
         return row;
     }
 
-    private JPanel createRoomBadge(String roomCode, String status) {
+    private JPanel createRoomBadge(RoomBadge room) {
         JPanel badge = new JPanel(new BorderLayout());
         badge.setPreferredSize(new Dimension(82, 40));
-        badge.setBackground(resolveStatusColor(status));
-        badge.setBorder(BorderFactory.createLineBorder(new Color(209, 213, 219), 1, true));
+        badge.setBackground(resolveStatusColor(room.statusCode));
+        badge.setBorder(createRoomBadgeBorder(room.statusCode, room.roomCode.equalsIgnoreCase(safeValue(selectedRealtimeRoomCode, ""))));
+        badge.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        badge.putClientProperty("statusCode", room.statusCode);
+        badge.setToolTipText("<html>Phòng: " + room.roomCode
+                + "<br>Tầng: " + safeValue(room.floorName, "-")
+                + "<br>Loại phòng: " + safeValue(room.roomType, "-")
+                + "<br>Trạng thái: " + safeValue(room.statusText, resolveStatusCode(room.statusCode))
+                + "</html>");
 
-        JLabel lbl = new JLabel("<html><center>" + roomCode + "<br>" + resolveStatusCode(status) + "</center></html>", SwingConstants.CENTER);
+        JLabel lbl = new JLabel("<html><center>" + room.roomCode + "<br>" + resolveStatusCode(room.statusCode) + "</center></html>", SwingConstants.CENTER);
         lbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
         lbl.setForeground(TEXT_PRIMARY);
+        lbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
+        java.awt.event.MouseAdapter clickHandler = new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                handleRealtimeRoomSelection(room);
+            }
+        };
+        badge.addMouseListener(clickHandler);
+        lbl.addMouseListener(clickHandler);
         badge.add(lbl, BorderLayout.CENTER);
+        realtimeRoomBadges.put(room.roomCode, badge);
         return badge;
     }
 
@@ -905,7 +925,7 @@ public class CheckInOutGUI extends JFrame {
         if (!filteredRecords.isEmpty()) {
             int rowToSelect = resolvePreferredSelectionIndex();
             tblLuuTru.setRowSelectionInterval(rowToSelect, rowToSelect);
-            updateDetailPanel(filteredRecords.get(rowToSelect));
+            updateDetailPanel(filteredRecords.get(rowToSelect), null);
             clearPendingFocusedBookingIfMatched(filteredRecords.get(rowToSelect).maDatPhong);
         } else {
             clearDetailPanel();
@@ -931,15 +951,19 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void updateDetailPanel(StayRecord record) {
+        updateDetailPanel(record, null);
+    }
+
+    private void updateDetailPanel(StayRecord record, String focusedRoomCode) {
         lblMaHoSo.setText(record.maHoSo);
         lblMaDatPhong.setText("DP" + record.maDatPhong);
         lblKhachHang.setText(record.khachHang);
-        lblSoPhong.setText(record.soPhong);
+        lblSoPhong.setText(buildDetailRoomText(record, focusedRoomCode));
         lblLoaiPhongChiTiet.setText(record.loaiPhong);
         lblTrangThaiPhong.setText(record.trangThaiPhong);
         lblTienCoc.setText(record.tienCoc);
         lblDichVuPhatSinh.setText(record.dichVuPhatSinh);
-        txtGhiChu.setText(record.ghiChu);
+        txtGhiChu.setText(buildDetailNoteText(record, focusedRoomCode));
         txtGhiChu.setCaretPosition(0);
     }
 
@@ -953,6 +977,90 @@ public class CheckInOutGUI extends JFrame {
         lblTienCoc.setText("-");
         lblDichVuPhatSinh.setText("-");
         txtGhiChu.setText("Kh\u00f4ng c\u00f3 d\u1eef li\u1ec7u ph\u00f9 h\u1ee3p.");
+    }
+
+    private String buildDetailRoomText(StayRecord record, String focusedRoomCode) {
+        String roomText = safeValue(record == null ? null : record.soPhong, "-");
+        if (record != null && focusedRoomCode != null && record.containsRoomCode(focusedRoomCode)) {
+            return roomText + " (đang chọn: " + focusedRoomCode + ")";
+        }
+        return roomText;
+    }
+
+    private String buildDetailNoteText(StayRecord record, String focusedRoomCode) {
+        String note = safeValue(record == null ? null : record.ghiChu, "-");
+        if (record != null && focusedRoomCode != null && record.containsRoomCode(focusedRoomCode)) {
+            return "Phòng đang chọn trên sơ đồ: " + focusedRoomCode + ".\n" + note;
+        }
+        return note;
+    }
+
+    private void updateDetailPanelForStandaloneRoom(RoomBadge room) {
+        lblMaHoSo.setText("-");
+        lblMaDatPhong.setText("-");
+        lblKhachHang.setText("-");
+        lblSoPhong.setText(room == null ? "-" : room.roomCode + " - " + safeValue(room.floorName, "-"));
+        lblLoaiPhongChiTiet.setText(room == null ? "-" : safeValue(room.roomType, "-"));
+        lblTrangThaiPhong.setText(room == null ? "-" : safeValue(room.statusText, resolveStatusCode(room.statusCode)));
+        lblTienCoc.setText("-");
+        lblDichVuPhatSinh.setText("-");
+        if (room == null) {
+            txtGhiChu.setText("Kh\u00f4ng c\u00f3 d\u1eef li\u1ec7u ph\u00f9 h\u1ee3p.");
+        } else if ("B".equalsIgnoreCase(room.statusCode)) {
+            txtGhiChu.setText("Phòng " + room.roomCode + " đang ở trạng thái bảo trì. Hiện chưa có hồ sơ lưu trú hoặc booking khả dụng.");
+        } else {
+            txtGhiChu.setText("Phòng " + room.roomCode + " hiện chưa có lưu trú. Trạng thái hiện tại: "
+                    + safeValue(room.statusText, resolveStatusCode(room.statusCode)) + ".");
+        }
+        txtGhiChu.setCaretPosition(0);
+    }
+
+    private StayRecord findRecordByRoomCode(List<StayRecord> source, String roomCode) {
+        if (roomCode == null || roomCode.trim().isEmpty() || source == null) {
+            return null;
+        }
+        for (StayRecord record : source) {
+            if (record != null && record.containsRoomCode(roomCode)) {
+                return record;
+            }
+        }
+        return null;
+    }
+
+    private int findFilteredRowIndexByRoomCode(String roomCode) {
+        if (roomCode == null || roomCode.trim().isEmpty()) {
+            return -1;
+        }
+        for (int i = 0; i < filteredRecords.size(); i++) {
+            if (filteredRecords.get(i).containsRoomCode(roomCode)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void handleRealtimeRoomSelection(RoomBadge room) {
+        if (room == null) {
+            return;
+        }
+        selectedRealtimeRoomCode = room.roomCode;
+        refreshSelectedRealtimeRoomStyle();
+
+        StayRecord detailRecord = findRecordByRoomCode(allRecords, room.roomCode);
+        int tableRow = findFilteredRowIndexByRoomCode(room.roomCode);
+        if (tableRow >= 0) {
+            tblLuuTru.setRowSelectionInterval(tableRow, tableRow);
+            tblLuuTru.scrollRectToVisible(tblLuuTru.getCellRect(tableRow, 0, true));
+            updateDetailPanel(filteredRecords.get(tableRow), room.roomCode);
+            return;
+        }
+
+        tblLuuTru.clearSelection();
+        if (detailRecord != null) {
+            updateDetailPanel(detailRecord, room.roomCode);
+        } else {
+            updateDetailPanelForStandaloneRoom(room);
+        }
     }
 
     private StayRecord getSelectedRecord() {
@@ -1034,12 +1142,16 @@ public class CheckInOutGUI extends JFrame {
             return;
         }
         realtimeMapPanel.removeAll();
+        realtimeRoomBadges.clear();
 
         List<String> floors = new ArrayList<String>();
         List<List<RoomBadge>> floorRooms = new ArrayList<List<RoomBadge>>();
         Connection con = ConnectDB.getConnection();
         if (con != null) {
-            String sql = "SELECT soPhong, tang, trangThai FROM Phong ORDER BY TRY_CAST(REPLACE(tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(soPhong AS INT), soPhong";
+            String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, ISNULL(lp.tenLoaiPhong, N'-') AS tenLoaiPhong " +
+                    "FROM Phong p " +
+                    "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong " +
+                    "ORDER BY TRY_CAST(REPLACE(p.tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
             try (PreparedStatement ps = con.prepareStatement(sql);
                  ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -1050,7 +1162,15 @@ public class CheckInOutGUI extends JFrame {
                         floorRooms.add(new ArrayList<RoomBadge>());
                         idx = floors.size() - 1;
                     }
-                    floorRooms.get(idx).add(new RoomBadge(safeValue(rs.getString("soPhong"), "-"), toStatusCode(safeValue(rs.getString("trangThai"), "B\u1ea3o tr\u00ec"))));
+                    String statusText = safeValue(rs.getString("trangThai"), "B\u1ea3o tr\u00ec");
+                    floorRooms.get(idx).add(new RoomBadge(
+                            rs.getInt("maPhong"),
+                            safeValue(rs.getString("soPhong"), "-"),
+                            tang,
+                            safeValue(rs.getString("tenLoaiPhong"), "-"),
+                            toStatusCode(statusText),
+                            statusText
+                    ));
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -1069,6 +1189,31 @@ public class CheckInOutGUI extends JFrame {
         realtimeMapPanel.add(buildLegendPanel());
         realtimeMapPanel.revalidate();
         realtimeMapPanel.repaint();
+        refreshSelectedRealtimeRoomStyle();
+    }
+
+    private void refreshSelectedRealtimeRoomStyle() {
+        for (Map.Entry<String, JPanel> entry : realtimeRoomBadges.entrySet()) {
+            String roomCode = entry.getKey();
+            JPanel badge = entry.getValue();
+            if (badge == null) {
+                continue;
+            }
+            String statusCode = valueOf(badge.getClientProperty("statusCode"));
+            boolean selected = roomCode != null && roomCode.equalsIgnoreCase(safeValue(selectedRealtimeRoomCode, ""));
+            badge.setBorder(createRoomBadgeBorder(statusCode, selected));
+            badge.repaint();
+        }
+    }
+
+    private javax.swing.border.Border createRoomBadgeBorder(String statusCode, boolean selected) {
+        if (selected) {
+            return BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(37, 99, 235), 3, true),
+                    BorderFactory.createLineBorder(Color.WHITE, 1, true)
+            );
+        }
+        return BorderFactory.createLineBorder(new Color(209, 213, 219), 1, true);
     }
 
     private Color resolveStatusColor(String code) {
@@ -2665,6 +2810,22 @@ public class CheckInOutGUI extends JFrame {
             }
         }
 
+        private boolean containsRoomCode(String roomCode) {
+            if (roomCode == null || roomCode.trim().isEmpty()) {
+                return false;
+            }
+            for (String current : soPhongList) {
+                if (roomCode.equalsIgnoreCase(safeRoomCode(current))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private String safeRoomCode(String value) {
+            return value == null ? "" : value.trim();
+        }
+
         private void addActiveStayOption(int maLuuTru, int maChiTietDatPhong, int maPhong, String soPhong, String loaiPhong) {
             for (ServiceStayOption option : activeStayOptions) {
                 if (option.maLuuTru == maLuuTru) {
@@ -2816,12 +2977,20 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private static final class RoomBadge {
+        private final int roomId;
         private final String roomCode;
+        private final String floorName;
+        private final String roomType;
         private final String statusCode;
+        private final String statusText;
 
-        private RoomBadge(String roomCode, String statusCode) {
+        private RoomBadge(int roomId, String roomCode, String floorName, String roomType, String statusCode, String statusText) {
+            this.roomId = roomId;
             this.roomCode = roomCode;
+            this.floorName = floorName;
+            this.roomType = roomType;
             this.statusCode = statusCode;
+            this.statusText = statusText;
         }
     }
 

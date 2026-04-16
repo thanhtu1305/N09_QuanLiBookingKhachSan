@@ -27,12 +27,17 @@ public class DashboardDAO {
     private static final String ROOM_STATUS_EMPTY = "Tr\u1ed1ng";
     private static final String ROOM_STATUS_OCCUPIED = "\u0110ang \u1edf";
     private static final String ROOM_STATUS_BOOKED = "\u0110\u00e3 \u0111\u1eb7t";
+    private static final String ROOM_STATUS_PENDING_CHECKIN = "Ch\u1edd check-in";
     private static final String ROOM_STATUS_MAINTENANCE = "B\u1ea3o tr\u00ec";
+    private static final String GANTT_STATUS_TEXT_BOOKED = "\u0110\u1eb7t";
 
     private static final String BOOKING_STATUS_BOOKED = "\u0110\u00e3 \u0111\u1eb7t";
     private static final String BOOKING_STATUS_CONFIRMED = "\u0110\u00e3 x\u00e1c nh\u1eadn";
     private static final String BOOKING_STATUS_DEPOSITED = "\u0110\u00e3 c\u1ecdc";
     private static final String BOOKING_STATUS_PENDING_CHECKIN = "Ch\u1edd check-in";
+    private static final String BOOKING_STATUS_ACTIVE = "\u0110ang \u1edf";
+    private static final String BOOKING_STATUS_CHECKED_IN = "\u0110\u00e3 check-in";
+    private static final String BOOKING_STATUS_PARTIAL_CHECKOUT = "Check-out m\u1ed9t ph\u1ea7n";
     private static final String BOOKING_STATUS_STAYING = "\u0110ang l\u01b0u tr\u00fa";
     private static final String BOOKING_STATUS_CHECKED_OUT = "\u0110\u00e3 check-out";
     private static final String BOOKING_STATUS_PAID = "\u0110\u00e3 thanh to\u00e1n";
@@ -41,8 +46,14 @@ public class DashboardDAO {
     private static final String PAYMENT_TYPE_DEFAULT = "THANH_TOAN";
     private static final String GANTT_STATUS_EMPTY = "E";
     private static final String GANTT_STATUS_BOOKED = "B";
+    private static final String GANTT_STATUS_PENDING_CHECKIN = "C";
     private static final String GANTT_STATUS_OCCUPIED = "O";
     private static final String GANTT_STATUS_MAINTENANCE = "M";
+    private static final int GANTT_PRIORITY_EMPTY = 1;
+    private static final int GANTT_PRIORITY_BOOKED = 2;
+    private static final int GANTT_PRIORITY_PENDING_CHECKIN = 3;
+    private static final int GANTT_PRIORITY_OCCUPIED = 4;
+    private static final int GANTT_PRIORITY_MAINTENANCE = 5;
     private static final DateTimeFormatter CHART_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM");
     private static final DateTimeFormatter TASK_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter TASK_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
@@ -549,12 +560,12 @@ public class DashboardDAO {
                             cell.setStatusCode(GANTT_STATUS_MAINTENANCE);
                             cell.setStatusText(row.getTrangThaiPhong().isEmpty() ? ROOM_STATUS_MAINTENANCE : row.getTrangThaiPhong());
                             cell.setSourceType("MAINTENANCE");
-                            cell.setPriority(4);
+                            cell.setPriority(GANTT_PRIORITY_MAINTENANCE);
                         } else {
                             cell.setStatusCode(GANTT_STATUS_EMPTY);
-                            cell.setStatusText("Hoạt động / Trống");
+                            cell.setStatusText(ROOM_STATUS_EMPTY);
                             cell.setSourceType("EMPTY");
-                            cell.setPriority(1);
+                            cell.setPriority(GANTT_PRIORITY_EMPTY);
                         }
                         row.getCells().add(cell);
                     }
@@ -570,13 +581,15 @@ public class DashboardDAO {
     private void applyOccupiedCells(Map<Integer, DashboardGanttRow> rowByRoomId, LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, "
                 + "ISNULL(kh.hoTen, N'-') AS hoTen, CAST(lt.checkIn AS DATE) AS stayFrom, "
-                + "CAST(COALESCE(lt.checkOut, dp.ngayTraPhong, GETDATE()) AS DATE) AS stayTo "
+                + "CAST(COALESCE(dp.ngayTraPhong, GETDATE()) AS DATE) AS stayTo "
                 + "FROM dbo.LuuTru lt "
                 + "JOIN dbo.DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
                 + "JOIN dbo.Phong p ON p.maPhong = lt.maPhong "
                 + "LEFT JOIN dbo.KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
-                + "WHERE lt.checkIn < ? "
-                + "AND (lt.checkOut IS NULL OR lt.checkOut >= ?)";
+                + "WHERE lt.checkIn IS NOT NULL "
+                + "AND lt.checkOut IS NULL "
+                + "AND lt.checkIn < ? "
+                + "AND COALESCE(dp.ngayTraPhong, GETDATE()) >= ?";
 
         try (Connection con = getReadyConnection();
              PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {
@@ -584,7 +597,7 @@ public class DashboardDAO {
                 return;
             }
             stmt.setTimestamp(1, Timestamp.valueOf(endDate.plusDays(1L).atStartOfDay()));
-            stmt.setTimestamp(2, Timestamp.valueOf(startDate.atStartOfDay()));
+            stmt.setDate(2, Date.valueOf(startDate));
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     int maPhong = rs.getInt("maPhong");
@@ -607,7 +620,7 @@ public class DashboardDAO {
                                     GANTT_STATUS_OCCUPIED,
                                     ROOM_STATUS_OCCUPIED,
                                     "STAY",
-                                    3,
+                                    GANTT_PRIORITY_OCCUPIED,
                                     rs.getInt("maDatPhong"),
                                     rs.getInt("maLuuTru"),
                                     rs.getInt("maChiTietDatPhong"),
@@ -626,13 +639,13 @@ public class DashboardDAO {
 
     private void applyBookedCells(Map<Integer, DashboardGanttRow> rowByRoomId, LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT dp.maDatPhong, ctdp.maChiTietDatPhong, ctdp.maPhong, "
-                + "ISNULL(kh.hoTen, N'-') AS hoTen, dp.trangThai, "
+                + "ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(dp.trangThai, N'') AS trangThai, "
                 + "CAST(dp.ngayNhanPhong AS DATE) AS bookingFrom, CAST(dp.ngayTraPhong AS DATE) AS bookingTo "
                 + "FROM dbo.DatPhong dp "
                 + "JOIN dbo.ChiTietDatPhong ctdp ON ctdp.maDatPhong = dp.maDatPhong "
                 + "LEFT JOIN dbo.KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
                 + "WHERE ctdp.maPhong IS NOT NULL "
-                + "AND ISNULL(dp.trangThai, N'') IN (?, ?, ?, ?) "
+                + "AND ISNULL(dp.trangThai, N'') IN (?, ?, ?, ?, ?, ?, ?, ?) "
                 + "AND dp.ngayNhanPhong < ? "
                 + "AND dp.ngayTraPhong >= ? "
                 + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
@@ -646,8 +659,12 @@ public class DashboardDAO {
             stmt.setString(2, BOOKING_STATUS_CONFIRMED);
             stmt.setString(3, BOOKING_STATUS_DEPOSITED);
             stmt.setString(4, BOOKING_STATUS_PENDING_CHECKIN);
-            stmt.setDate(5, Date.valueOf(endDate.plusDays(1L)));
-            stmt.setDate(6, Date.valueOf(startDate));
+            stmt.setString(5, BOOKING_STATUS_ACTIVE);
+            stmt.setString(6, BOOKING_STATUS_CHECKED_IN);
+            stmt.setString(7, BOOKING_STATUS_PARTIAL_CHECKOUT);
+            stmt.setString(8, BOOKING_STATUS_STAYING);
+            stmt.setDate(9, Date.valueOf(endDate.plusDays(1L)));
+            stmt.setDate(10, Date.valueOf(startDate));
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     int maPhong = rs.getInt("maPhong");
@@ -663,18 +680,20 @@ public class DashboardDAO {
                     if (toDate == null) {
                         toDate = fromDate;
                     }
-                    String statusText = safeTrim(rs.getString("trangThai"));
-                    if (statusText.isEmpty()) {
-                        statusText = BOOKING_STATUS_PENDING_CHECKIN;
+                    String bookingStatus = safeTrim(rs.getString("trangThai"));
+                    String statusCode = resolveBookingCellStatusCode(bookingStatus);
+                    if (statusCode == null) {
+                        continue;
                     }
+                    String statusText = resolveBookingCellStatusText(statusCode, bookingStatus);
                     for (DashboardGanttCell cell : row.getCells()) {
                         if (isDateInside(cell.getDate(), fromDate, toDate)) {
                             applyCellState(
                                     cell,
-                                    GANTT_STATUS_BOOKED,
+                                    statusCode,
                                     statusText,
                                     "BOOKING",
-                                    2,
+                                    resolveGanttPriority(statusCode),
                                     rs.getInt("maDatPhong"),
                                     0,
                                     rs.getInt("maChiTietDatPhong"),
@@ -689,6 +708,49 @@ public class DashboardDAO {
         } catch (Exception ex) {
             setLastError(ex.getMessage());
         }
+    }
+
+    private String resolveBookingCellStatusCode(String bookingStatus) {
+        String status = safeTrim(bookingStatus);
+        if (BOOKING_STATUS_BOOKED.equalsIgnoreCase(status)) {
+            return GANTT_STATUS_BOOKED;
+        }
+        if (BOOKING_STATUS_CONFIRMED.equalsIgnoreCase(status)
+                || BOOKING_STATUS_DEPOSITED.equalsIgnoreCase(status)
+                || BOOKING_STATUS_PENDING_CHECKIN.equalsIgnoreCase(status)
+                || BOOKING_STATUS_ACTIVE.equalsIgnoreCase(status)
+                || BOOKING_STATUS_CHECKED_IN.equalsIgnoreCase(status)
+                || BOOKING_STATUS_PARTIAL_CHECKOUT.equalsIgnoreCase(status)
+                || BOOKING_STATUS_STAYING.equalsIgnoreCase(status)) {
+            return GANTT_STATUS_PENDING_CHECKIN;
+        }
+        return null;
+    }
+
+    private String resolveBookingCellStatusText(String statusCode, String bookingStatus) {
+        if (GANTT_STATUS_PENDING_CHECKIN.equalsIgnoreCase(statusCode)) {
+            return ROOM_STATUS_PENDING_CHECKIN;
+        }
+        if (GANTT_STATUS_BOOKED.equalsIgnoreCase(statusCode)) {
+            return GANTT_STATUS_TEXT_BOOKED;
+        }
+        return safeTrim(bookingStatus);
+    }
+
+    private int resolveGanttPriority(String statusCode) {
+        if (GANTT_STATUS_MAINTENANCE.equalsIgnoreCase(statusCode)) {
+            return GANTT_PRIORITY_MAINTENANCE;
+        }
+        if (GANTT_STATUS_OCCUPIED.equalsIgnoreCase(statusCode)) {
+            return GANTT_PRIORITY_OCCUPIED;
+        }
+        if (GANTT_STATUS_PENDING_CHECKIN.equalsIgnoreCase(statusCode)) {
+            return GANTT_PRIORITY_PENDING_CHECKIN;
+        }
+        if (GANTT_STATUS_BOOKED.equalsIgnoreCase(statusCode)) {
+            return GANTT_PRIORITY_BOOKED;
+        }
+        return GANTT_PRIORITY_EMPTY;
     }
 
     private void applyCellState(DashboardGanttCell cell, String statusCode, String statusText, String sourceType,

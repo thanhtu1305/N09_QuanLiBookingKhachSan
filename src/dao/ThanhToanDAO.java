@@ -1571,6 +1571,7 @@ public class ThanhToanDAO {
                 "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong, " +
                 "(SELECT COUNT(1) FROM ChiTietDatPhong WHERE maDatPhong = lt.maDatPhong) AS tongChiTiet " +
                 "FROM LuuTru lt " +
+                "JOIN LuuTru scopeStay ON scopeStay.maLuuTru = ? AND scopeStay.maChiTietDatPhong = lt.maChiTietDatPhong " +
                 "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
                 "LEFT JOIN ChiTietDatPhongKhachDaiDien roomGuest ON roomGuest.maChiTietDatPhong = lt.maChiTietDatPhong " +
                 "LEFT JOIN Phong p ON lt.maPhong = p.maPhong " +
@@ -1584,32 +1585,38 @@ public class ThanhToanDAO {
                 "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
                 "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
                 "   FROM ChiTietDatPhong ctdp WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong) ct " +
-                "WHERE lt.maLuuTru = ? AND lt.checkOut IS NOT NULL";
+                "WHERE lt.checkOut IS NOT NULL " +
+                "ORDER BY lt.maLuuTru ASC";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, maLuuTru);
             try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) {
-                    return null;
+                InvoiceAggregate aggregate = null;
+                while (rs.next()) {
+                    RoomChargeBreakdown roomCharge = calculateRoomCharge(
+                            rs.getInt("maBangGiaResolved"),
+                            rs.getDouble("giaPhong"),
+                            rs.getTimestamp("checkIn"),
+                            rs.getTimestamp("ngayTraPhong"),
+                            rs.getTimestamp("checkOut"),
+                            rs.getLong("soDemDatPhong"),
+                            rs.getDouble("giaPhongDatPhong"),
+                            rs.getDouble("thanhTienDatPhong"));
+                    if (aggregate == null) {
+                        aggregate = new InvoiceAggregate();
+                        aggregate.maDatPhong = rs.getInt("maDatPhong");
+                        aggregate.maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
+                        aggregate.maKhachHang = rs.getInt("maKhachHang");
+                        aggregate.maLuuTruDaiDien = rs.getInt("maLuuTru");
+                        int tongChiTiet = Math.max(1, rs.getInt("tongChiTiet"));
+                        aggregate.tienCoc = rs.getDouble("tienCocDatPhong") / (double) tongChiTiet;
+                    }
+                    if (rs.getInt("maLuuTru") == maLuuTru) {
+                        aggregate.maLuuTruDaiDien = rs.getInt("maLuuTru");
+                    }
+                    aggregate.tienPhong += roomCharge.getThanhTien().doubleValue();
+                    aggregate.phuThu += roomCharge.getLateCheckoutCharge().doubleValue();
+                    aggregate.tienDichVu += loadServiceCharge(con, rs.getInt("maLuuTru"));
                 }
-                RoomChargeBreakdown roomCharge = calculateRoomCharge(
-                        rs.getInt("maBangGiaResolved"),
-                        rs.getDouble("giaPhong"),
-                        rs.getTimestamp("checkIn"),
-                        rs.getTimestamp("ngayTraPhong"),
-                        rs.getTimestamp("checkOut"),
-                        rs.getLong("soDemDatPhong"),
-                        rs.getDouble("giaPhongDatPhong"),
-                        rs.getDouble("thanhTienDatPhong"));
-                InvoiceAggregate aggregate = new InvoiceAggregate();
-                aggregate.maDatPhong = rs.getInt("maDatPhong");
-                aggregate.maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
-                aggregate.maKhachHang = rs.getInt("maKhachHang");
-                aggregate.maLuuTruDaiDien = rs.getInt("maLuuTru");
-                aggregate.tienPhong = roomCharge.getThanhTien().doubleValue();
-                aggregate.phuThu = roomCharge.getLateCheckoutCharge().doubleValue();
-                aggregate.tienDichVu = loadServiceCharge(con, rs.getInt("maLuuTru"));
-                int tongChiTiet = Math.max(1, rs.getInt("tongChiTiet"));
-                aggregate.tienCoc = rs.getDouble("tienCocDatPhong") / (double) tongChiTiet;
                 return aggregate;
             }
         }

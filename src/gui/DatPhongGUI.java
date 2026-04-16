@@ -79,6 +79,7 @@ public class DatPhongGUI extends JFrame {
 
     private static final List<DatPhongGUI> OPEN_INSTANCES = new ArrayList<DatPhongGUI>();
     private static Integer pendingFocusedBookingId;
+    private static String pendingStatusFilter;
 
     private final DatPhongDAO datPhongDAO = new DatPhongDAO();
     private final String username;
@@ -557,7 +558,8 @@ public class DatPhongGUI extends JFrame {
 
     private void reloadSampleData(boolean showMessage) {
         loadBookingsFromDatabase();
-        cboTrangThai.setSelectedIndex(0);
+        String pendingStatus = getPendingStatusFilter();
+        cboTrangThai.setSelectedItem(pendingStatus == null ? "T\u1ea5t c\u1ea3" : pendingStatus);
         cboNguonDat.setSelectedIndex(0);
         cboLoaiPhong.setSelectedIndex(0);
         txtTuNgay.setText("");
@@ -774,6 +776,8 @@ public class DatPhongGUI extends JFrame {
         if (!filteredBookings.isEmpty()) {
             int rowToSelect = resolvePreferredSelectionIndex();
             tblDatPhong.setRowSelectionInterval(rowToSelect, rowToSelect);
+            tblDatPhong.scrollRectToVisible(tblDatPhong.getCellRect(rowToSelect, 0, true));
+            tblDatPhong.requestFocusInWindow();
             updateDetailPanel(filteredBookings.get(rowToSelect));
             clearPendingFocusedBookingIfMatched(filteredBookings.get(rowToSelect).maDatPhong);
         } else {
@@ -796,6 +800,7 @@ public class DatPhongGUI extends JFrame {
     private static synchronized void clearPendingFocusedBookingIfMatched(int maDatPhong) {
         if (pendingFocusedBookingId != null && pendingFocusedBookingId.intValue() == maDatPhong) {
             pendingFocusedBookingId = null;
+            pendingStatusFilter = null;
         }
     }
 
@@ -1583,8 +1588,17 @@ public class DatPhongGUI extends JFrame {
         }
     }
 
+    private static synchronized String getPendingStatusFilter() {
+        return pendingStatusFilter;
+    }
+
     public static synchronized void prepareFocusOnBooking(int maDatPhong) {
         pendingFocusedBookingId = maDatPhong > 0 ? Integer.valueOf(maDatPhong) : null;
+    }
+
+    public static synchronized void prepareFocusOnCancelledBooking(int maDatPhong) {
+        prepareFocusOnBooking(maDatPhong);
+        pendingStatusFilter = DatPhongDAO.STATUS_CANCELLED;
     }
 
     private abstract class BaseBookingDialog extends JDialog {
@@ -2926,7 +2940,7 @@ public class DatPhongGUI extends JFrame {
                 }
                 releaseAssignedRooms(con, roomIds);
                 con.commit();
-                prepareFocusOnBooking(booking.maDatPhong);
+                prepareFocusOnCancelledBooking(booking.maDatPhong);
                 refreshAllOpenInstances();
                 showSuccess("Hủy booking thành công.");
                 dispose();

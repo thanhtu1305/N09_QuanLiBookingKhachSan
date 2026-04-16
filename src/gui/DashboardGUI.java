@@ -60,6 +60,16 @@ public class DashboardGUI extends JFrame {
     private static final Color BRAND_AMBER = new Color(245, 158, 11);
     private static final Color BRAND_RED = new Color(220, 38, 38);
     private static final Color BRAND_INDIGO = new Color(99, 102, 241);
+    private static final Color GANTT_EMPTY_BG = new Color(220, 252, 231);
+    private static final Color GANTT_BOOKED_BG = new Color(254, 249, 195);
+    private static final Color GANTT_PENDING_CHECKIN_BG = new Color(254, 215, 170);
+    private static final Color GANTT_OCCUPIED_BG = new Color(191, 219, 254);
+    private static final Color GANTT_MAINTENANCE_BG = new Color(254, 226, 226);
+    private static final Color GANTT_EMPTY_FG = new Color(22, 101, 52);
+    private static final Color GANTT_BOOKED_FG = new Color(146, 64, 14);
+    private static final Color GANTT_PENDING_CHECKIN_FG = new Color(154, 52, 18);
+    private static final Color GANTT_OCCUPIED_FG = new Color(30, 64, 175);
+    private static final Color GANTT_MAINTENANCE_FG = new Color(153, 27, 27);
 
     private static final Font TITLE_FONT = new Font("Segoe UI", Font.BOLD, 24);
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
@@ -1037,8 +1047,8 @@ public class DashboardGUI extends JFrame {
                 ? "-"
                 : "Từ " + cell.getFromDate().format(DATE_LABEL_FORMAT) + " đến "
                 + (cell.getToDate() == null ? cell.getFromDate().format(DATE_LABEL_FORMAT) : cell.getToDate().format(DATE_LABEL_FORMAT)));
-        lblGanttMaThamChieuValue.setText(buildGanttReferenceText(cell));
-        lblGanttHuongXuLyValue.setText("<html>" + buildGanttActionHint(cell) + "</html>");
+        lblGanttMaThamChieuValue.setText(buildGanttReferenceDisplayText(cell));
+        lblGanttHuongXuLyValue.setText("<html>" + buildGanttActionDisplayHint(cell) + "</html>");
         btnGanttOpenDatPhong.setEnabled("BOOKING".equalsIgnoreCase(cell.getSourceType()));
         btnGanttOpenCheckInOut.setEnabled("STAY".equalsIgnoreCase(cell.getSourceType()));
     }
@@ -1049,6 +1059,19 @@ public class DashboardGUI extends JFrame {
         }
         if ("STAY".equalsIgnoreCase(cell.getSourceType())) {
             return "LT" + cell.getMaLuuTru() + " / DP" + cell.getMaDatPhong();
+        }
+        String sourceType = safeValue(cell.getSourceType(), "");
+        if ("BOOKING".equalsIgnoreCase(sourceType)) {
+            if ("C".equalsIgnoreCase(safeValue(cell.getStatusCode(), ""))) {
+                return "Phòng đã được giữ và đang chờ check-in. Có thể mở màn Đặt phòng để xử lý booking DP" + cell.getMaDatPhong() + ".";
+            }
+            return "Booking đã tạo nhưng chưa tới bước check-in. Có thể mở màn Đặt phòng để xem booking DP" + cell.getMaDatPhong() + ".";
+        }
+        if ("STAY".equalsIgnoreCase(sourceType)) {
+            return "Lưu trú đang ở. Có thể mở màn Check-in / Check-out để xử lý hồ sơ DP" + cell.getMaDatPhong() + ".";
+        }
+        if ("MAINTENANCE".equalsIgnoreCase(sourceType)) {
+            return "Phòng đang ở trạng thái " + safeValue(cell.getStatusText(), "Bảo trì") + ". Không có booking/lưu trú khả dụng cho ô này.";
         }
         if ("BOOKING".equalsIgnoreCase(cell.getSourceType())) {
             return "DP" + cell.getMaDatPhong();
@@ -1067,6 +1090,39 @@ public class DashboardGUI extends JFrame {
             return "Lưu trú đang ở. Có thể mở màn Check-in / Check-out để xử lý hồ sơ DP" + cell.getMaDatPhong() + ".";
         }
         if ("MAINTENANCE".equalsIgnoreCase(cell.getSourceType())) {
+            return "Phòng đang ở trạng thái " + safeValue(cell.getStatusText(), "Bảo trì") + ". Không có booking/lưu trú khả dụng cho ô này.";
+        }
+        return "Phòng hiện đang trống trong ngày đã chọn.";
+    }
+
+    private String buildGanttReferenceDisplayText(DashboardGanttCell cell) {
+        if (cell == null) {
+            return "-";
+        }
+        if ("STAY".equalsIgnoreCase(cell.getSourceType())) {
+            return "LT" + cell.getMaLuuTru() + " / DP" + cell.getMaDatPhong();
+        }
+        if ("BOOKING".equalsIgnoreCase(cell.getSourceType())) {
+            return "DP" + cell.getMaDatPhong();
+        }
+        return "-";
+    }
+
+    private String buildGanttActionDisplayHint(DashboardGanttCell cell) {
+        if (cell == null) {
+            return "-";
+        }
+        String sourceType = safeValue(cell.getSourceType(), "");
+        if ("BOOKING".equalsIgnoreCase(sourceType)) {
+            if ("C".equalsIgnoreCase(safeValue(cell.getStatusCode(), ""))) {
+                return "Phòng đã được giữ và đang chờ check-in. Có thể mở màn Đặt phòng để xử lý booking DP" + cell.getMaDatPhong() + ".";
+            }
+            return "Booking đã tạo nhưng chưa tới bước check-in. Có thể mở màn Đặt phòng để xem booking DP" + cell.getMaDatPhong() + ".";
+        }
+        if ("STAY".equalsIgnoreCase(sourceType)) {
+            return "Lưu trú đang ở. Có thể mở màn Check-in / Check-out để xử lý hồ sơ DP" + cell.getMaDatPhong() + ".";
+        }
+        if ("MAINTENANCE".equalsIgnoreCase(sourceType)) {
             return "Phòng đang ở trạng thái " + safeValue(cell.getStatusText(), "Bảo trì") + ". Không có booking/lưu trú khả dụng cho ô này.";
         }
         return "Phòng hiện đang trống trong ngày đã chọn.";
@@ -1126,15 +1182,38 @@ public class DashboardGUI extends JFrame {
         }
         String statusCode = safeValue(cell.getStatusCode(), "E");
         if ("M".equalsIgnoreCase(statusCode)) {
-            return new Color(254, 226, 226);
+            return GANTT_MAINTENANCE_BG;
         }
         if ("O".equalsIgnoreCase(statusCode)) {
-            return new Color(219, 234, 254);
+            return GANTT_OCCUPIED_BG;
+        }
+        if ("C".equalsIgnoreCase(statusCode)) {
+            return GANTT_PENDING_CHECKIN_BG;
         }
         if ("B".equalsIgnoreCase(statusCode)) {
-            return new Color(254, 249, 195);
+            return GANTT_BOOKED_BG;
         }
-        return new Color(220, 252, 231);
+        return GANTT_EMPTY_BG;
+    }
+
+    private Color resolveGanttCellForeground(DashboardGanttCell cell) {
+        if (cell == null) {
+            return TEXT_PRIMARY;
+        }
+        String statusCode = safeValue(cell.getStatusCode(), "E");
+        if ("M".equalsIgnoreCase(statusCode)) {
+            return GANTT_MAINTENANCE_FG;
+        }
+        if ("O".equalsIgnoreCase(statusCode)) {
+            return GANTT_OCCUPIED_FG;
+        }
+        if ("C".equalsIgnoreCase(statusCode)) {
+            return GANTT_PENDING_CHECKIN_FG;
+        }
+        if ("B".equalsIgnoreCase(statusCode)) {
+            return GANTT_BOOKED_FG;
+        }
+        return GANTT_EMPTY_FG;
     }
 
     private String resolveGanttCellLabel(DashboardGanttCell cell) {
@@ -1147,6 +1226,9 @@ public class DashboardGUI extends JFrame {
         }
         if ("O".equalsIgnoreCase(statusCode)) {
             return "Ở";
+        }
+        if ("C".equalsIgnoreCase(statusCode)) {
+            return "Chờ CI";
         }
         if ("B".equalsIgnoreCase(statusCode)) {
             return "Đặt";
@@ -1476,6 +1558,7 @@ public class DashboardGUI extends JFrame {
                 DashboardGanttCell cell = (DashboardGanttCell) value;
                 setText(resolveGanttCellLabel(cell));
                 setBackground(resolveGanttCellColor(cell));
+                setForeground(resolveGanttCellForeground(cell));
                 boolean selected = selectedGanttCell != null
                         && selectedGanttCell.getMaPhong() == cell.getMaPhong()
                         && selectedGanttCell.getDate() != null

@@ -64,10 +64,12 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class CheckInOutGUI extends JFrame {
     private static final Color APP_BG = new Color(243, 244, 246);
@@ -116,6 +118,7 @@ public class CheckInOutGUI extends JFrame {
     private JTextArea txtGhiChu;
     private JPanel realtimeMapPanel;
     private final Map<String, JPanel> realtimeRoomBadges = new LinkedHashMap<String, JPanel>();
+    private final Set<String> highlightedRealtimeRoomCodes = new LinkedHashSet<String>();
     private String selectedRealtimeRoomCode;
 
     public CheckInOutGUI() {
@@ -331,7 +334,11 @@ public class CheckInOutGUI extends JFrame {
             if (!e.getValueIsAdjusting()) {
                 int row = tblLuuTru.getSelectedRow();
                 if (row >= 0 && row < filteredRecords.size()) {
-                    updateDetailPanel(filteredRecords.get(row), null);
+                    StayRecord selectedRecord = filteredRecords.get(row);
+                    updateDetailPanel(selectedRecord, null);
+                    syncRealtimeMapHighlightFromTable(selectedRecord);
+                } else {
+                    clearRealtimeMapHighlightFromTable();
                 }
             }
         });
@@ -455,7 +462,7 @@ public class CheckInOutGUI extends JFrame {
         JPanel badge = new JPanel(new BorderLayout());
         badge.setPreferredSize(new Dimension(82, 40));
         badge.setBackground(resolveStatusColor(room.statusCode));
-        badge.setBorder(createRoomBadgeBorder(room.statusCode, room.roomCode.equalsIgnoreCase(safeValue(selectedRealtimeRoomCode, ""))));
+        badge.setBorder(createRoomBadgeBorder(room.statusCode, isRealtimeRoomHighlighted(room.roomCode)));
         badge.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         badge.putClientProperty("statusCode", room.statusCode);
         badge.setToolTipText("<html>Phòng: " + room.roomCode
@@ -466,7 +473,7 @@ public class CheckInOutGUI extends JFrame {
 
         JLabel lbl = new JLabel("<html><center>" + room.roomCode + "<br>" + resolveStatusCode(room.statusCode) + "</center></html>", SwingConstants.CENTER);
         lbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
-        lbl.setForeground(TEXT_PRIMARY);
+        lbl.setForeground(resolveStatusTextColor(room.statusCode));
         lbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         java.awt.event.MouseAdapter clickHandler = new java.awt.event.MouseAdapter() {
@@ -968,6 +975,7 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void clearDetailPanel() {
+        clearRealtimeMapHighlightFromTable();
         lblMaHoSo.setText("-");
         lblMaDatPhong.setText("-");
         lblKhachHang.setText("-");
@@ -1039,10 +1047,46 @@ public class CheckInOutGUI extends JFrame {
         return -1;
     }
 
+    private void syncRealtimeMapHighlightFromTable(StayRecord record) {
+        selectedRealtimeRoomCode = null;
+        highlightedRealtimeRoomCodes.clear();
+        if (record != null) {
+            for (String roomCode : record.getRoomCodes()) {
+                String normalizedRoomCode = normalizeRealtimeRoomCode(roomCode);
+                if (!normalizedRoomCode.isEmpty()) {
+                    highlightedRealtimeRoomCodes.add(normalizedRoomCode);
+                }
+            }
+        }
+        refreshSelectedRealtimeRoomStyle();
+    }
+
+    private void clearRealtimeMapHighlightFromTable() {
+        selectedRealtimeRoomCode = null;
+        if (!highlightedRealtimeRoomCodes.isEmpty()) {
+            highlightedRealtimeRoomCodes.clear();
+        }
+        refreshSelectedRealtimeRoomStyle();
+    }
+
+    private String normalizeRealtimeRoomCode(String roomCode) {
+        if (roomCode == null) {
+            return "";
+        }
+        String normalized = roomCode.trim();
+        if (normalized.isEmpty()
+                || "-".equals(normalized)
+                || "Chưa gán".equalsIgnoreCase(normalized)) {
+            return "";
+        }
+        return normalized;
+    }
+
     private void handleRealtimeRoomSelection(RoomBadge room) {
         if (room == null) {
             return;
         }
+        highlightedRealtimeRoomCodes.clear();
         selectedRealtimeRoomCode = room.roomCode;
         refreshSelectedRealtimeRoomStyle();
 
@@ -1056,6 +1100,8 @@ public class CheckInOutGUI extends JFrame {
         }
 
         tblLuuTru.clearSelection();
+        selectedRealtimeRoomCode = room.roomCode;
+        refreshSelectedRealtimeRoomStyle();
         if (detailRecord != null) {
             updateDetailPanel(detailRecord, room.roomCode);
         } else {
@@ -1104,10 +1150,6 @@ public class CheckInOutGUI extends JFrame {
         }
         if (!record.hasActiveStayRooms) {
             showInfo("Ch\u1ec9 booking c\u00f2n ph\u00f2ng \u0111ang \u1edf m\u1edbi \u0111\u1ed5i ph\u00f2ng.");
-            return;
-        }
-        if (record.hasMultipleRooms()) {
-            showInfo("Booking nhi\u1ec1u ph\u00f2ng \u0111ang \u0111\u01b0\u1ee3c g\u1ed9p m\u1ed9t d\u00f2ng. T\u1ea1m th\u1eddi ch\u01b0a h\u1ed7 tr\u1ee3 \u0111\u1ed5i ph\u00f2ng tr\u1ef1c ti\u1ebfp \u1edf \u0111\u00e2y.");
             return;
         }
         new ChangeRoomDialog(this, record).setVisible(true);
@@ -1200,10 +1242,26 @@ public class CheckInOutGUI extends JFrame {
                 continue;
             }
             String statusCode = valueOf(badge.getClientProperty("statusCode"));
-            boolean selected = roomCode != null && roomCode.equalsIgnoreCase(safeValue(selectedRealtimeRoomCode, ""));
+            boolean selected = isRealtimeRoomHighlighted(roomCode);
             badge.setBorder(createRoomBadgeBorder(statusCode, selected));
             badge.repaint();
         }
+    }
+
+    private boolean isRealtimeRoomHighlighted(String roomCode) {
+        String normalizedRoomCode = normalizeRealtimeRoomCode(roomCode);
+        if (normalizedRoomCode.isEmpty()) {
+            return false;
+        }
+        if (normalizedRoomCode.equalsIgnoreCase(safeValue(selectedRealtimeRoomCode, ""))) {
+            return true;
+        }
+        for (String highlightedRoomCode : highlightedRealtimeRoomCodes) {
+            if (normalizedRoomCode.equalsIgnoreCase(highlightedRoomCode)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private javax.swing.border.Border createRoomBadgeBorder(String statusCode, boolean selected) {
@@ -1224,12 +1282,19 @@ public class CheckInOutGUI extends JFrame {
             return new Color(254, 249, 195);
         }
         if ("O".equals(code)) {
-            return new Color(219, 234, 254);
+            return new Color(96, 165, 250);
         }
         if ("C".equals(code)) {
             return new Color(255, 237, 213);
         }
         return new Color(254, 226, 226);
+    }
+
+    private Color resolveStatusTextColor(String code) {
+        if ("O".equals(code)) {
+            return Color.WHITE;
+        }
+        return TEXT_PRIMARY;
     }
 
     private String resolveStatusCode(String code) {
@@ -1327,26 +1392,132 @@ public class CheckInOutGUI extends JFrame {
         return "Ca t\u1ed1i";
     }
 
-    private List<RoomOption> loadAvailableRooms(String roomType) {
+    private ActiveStaySnapshot loadActiveStaySnapshot(int maLuuTru) {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return null;
+        }
+        try {
+            return loadActiveStaySnapshot(con, maLuuTru);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private ActiveStaySnapshot loadActiveStaySnapshot(Connection con, int maLuuTru) throws Exception {
+        if (con == null || maLuuTru <= 0) {
+            return null;
+        }
+        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.soNguoi, lt.giaPhong, lt.tienCoc, "
+                + "dp.ngayTraPhong AS expectedCheckOut, ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(p.tang, N'-') AS tang, "
+                + "ISNULL(p.khuVuc, N'-') AS khuVuc, ISNULL(p.maLoaiPhong, 0) AS maLoaiPhong, ISNULL(lp.tenLoaiPhong, N'-') AS tenLoaiPhong "
+                + "FROM LuuTru lt "
+                + "JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
+                + "LEFT JOIN Phong p ON p.maPhong = lt.maPhong "
+                + "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong "
+                + "WHERE lt.maLuuTru = ? AND lt.checkOut IS NULL";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maLuuTru);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new ActiveStaySnapshot(
+                            rs.getInt("maLuuTru"),
+                            rs.getInt("maChiTietDatPhong"),
+                            rs.getInt("maDatPhong"),
+                            rs.getInt("maPhong"),
+                            rs.getInt("maLoaiPhong"),
+                            rs.getInt("soNguoi"),
+                            safeValue(rs.getString("soPhong"), "-"),
+                            safeValue(rs.getString("tenLoaiPhong"), "-"),
+                            safeValue(rs.getString("tang"), "-"),
+                            safeValue(rs.getString("khuVuc"), "-"),
+                            rs.getTimestamp("checkIn"),
+                            normalizeExpectedCheckOut(rs.getTimestamp("expectedCheckOut")),
+                            rs.getDouble("giaPhong"),
+                            rs.getDouble("tienCoc")
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    private Timestamp normalizeExpectedCheckOut(Timestamp value) {
+        if (value == null) {
+            return null;
+        }
+        LocalDateTime dateTime = value.toLocalDateTime();
+        if (dateTime.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+            return Timestamp.valueOf(LocalDateTime.of(dateTime.toLocalDate(), LocalTime.of(12, 0)));
+        }
+        return value;
+    }
+
+    private List<RoomOption> loadAvailableRooms(ActiveStaySnapshot staySnapshot, LocalDateTime changeTime) {
         List<RoomOption> rooms = new ArrayList<RoomOption>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             return rooms;
         }
-        String sql = "SELECT p.maPhong, p.soPhong, p.tang FROM Phong p JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE p.trangThai = N'Ho\u1ea1t \u0111\u1ed9ng' AND (? = '' OR lp.tenLoaiPhong = ?) " +
-                "ORDER BY TRY_CAST(REPLACE(p.tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
-        try (PreparedStatement ps = con.prepareStatement(sql)) {
-            String normalized = roomType == null ? "" : roomType.trim();
-            ps.setString(1, normalized);
-            ps.setString(2, normalized);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    rooms.add(new RoomOption(rs.getInt("maPhong"), rs.getString("soPhong"), rs.getString("tang")));
-                }
-            }
+        try {
+            return loadAvailableRooms(con, staySnapshot, changeTime);
         } catch (Exception e) {
             e.printStackTrace();
+            return rooms;
+        }
+    }
+
+    private List<RoomOption> loadAvailableRooms(Connection con, ActiveStaySnapshot staySnapshot, LocalDateTime changeTime) throws Exception {
+        List<RoomOption> rooms = new ArrayList<RoomOption>();
+        if (con == null || staySnapshot == null || changeTime == null
+                || staySnapshot.expectedCheckOut == null
+                || !staySnapshot.expectedCheckOut.toLocalDateTime().isAfter(changeTime)) {
+            return rooms;
+        }
+
+        String sql = "SELECT p.maPhong, p.soPhong, p.tang, ISNULL(p.khuVuc, N'-') AS khuVuc, ISNULL(p.sucChuaToiDa, 0) AS sucChuaToiDa, "
+                + "lp.maLoaiPhong, lp.tenLoaiPhong, ISNULL(lp.giaThamChieu, 0) AS giaThamChieu "
+                + "FROM Phong p "
+                + "JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong "
+                + "WHERE p.maPhong <> ? "
+                + "AND ISNULL(p.trangThai, N'') IN (N'Hoạt động', N'Trống', N'Sẵn sàng') "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maPhong = p.maPhong AND lt.checkOut IS NULL AND lt.maLuuTru <> ?) "
+                + "AND NOT EXISTS ("
+                + "    SELECT 1 FROM ChiTietDatPhong ctdp "
+                + "    JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
+                + "    WHERE ctdp.maPhong = p.maPhong "
+                + "      AND ctdp.maChiTietDatPhong <> ? "
+                + "      AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') "
+                + "      AND dp.ngayNhanPhong < ? "
+                + "      AND dp.ngayTraPhong > ? "
+                + "      AND NOT EXISTS (SELECT 1 FROM LuuTru ltBooked WHERE ltBooked.maChiTietDatPhong = ctdp.maChiTietDatPhong)"
+                + ") "
+                + "ORDER BY CASE WHEN lp.maLoaiPhong = ? THEN 0 ELSE 1 END, "
+                + "CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, "
+                + "TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            int index = 1;
+            ps.setInt(index++, staySnapshot.maPhong);
+            ps.setInt(index++, staySnapshot.maLuuTru);
+            ps.setInt(index++, staySnapshot.maChiTietDatPhong);
+            ps.setTimestamp(index++, staySnapshot.expectedCheckOut);
+            ps.setTimestamp(index++, Timestamp.valueOf(changeTime));
+            ps.setInt(index, staySnapshot.maLoaiPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rooms.add(new RoomOption(
+                            rs.getInt("maPhong"),
+                            rs.getInt("maLoaiPhong"),
+                            rs.getInt("sucChuaToiDa"),
+                            safeValue(rs.getString("soPhong"), "-"),
+                            safeValue(rs.getString("tang"), "-"),
+                            safeValue(rs.getString("khuVuc"), "-"),
+                            safeValue(rs.getString("tenLoaiPhong"), "-"),
+                            rs.getDouble("giaThamChieu")
+                    ));
+                }
+            }
         }
         return rooms;
     }
@@ -2090,72 +2261,426 @@ public class CheckInOutGUI extends JFrame {
 
     private final class ChangeRoomDialog extends BaseStayDialog {
         private final StayRecord record;
+        private final List<ServiceStayOption> activeOptions;
+        private final JComboBox<ServiceStayOption> cboCurrentStay;
+        private final JComboBox<RoomOption> cboNewRoom;
+        private final AppDatePickerField txtNgayDoi;
+        private final AppTimePickerField txtGioDoi;
+        private final JTextArea txtLyDo;
+        private final JLabel lblCurrentStayValue;
+        private final JLabel lblCurrentRoomValue;
+        private final JLabel lblCurrentTypeValue;
+        private final JLabel lblCurrentPositionValue;
+        private final JLabel lblNewRoomValue;
+        private final JLabel lblNewTypeValue;
+        private final JLabel lblNewPositionValue;
+        private final JLabel lblNewRateValue;
+        private final JLabel lblAvailabilityHint;
+        private final JButton btnConfirm;
+        private ActiveStaySnapshot currentSnapshot;
 
         private ChangeRoomDialog(Frame owner, StayRecord record) {
-            super(owner, "\u0110\u1ed5i ph\u00f2ng", 560, 360);
+            super(owner, "\u0110\u1ed5i ph\u00f2ng", 820, 640);
             this.record = record;
+            this.activeOptions = resolveActiveServiceOptions(record);
 
-            List<RoomOption> roomOptions = loadAvailableRooms(record.loaiPhong);
-            JComboBox<RoomOption> cboRoom = new JComboBox<RoomOption>(roomOptions.toArray(new RoomOption[0]));
-            cboRoom.setFont(BODY_FONT);
+            cboCurrentStay = new JComboBox<ServiceStayOption>(this.activeOptions.toArray(new ServiceStayOption[0]));
+            cboCurrentStay.setFont(BODY_FONT);
+            cboCurrentStay.setEnabled(this.activeOptions.size() > 1);
+
+            cboNewRoom = new JComboBox<RoomOption>();
+            cboNewRoom.setFont(BODY_FONT);
+
+            txtNgayDoi = new AppDatePickerField(LocalDate.now().format(DATE_FORMAT), true);
+            txtGioDoi = new AppTimePickerField(LocalTime.now().format(TIME_FORMAT), true);
+
+            txtLyDo = new JTextArea(4, 20);
+            txtLyDo.setLineWrap(true);
+            txtLyDo.setWrapStyleWord(true);
+            txtLyDo.setFont(BODY_FONT);
+            txtLyDo.setForeground(TEXT_PRIMARY);
+            txtLyDo.setBackground(PANEL_SOFT);
+            txtLyDo.setBorder(new EmptyBorder(8, 10, 8, 10));
+
+            lblCurrentStayValue = createValueLabel("-");
+            lblCurrentRoomValue = createValueLabel("-");
+            lblCurrentTypeValue = createValueLabel("-");
+            lblCurrentPositionValue = createValueLabel("-");
+            lblNewRoomValue = createValueLabel("-");
+            lblNewTypeValue = createValueLabel("-");
+            lblNewPositionValue = createValueLabel("-");
+            lblNewRateValue = createValueLabel("-");
+            lblAvailabilityHint = new JLabel(" ");
+            lblAvailabilityHint.setFont(BODY_FONT);
+            lblAvailabilityHint.setForeground(TEXT_MUTED);
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
-            content.add(buildDialogHeader("\u0110\u1ed4I PH\u00d2NG", "C\u1eadp nh\u1eadt ph\u00f2ng m\u1edbi cho kh\u00e1ch l\u01b0u tr\u00fa v\u00e0 \u0111\u1ed5i tr\u1ea1ng th\u00e1i ph\u00f2ng c\u0169 sang D\u1ecdn d\u1eb9p."), BorderLayout.NORTH);
+            content.add(buildDialogHeader(
+                    "ĐỔI PHÒNG ĐANG Ở",
+                    "Đóng lượt lưu trú hiện tại ở phòng cũ, mở lượt lưu trú mới cho phòng thay thế và giữ nguyên lịch sử dịch vụ theo từng lần ở."
+            ), BorderLayout.NORTH);
+
+            JPanel center = new JPanel();
+            center.setOpaque(false);
+            center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
 
             JPanel form = createDialogFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
-            addFormRow(form, gbc, 0, "M\u00e3 h\u1ed3 s\u01a1", createValueLabel(record.maHoSo));
-            addFormRow(form, gbc, 1, "Ph\u00f2ng hi\u1ec7n t\u1ea1i", createValueLabel(record.soPhong));
-            addFormRow(form, gbc, 2, "Ph\u00f2ng m\u1edbi", cboRoom);
+            addFormRow(form, gbc, 0, "Mã hồ sơ", createValueLabel(record.maHoSo));
+            addFormRow(form, gbc, 1, "Mã đặt phòng", createValueLabel("DP" + record.maDatPhong));
+            addFormRow(form, gbc, 2, "Khách hàng", createValueLabel(record.khachHang));
+            addFormRow(form, gbc, 3, "Phòng đang đổi", cboCurrentStay);
+            addFormRow(form, gbc, 4, "Ngày giờ đổi", buildChangeTimeRow());
+            addFormRow(form, gbc, 5, "Phòng mới", cboNewRoom);
 
             JPanel card = createDialogCardPanel();
-            card.add(form, BorderLayout.CENTER);
-            content.add(card, BorderLayout.CENTER);
+            JPanel overview = new JPanel(new java.awt.GridLayout(1, 2, 12, 0));
+            overview.setOpaque(false);
+            overview.add(buildCurrentRoomCard());
+            overview.add(buildTargetRoomCard());
+            card.add(overview, BorderLayout.NORTH);
+            card.add(Box.createVerticalStrut(10), BorderLayout.CENTER);
 
-            JButton btnConfirm = createPrimaryButton("X\u00e1c nh\u1eadn", new Color(245, 158, 11), TEXT_PRIMARY, e -> submit(cboRoom));
-            JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
+            JPanel formWrapper = new JPanel(new BorderLayout(0, 8));
+            formWrapper.setOpaque(false);
+            formWrapper.add(form, BorderLayout.CENTER);
+            formWrapper.add(lblAvailabilityHint, BorderLayout.SOUTH);
+            card.add(formWrapper, BorderLayout.SOUTH);
+            center.add(card);
+            center.add(Box.createVerticalStrut(12));
+
+            JPanel noteCard = createDialogCardPanel();
+            JPanel notePanel = new JPanel(new BorderLayout(0, 8));
+            notePanel.setOpaque(false);
+            JLabel lblNote = new JLabel("Lý do / ghi chú đổi phòng");
+            lblNote.setFont(AppFonts.section(14));
+            lblNote.setForeground(TEXT_PRIMARY);
+            notePanel.add(lblNote, BorderLayout.NORTH);
+            notePanel.add(new JScrollPane(txtLyDo), BorderLayout.CENTER);
+            noteCard.add(notePanel, BorderLayout.CENTER);
+            center.add(noteCard);
+
+            content.add(center, BorderLayout.CENTER);
+
+            btnConfirm = createPrimaryButton("Xác nhận đổi phòng", new Color(245, 158, 11), TEXT_PRIMARY, e -> submit());
+            JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+
+            cboCurrentStay.addActionListener(e -> refreshDialogState());
+            cboNewRoom.addActionListener(e -> refreshTargetRoomInfo());
+            txtNgayDoi.addTextChangeListener(this::refreshDialogState);
+            txtGioDoi.addTextChangeListener(this::refreshDialogState);
+
+            refreshDialogState();
         }
 
-        private void submit(JComboBox<RoomOption> cboRoom) {
-            if (cboRoom.getItemCount() == 0 || cboRoom.getSelectedItem() == null) {
-                showInfo("Kh\u00f4ng c\u00f2n ph\u00f2ng tr\u1ed1ng c\u00f9ng lo\u1ea1i \u0111\u1ec3 \u0111\u1ed5i.");
+        private JPanel buildChangeTimeRow() {
+            JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            panel.setOpaque(false);
+            panel.add(txtNgayDoi);
+            panel.add(txtGioDoi);
+            return panel;
+        }
+
+        private JPanel buildCurrentRoomCard() {
+            JPanel card = createDialogCardPanel();
+            JPanel body = new JPanel();
+            body.setOpaque(false);
+            body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+
+            JLabel lblTitle = new JLabel("Phòng cũ đang ở");
+            lblTitle.setFont(AppFonts.section(14));
+            lblTitle.setForeground(new Color(180, 83, 9));
+            body.add(lblTitle);
+            body.add(Box.createVerticalStrut(8));
+            addInfoRow(body, "Lưu trú", lblCurrentStayValue);
+            addInfoRow(body, "Số phòng", lblCurrentRoomValue);
+            addInfoRow(body, "Loại phòng", lblCurrentTypeValue);
+            addInfoRow(body, "Tầng / khu vực", lblCurrentPositionValue);
+            card.add(body, BorderLayout.CENTER);
+            return card;
+        }
+
+        private JPanel buildTargetRoomCard() {
+            JPanel card = createDialogCardPanel();
+            JPanel body = new JPanel();
+            body.setOpaque(false);
+            body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+
+            JLabel lblTitle = new JLabel("Phòng mới thay thế");
+            lblTitle.setFont(AppFonts.section(14));
+            lblTitle.setForeground(new Color(37, 99, 235));
+            body.add(lblTitle);
+            body.add(Box.createVerticalStrut(8));
+            addInfoRow(body, "Số phòng", lblNewRoomValue);
+            addInfoRow(body, "Loại phòng", lblNewTypeValue);
+            addInfoRow(body, "Tầng / khu vực", lblNewPositionValue);
+            addInfoRow(body, "Giá tham chiếu", lblNewRateValue);
+            card.add(body, BorderLayout.CENTER);
+            return card;
+        }
+
+        private void addInfoRow(JPanel panel, String label, JLabel value) {
+            JPanel row = new JPanel(new BorderLayout(8, 0));
+            row.setOpaque(false);
+
+            JLabel lbl = new JLabel(label);
+            lbl.setFont(LABEL_FONT);
+            lbl.setForeground(TEXT_MUTED);
+            row.add(lbl, BorderLayout.WEST);
+            row.add(value, BorderLayout.CENTER);
+
+            panel.add(row);
+            panel.add(Box.createVerticalStrut(6));
+        }
+
+        private void refreshDialogState() {
+            currentSnapshot = resolveSelectedSnapshot();
+            refreshCurrentRoomInfo();
+            reloadAvailableRooms();
+            refreshTargetRoomInfo();
+        }
+
+        private ActiveStaySnapshot resolveSelectedSnapshot() {
+            ServiceStayOption option = getSelectedStayTarget();
+            return option == null ? null : loadActiveStaySnapshot(option.maLuuTru);
+        }
+
+        private ServiceStayOption getSelectedStayTarget() {
+            return (ServiceStayOption) cboCurrentStay.getSelectedItem();
+        }
+
+        private RoomOption getSelectedTargetRoom() {
+            return (RoomOption) cboNewRoom.getSelectedItem();
+        }
+
+        private void refreshCurrentRoomInfo() {
+            if (currentSnapshot == null) {
+                lblCurrentStayValue.setText("-");
+                lblCurrentRoomValue.setText("-");
+                lblCurrentTypeValue.setText("-");
+                lblCurrentPositionValue.setText("-");
                 return;
             }
-            RoomOption room = (RoomOption) cboRoom.getSelectedItem();
+            lblCurrentStayValue.setText("LT" + currentSnapshot.maLuuTru + " / CTDP" + currentSnapshot.maChiTietDatPhong);
+            lblCurrentRoomValue.setText(currentSnapshot.soPhong);
+            lblCurrentTypeValue.setText(currentSnapshot.tenLoaiPhong);
+            lblCurrentPositionValue.setText(buildPositionText(currentSnapshot.tang, currentSnapshot.khuVuc));
+        }
+
+        private void reloadAvailableRooms() {
+            RoomOption previousRoom = getSelectedTargetRoom();
+            int previousRoomId = previousRoom == null ? 0 : previousRoom.maPhong;
+
+            cboNewRoom.removeAllItems();
+            String validationMessage = validateChangeTime(currentSnapshot);
+            if (!validationMessage.isEmpty()) {
+                lblAvailabilityHint.setText(validationMessage);
+                btnConfirm.setEnabled(false);
+                return;
+            }
+
+            List<RoomOption> roomOptions = loadAvailableRooms(currentSnapshot, getSelectedChangeTime());
+            for (RoomOption roomOption : roomOptions) {
+                cboNewRoom.addItem(roomOption);
+            }
+
+            RoomOption matched = findRoomOption(roomOptions, previousRoomId);
+            if (matched != null) {
+                cboNewRoom.setSelectedItem(matched);
+            } else if (cboNewRoom.getItemCount() > 0) {
+                cboNewRoom.setSelectedIndex(0);
+            }
+
+            if (roomOptions.isEmpty()) {
+                lblAvailabilityHint.setText("Không có phòng khả dụng trong khoảng lưu trú còn lại.");
+            } else {
+                lblAvailabilityHint.setText("Chỉ hiển thị phòng đang trống, không bảo trì và không bị booking/lưu trú khác chồng lấn.");
+            }
+            btnConfirm.setEnabled(!roomOptions.isEmpty());
+        }
+
+        private void refreshTargetRoomInfo() {
+            RoomOption room = getSelectedTargetRoom();
+            if (room == null) {
+                lblNewRoomValue.setText("-");
+                lblNewTypeValue.setText("-");
+                lblNewPositionValue.setText("-");
+                lblNewRateValue.setText("-");
+                return;
+            }
+            lblNewRoomValue.setText(room.soPhong);
+            lblNewTypeValue.setText(room.loaiPhong);
+            lblNewPositionValue.setText(buildPositionText(room.tang, room.khuVuc));
+            lblNewRateValue.setText(room.giaThamChieu > 0d ? formatMoney(room.giaThamChieu) : "Theo bảng giá hiện hành");
+        }
+
+        private String validateChangeTime(ActiveStaySnapshot staySnapshot) {
+            if (staySnapshot == null) {
+                return "Không còn tìm thấy lượt lưu trú đang ở để đổi phòng.";
+            }
+            LocalDateTime changeTime = getSelectedChangeTime();
+            if (changeTime == null) {
+                return "Thời điểm đổi phòng không hợp lệ.";
+            }
+            if (staySnapshot.checkIn != null && !changeTime.isAfter(staySnapshot.checkIn.toLocalDateTime())) {
+                return "Thời điểm đổi phải sau giờ check-in của phòng hiện tại.";
+            }
+            if (staySnapshot.expectedCheckOut == null) {
+                return "Không xác định được giờ trả phòng dự kiến của booking.";
+            }
+            if (!staySnapshot.expectedCheckOut.toLocalDateTime().isAfter(changeTime)) {
+                return "Thời điểm đổi phải trước giờ trả phòng dự kiến.";
+            }
+            if (changeTime.isAfter(LocalDateTime.now().plusMinutes(1L))) {
+                return "Thời điểm đổi phòng không được lớn hơn thời gian hiện tại.";
+            }
+            return "";
+        }
+
+        private LocalDateTime getSelectedChangeTime() {
+            LocalDate ngayDoi = txtNgayDoi.getDateValue();
+            LocalTime gioDoi = txtGioDoi.getTimeValue();
+            if (ngayDoi == null || gioDoi == null) {
+                return null;
+            }
+            return LocalDateTime.of(ngayDoi, gioDoi);
+        }
+
+        private RoomOption findRoomOption(List<RoomOption> roomOptions, int maPhong) {
+            if (roomOptions == null || maPhong <= 0) {
+                return null;
+            }
+            for (RoomOption roomOption : roomOptions) {
+                if (roomOption != null && roomOption.maPhong == maPhong) {
+                    return roomOption;
+                }
+            }
+            return null;
+        }
+
+        private String buildPositionText(String tang, String khuVuc) {
+            String floor = safeValue(tang, "-");
+            String area = safeValue(khuVuc, "-");
+            if ("-".equals(area)) {
+                return floor;
+            }
+            return floor + " / " + area;
+        }
+
+        private void submit() {
+            ServiceStayOption stayTarget = getSelectedStayTarget();
+            if (stayTarget == null || stayTarget.maLuuTru <= 0) {
+                showInfo("Vui lòng chọn đúng phòng đang ở cần đổi.");
+                return;
+            }
+
+            LocalDateTime changeTime = getSelectedChangeTime();
+            if (changeTime == null) {
+                showInfo("Thời điểm đổi phòng không hợp lệ.");
+                return;
+            }
+
             Connection con = ConnectDB.getConnection();
             if (con == null) {
-                showInfo("Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
+                showInfo("Không thể kết nối cơ sở dữ liệu.");
                 return;
             }
             try {
                 con.setAutoCommit(false);
-                try (PreparedStatement ps = con.prepareStatement("UPDATE LuuTru SET maPhong = ? WHERE maLuuTru = ?")) {
-                    ps.setInt(1, room.maPhong);
-                    ps.setInt(2, record.maLuuTru);
+
+                ActiveStaySnapshot staySnapshot = loadActiveStaySnapshot(con, stayTarget.maLuuTru);
+                String validationMessage = validateChangeTime(staySnapshot);
+                if (!validationMessage.isEmpty()) {
+                    con.rollback();
+                    showInfo(validationMessage);
+                    return;
+                }
+
+                RoomOption selectedRoom = getSelectedTargetRoom();
+                if (selectedRoom == null) {
+                    con.rollback();
+                    showInfo("Vui lòng chọn phòng mới khả dụng.");
+                    return;
+                }
+
+                List<RoomOption> latestOptions = loadAvailableRooms(con, staySnapshot, changeTime);
+                RoomOption targetRoom = findRoomOption(latestOptions, selectedRoom.maPhong);
+                if (targetRoom == null) {
+                    con.rollback();
+                    showInfo("Phòng mới vừa bị chiếm hoặc đang bảo trì. Vui lòng chọn lại.");
+                    return;
+                }
+                if (targetRoom.maPhong == staySnapshot.maPhong) {
+                    con.rollback();
+                    showInfo("Phòng mới không được trùng với phòng hiện tại.");
+                    return;
+                }
+
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ? AND checkOut IS NULL")) {
+                    ps.setTimestamp(1, Timestamp.valueOf(changeTime));
+                    ps.setInt(2, staySnapshot.maLuuTru);
+                    if (ps.executeUpdate() <= 0) {
+                        con.rollback();
+                        showInfo("Phòng hiện tại không còn ở trạng thái đang ở để đổi.");
+                        return;
+                    }
+                }
+
+                double giaPhongMoi = targetRoom.giaThamChieu > 0d ? targetRoom.giaThamChieu : staySnapshot.giaPhong;
+                try (PreparedStatement ps = con.prepareStatement(
+                        "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) "
+                                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                    ps.setInt(1, staySnapshot.maChiTietDatPhong);
+                    ps.setInt(2, staySnapshot.maDatPhong);
+                    ps.setInt(3, targetRoom.maPhong);
+                    ps.setTimestamp(4, Timestamp.valueOf(changeTime));
+                    ps.setTimestamp(5, null);
+                    ps.setInt(6, staySnapshot.soNguoi);
+                    ps.setDouble(7, giaPhongMoi);
+                    ps.setDouble(8, staySnapshot.tienCoc);
+                    if (ps.executeUpdate() <= 0) {
+                        con.rollback();
+                        showInfo("Không thể tạo lượt lưu trú mới cho phòng thay thế.");
+                        return;
+                    }
+                }
+
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE ChiTietDatPhong SET maPhong = ? WHERE maChiTietDatPhong = ?")) {
+                    ps.setInt(1, targetRoom.maPhong);
+                    ps.setInt(2, staySnapshot.maChiTietDatPhong);
+                    if (ps.executeUpdate() <= 0) {
+                        con.rollback();
+                        showInfo("Không thể cập nhật phòng hiện hành của booking.");
+                        return;
+                    }
+                }
+
+                try (PreparedStatement ps = con.prepareStatement(
+                        "UPDATE Phong SET trangThai = N'Dọn dẹp' WHERE maPhong = ? AND ISNULL(trangThai, N'') <> N'Bảo trì'")) {
+                    ps.setInt(1, staySnapshot.maPhong);
                     ps.executeUpdate();
                 }
-                try (PreparedStatement ps = con.prepareStatement("UPDATE ChiTietDatPhong SET maPhong = ? WHERE maChiTietDatPhong = ?")) {
-                    ps.setInt(1, room.maPhong);
-                    ps.setInt(2, record.maChiTietDatPhong);
-                    ps.executeUpdate();
-                }
-                try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'D\u1ecdn d\u1eb9p' WHERE maPhong = ? AND trangThai <> N'B\u1ea3o tr\u00ec'")) {
-                    ps.setInt(1, record.maPhongId);
-                    ps.executeUpdate();
-                }
+
                 List<Integer> roomIds = new ArrayList<Integer>();
-                roomIds.add(Integer.valueOf(record.maPhongId));
-                roomIds.add(Integer.valueOf(room.maPhong));
+                roomIds.add(Integer.valueOf(staySnapshot.maPhong));
+                roomIds.add(Integer.valueOf(targetRoom.maPhong));
                 datPhongDAO.refreshRoomStatuses(con, roomIds);
+                checkInOutDAO.refreshBookingStatus(con, record.maDatPhong);
                 con.commit();
+
+                CheckInOutGUI.prepareFocusOnBooking(record.maDatPhong);
+                DatPhongGUI.prepareFocusOnBooking(record.maDatPhong);
                 PhongGUI.refreshAllOpenInstances();
+                DatPhongGUI.refreshAllOpenInstances();
                 CheckInOutGUI.refreshAllOpenInstances();
-                showInfo("\u0110\u1ed5i ph\u00f2ng th\u00e0nh c\u00f4ng.");
+                showInfo("Đã đổi phòng " + staySnapshot.soPhong + " sang " + targetRoom.soPhong + " thành công.");
                 dispose();
             } catch (Exception e) {
                 try {
@@ -2163,7 +2688,7 @@ public class CheckInOutGUI extends JFrame {
                 } catch (Exception ignore) {
                 }
                 e.printStackTrace();
-                showInfo("Kh\u00f4ng th\u1ec3 \u0111\u1ed5i ph\u00f2ng.");
+                showInfo("Không thể đổi phòng.");
             } finally {
                 try {
                     con.setAutoCommit(true);
@@ -2810,6 +3335,10 @@ public class CheckInOutGUI extends JFrame {
             }
         }
 
+        private List<String> getRoomCodes() {
+            return new ArrayList<String>(soPhongList);
+        }
+
         private boolean containsRoomCode(String roomCode) {
             if (roomCode == null || roomCode.trim().isEmpty()) {
                 return false;
@@ -2994,20 +3523,87 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
+    private static final class ActiveStaySnapshot {
+        private final int maLuuTru;
+        private final int maChiTietDatPhong;
+        private final int maDatPhong;
+        private final int maPhong;
+        private final int maLoaiPhong;
+        private final int soNguoi;
+        private final String soPhong;
+        private final String tenLoaiPhong;
+        private final String tang;
+        private final String khuVuc;
+        private final Timestamp checkIn;
+        private final Timestamp expectedCheckOut;
+        private final double giaPhong;
+        private final double tienCoc;
+
+        private ActiveStaySnapshot(int maLuuTru,
+                                   int maChiTietDatPhong,
+                                   int maDatPhong,
+                                   int maPhong,
+                                   int maLoaiPhong,
+                                   int soNguoi,
+                                   String soPhong,
+                                   String tenLoaiPhong,
+                                   String tang,
+                                   String khuVuc,
+                                   Timestamp checkIn,
+                                   Timestamp expectedCheckOut,
+                                   double giaPhong,
+                                   double tienCoc) {
+            this.maLuuTru = maLuuTru;
+            this.maChiTietDatPhong = maChiTietDatPhong;
+            this.maDatPhong = maDatPhong;
+            this.maPhong = maPhong;
+            this.maLoaiPhong = maLoaiPhong;
+            this.soNguoi = soNguoi;
+            this.soPhong = soPhong;
+            this.tenLoaiPhong = tenLoaiPhong;
+            this.tang = tang;
+            this.khuVuc = khuVuc;
+            this.checkIn = checkIn;
+            this.expectedCheckOut = expectedCheckOut;
+            this.giaPhong = giaPhong;
+            this.tienCoc = tienCoc;
+        }
+    }
+
     private static final class RoomOption {
         private final int maPhong;
+        private final int maLoaiPhong;
+        private final int sucChuaToiDa;
         private final String soPhong;
         private final String tang;
+        private final String khuVuc;
+        private final String loaiPhong;
+        private final double giaThamChieu;
 
-        private RoomOption(int maPhong, String soPhong, String tang) {
+        private RoomOption(int maPhong,
+                           int maLoaiPhong,
+                           int sucChuaToiDa,
+                           String soPhong,
+                           String tang,
+                           String khuVuc,
+                           String loaiPhong,
+                           double giaThamChieu) {
             this.maPhong = maPhong;
             this.soPhong = soPhong;
             this.tang = tang;
+            this.maLoaiPhong = maLoaiPhong;
+            this.sucChuaToiDa = sucChuaToiDa;
+            this.khuVuc = khuVuc;
+            this.loaiPhong = loaiPhong;
+            this.giaThamChieu = giaThamChieu;
         }
 
         @Override
         public String toString() {
-            return soPhong + " - " + tang;
+            if (khuVuc == null || khuVuc.trim().isEmpty() || "-".equals(khuVuc.trim())) {
+                return soPhong + " - " + loaiPhong + " - " + tang;
+            }
+            return soPhong + " - " + loaiPhong + " - " + tang + " / " + khuVuc;
         }
     }
 

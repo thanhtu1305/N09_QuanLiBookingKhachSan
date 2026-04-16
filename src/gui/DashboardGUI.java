@@ -75,6 +75,7 @@ public class DashboardGUI extends JFrame {
     private static final DateTimeFormatter DATETIME_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter GANTT_HEADER_FORMAT = DateTimeFormatter.ofPattern("dd/MM");
     private static final int GANTT_DAY_COUNT = 7;
+    private static final int GANTT_VISIBLE_ROW_COUNT = 9;
 
     private final String username;
     private final String role;
@@ -82,6 +83,7 @@ public class DashboardGUI extends JFrame {
     private final List<DashboardGanttRow> allGanttRows = new ArrayList<DashboardGanttRow>();
     private final List<DashboardGanttRow> filteredGanttRows = new ArrayList<DashboardGanttRow>();
     private final List<LocalDate> ganttDates = new ArrayList<LocalDate>();
+    private LocalDate ganttStartDate = LocalDate.now();
 
     private JPanel rootPanel;
     private JLabel lblNgayLamViecValue;
@@ -105,9 +107,11 @@ public class DashboardGUI extends JFrame {
     private DefaultTableModel taskTableModel;
     private List<DashboardTaskRow> currentTaskRows = new ArrayList<DashboardTaskRow>();
     private JTable tblGantt;
+    private JScrollPane ganttScrollPane;
     private DefaultTableModel ganttTableModel;
     private JComboBox<String> cboGanttTang;
     private JComboBox<String> cboGanttLoaiPhong;
+    private JLabel lblGanttRangeValue;
     private JLabel lblGanttPhongValue;
     private JLabel lblGanttNgayValue;
     private JLabel lblGanttTrangThaiValue;
@@ -115,6 +119,9 @@ public class DashboardGUI extends JFrame {
     private JLabel lblGanttThoiGianValue;
     private JLabel lblGanttMaThamChieuValue;
     private JLabel lblGanttHuongXuLyValue;
+    private JButton btnGanttPrevRange;
+    private JButton btnGanttNextRange;
+    private JButton btnGanttRefresh;
     private JButton btnGanttOpenDatPhong;
     private JButton btnGanttOpenCheckInOut;
     private DashboardGanttCell selectedGanttCell;
@@ -259,10 +266,6 @@ public class DashboardGUI extends JFrame {
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
 
-        JPanel ganttSection = buildGanttSection();
-        ganttSection.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ganttSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, ganttSection.getPreferredSize().height));
-
         JPanel infoSection = buildInfoRow();
         infoSection.setAlignmentX(Component.LEFT_ALIGNMENT);
         infoSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, infoSection.getPreferredSize().height));
@@ -271,20 +274,18 @@ public class DashboardGUI extends JFrame {
         kpiSection.setAlignmentX(Component.LEFT_ALIGNMENT);
         kpiSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, kpiSection.getPreferredSize().height));
 
-        JSplitPane chartSplitPane = buildChartsSplitPane();
-        chartSplitPane.setAlignmentX(Component.LEFT_ALIGNMENT);
-        chartSplitPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, 360));
+        JPanel ganttSection = buildGanttSection();
+        ganttSection.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ganttSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, ganttSection.getPreferredSize().height));
 
         JPanel taskSection = buildTaskSection();
         taskSection.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        content.add(ganttSection);
-        content.add(Box.createVerticalStrut(12));
         content.add(infoSection);
         content.add(Box.createVerticalStrut(12));
         content.add(kpiSection);
         content.add(Box.createVerticalStrut(12));
-        content.add(chartSplitPane);
+        content.add(ganttSection);
         content.add(Box.createVerticalStrut(12));
         content.add(taskSection);
 
@@ -335,6 +336,20 @@ public class DashboardGUI extends JFrame {
 
         controls.add(createFieldGroup("Tầng", cboGanttTang));
         controls.add(createFieldGroup("Loại phòng", cboGanttLoaiPhong));
+        btnGanttPrevRange = createGanttRangeButton("<", e -> shiftGanttRange(-GANTT_DAY_COUNT));
+        btnGanttPrevRange.setToolTipText("Lùi block 7 ngày trước");
+        lblGanttRangeValue = createGanttRangeLabel();
+        btnGanttNextRange = createGanttRangeButton(">", e -> shiftGanttRange(GANTT_DAY_COUNT));
+        btnGanttNextRange.setToolTipText("Tiến sang block 7 ngày kế tiếp");
+        btnGanttRefresh = createOutlineButton("Làm mới", BRAND_INDIGO, e -> reloadGanttData(true));
+        btnGanttRefresh.setToolTipText("Tải lại trạng thái phòng trong khoảng ngày đang xem");
+
+        controls.add(Box.createHorizontalStrut(8));
+        controls.add(btnGanttPrevRange);
+        controls.add(lblGanttRangeValue);
+        controls.add(btnGanttNextRange);
+        controls.add(btnGanttRefresh);
+
         header.add(titleRow);
         header.add(Box.createVerticalStrut(8));
         header.add(controls);
@@ -378,7 +393,7 @@ public class DashboardGUI extends JFrame {
         tblGantt.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tblGantt.setGridColor(BORDER_SOFT);
         tblGantt.setShowGrid(true);
-        tblGantt.setFillsViewportHeight(true);
+        tblGantt.setFillsViewportHeight(false);
         tblGantt.setDefaultRenderer(Object.class, new DashboardGanttCellRenderer());
         ScreenUIHelper.styleTableHeader(tblGantt);
         tblGantt.addMouseListener(new java.awt.event.MouseAdapter() {
@@ -398,11 +413,23 @@ public class DashboardGUI extends JFrame {
             }
         });
 
-        JScrollPane scrollPane = new JScrollPane(tblGantt);
-        scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-        scrollPane.getHorizontalScrollBar().setUnitIncrement(18);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
-        scrollPane.setPreferredSize(new Dimension(0, 320));
+        ganttScrollPane = new JScrollPane(tblGantt);
+        ganttScrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+        ganttScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        ganttScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        ganttScrollPane.setWheelScrollingEnabled(true);
+        ganttScrollPane.getHorizontalScrollBar().setUnitIncrement(24);
+        ganttScrollPane.getVerticalScrollBar().setUnitIncrement(tblGantt.getRowHeight());
+        ganttScrollPane.getVerticalScrollBar().setBlockIncrement(tblGantt.getRowHeight() * 4);
+        int ganttViewportHeight = resolveGanttViewportHeightByRows();
+        ganttScrollPane.setPreferredSize(new Dimension(0, ganttViewportHeight));
+        ganttScrollPane.setMinimumSize(new Dimension(0, ganttViewportHeight));
+        ganttScrollPane.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                scheduleGanttColumnResize();
+            }
+        });
 
         JPanel detailCard = createInfoCardPanel(new GridLayout(1, 2, 12, 0));
         lblGanttPhongValue = createValueLabel();
@@ -444,11 +471,13 @@ public class DashboardGUI extends JFrame {
         detailCard.add(rightDetail);
 
         card.add(header, BorderLayout.NORTH);
-        card.add(scrollPane, BorderLayout.CENTER);
+        card.add(ganttScrollPane, BorderLayout.CENTER);
         card.add(detailCard, BorderLayout.SOUTH);
 
         updateGanttDetail(null, null);
+        updateGanttRangeLabel();
         rebuildGanttColumns();
+        scheduleGanttColumnResize();
         return card;
     }
 
@@ -671,6 +700,38 @@ public class DashboardGUI extends JFrame {
         return button;
     }
 
+    private JButton createGanttRangeButton(String text, java.awt.event.ActionListener listener) {
+        JButton button = new JButton(text);
+        button.setFont(BUTTON_FONT.deriveFont(Font.BOLD, 16f));
+        button.setForeground(TEXT_PRIMARY);
+        button.setBackground(PANEL_SOFT);
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setBorderPainted(true);
+        button.setFocusPainted(false);
+        button.setPreferredSize(new Dimension(40, 34));
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BRAND_BLUE, 1, true),
+                new EmptyBorder(0, 0, 0, 0)
+        ));
+        button.addActionListener(listener);
+        return button;
+    }
+
+    private JLabel createGanttRangeLabel() {
+        JLabel label = new JLabel("-", SwingConstants.CENTER);
+        label.setFont(VALUE_FONT);
+        label.setForeground(TEXT_PRIMARY);
+        label.setOpaque(true);
+        label.setBackground(PANEL_SOFT);
+        label.setPreferredSize(new Dimension(220, 34));
+        label.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
+                new EmptyBorder(8, 12, 8, 12)
+        ));
+        return label;
+    }
+
     private void loadGanttRows(List<DashboardGanttRow> rows) {
         allGanttRows.clear();
         if (rows != null) {
@@ -683,14 +744,58 @@ public class DashboardGUI extends JFrame {
                 ganttDates.add(cell.getDate());
             }
         } else {
-            LocalDate startDate = LocalDate.now();
+            LocalDate startDate = safeGanttStartDate();
             for (int i = 0; i < GANTT_DAY_COUNT; i++) {
                 ganttDates.add(startDate.plusDays(i));
             }
         }
 
+        updateGanttRangeLabel();
         refreshGanttFilterOptions();
         applyGanttFilters();
+    }
+
+    private void updateGanttRangeLabel() {
+        if (lblGanttRangeValue == null) {
+            return;
+        }
+        LocalDate rangeStart = ganttDates.isEmpty() ? safeGanttStartDate() : ganttDates.get(0);
+        LocalDate rangeEnd = ganttDates.isEmpty()
+                ? rangeStart.plusDays(GANTT_DAY_COUNT - 1L)
+                : ganttDates.get(ganttDates.size() - 1);
+        String text = rangeStart.format(DATE_LABEL_FORMAT) + " - " + rangeEnd.format(DATE_LABEL_FORMAT);
+        lblGanttRangeValue.setText(text);
+        lblGanttRangeValue.setToolTipText("Khoảng ngày đang xem: " + text);
+        lblGanttRangeValue.revalidate();
+        lblGanttRangeValue.repaint();
+    }
+
+    private LocalDate safeGanttStartDate() {
+        return ganttStartDate == null ? LocalDate.now() : ganttStartDate;
+    }
+
+    private void shiftGanttRange(int dayOffset) {
+        if (dayOffset == 0) {
+            return;
+        }
+        ganttStartDate = safeGanttStartDate().plusDays(dayOffset);
+        reloadGanttData(false);
+    }
+
+    private String reloadGanttData(boolean notifyUser) {
+        List<DashboardGanttRow> ganttRows = dashboardDAO.getRoomGanttRows(safeGanttStartDate(), GANTT_DAY_COUNT);
+        String errorMessage = safeValue(dashboardDAO.getLastErrorMessage(), "");
+        loadGanttRows(ganttRows);
+        updateInfoRow();
+
+        if (notifyUser) {
+            if (!errorMessage.isEmpty()) {
+                showMessage("Đã tải lại sơ đồ Gantt với fallback an toàn. Chi tiết: " + errorMessage);
+            } else {
+                showMessage("Đã cập nhật sơ đồ Gantt.");
+            }
+        }
+        return errorMessage;
     }
 
     private void refreshGanttFilterOptions() {
@@ -787,12 +892,76 @@ public class DashboardGUI extends JFrame {
         if (tblGantt == null || tblGantt.getColumnModel().getColumnCount() == 0) {
             return;
         }
-        tblGantt.getColumnModel().getColumn(0).setPreferredWidth(110);
-        tblGantt.getColumnModel().getColumn(0).setMinWidth(110);
-        for (int i = 1; i < tblGantt.getColumnModel().getColumnCount(); i++) {
-            tblGantt.getColumnModel().getColumn(i).setPreferredWidth(95);
-            tblGantt.getColumnModel().getColumn(i).setMinWidth(95);
+        int columnCount = tblGantt.getColumnModel().getColumnCount();
+        int dayColumnCount = Math.max(0, columnCount - 1);
+        int minRoomWidth = 140;
+        int minDayWidth = 90;
+        int viewportWidth = resolveGanttViewportWidth();
+        int minimumTableWidth = minRoomWidth + (dayColumnCount * minDayWidth);
+        int targetTableWidth = Math.max(minimumTableWidth, viewportWidth);
+
+        int roomWidth = dayColumnCount == 0
+                ? targetTableWidth
+                : Math.max(minRoomWidth, Math.min(190, (int) Math.round(targetTableWidth * 0.18d)));
+        int remainingWidth = Math.max(0, targetTableWidth - roomWidth);
+        int baseDayWidth = dayColumnCount == 0 ? 0 : Math.max(minDayWidth, remainingWidth / dayColumnCount);
+        int extraPixels = dayColumnCount == 0 ? 0 : Math.max(0, remainingWidth - (baseDayWidth * dayColumnCount));
+
+        tblGantt.getColumnModel().getColumn(0).setMinWidth(minRoomWidth);
+        tblGantt.getColumnModel().getColumn(0).setPreferredWidth(roomWidth);
+
+        int appliedTableWidth = roomWidth;
+        for (int i = 1; i < columnCount; i++) {
+            int dayWidth = baseDayWidth + (extraPixels > 0 ? 1 : 0);
+            if (extraPixels > 0) {
+                extraPixels--;
+            }
+            tblGantt.getColumnModel().getColumn(i).setMinWidth(minDayWidth);
+            tblGantt.getColumnModel().getColumn(i).setPreferredWidth(dayWidth);
+            appliedTableWidth += dayWidth;
         }
+
+        int preferredHeight = tblGantt.getPreferredSize() == null ? 0 : tblGantt.getPreferredSize().height;
+        if (preferredHeight <= 0) {
+            preferredHeight = tblGantt.getRowHeight() * Math.max(1, tblGantt.getRowCount() + 1);
+        }
+        tblGantt.setPreferredScrollableViewportSize(new Dimension(appliedTableWidth, resolveGanttViewportHeightByRows()));
+        tblGantt.setPreferredSize(new Dimension(appliedTableWidth, preferredHeight));
+        tblGantt.revalidate();
+        if (tblGantt.getTableHeader() != null) {
+            tblGantt.getTableHeader().revalidate();
+            tblGantt.getTableHeader().repaint();
+        }
+    }
+
+    private int resolveGanttViewportHeightByRows() {
+        int rowHeight = tblGantt == null ? 44 : tblGantt.getRowHeight();
+        int headerHeight = tblGantt != null && tblGantt.getTableHeader() != null
+                ? tblGantt.getTableHeader().getPreferredSize().height
+                : 28;
+        return (rowHeight * GANTT_VISIBLE_ROW_COUNT) + headerHeight + 4;
+    }
+
+    private int resolveGanttViewportWidth() {
+        if (ganttScrollPane != null && ganttScrollPane.getViewport() != null) {
+            int viewportWidth = ganttScrollPane.getViewport().getWidth();
+            if (viewportWidth > 0) {
+                return viewportWidth;
+            }
+        }
+        if (tblGantt != null && tblGantt.getParent() != null && tblGantt.getParent().getWidth() > 0) {
+            return tblGantt.getParent().getWidth();
+        }
+        return 0;
+    }
+
+    private void scheduleGanttColumnResize() {
+        javax.swing.SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                configureGanttColumnWidths();
+            }
+        });
     }
 
     private void refillGanttTable() {
@@ -813,6 +982,7 @@ public class DashboardGUI extends JFrame {
             tblGantt.clearSelection();
             updateGanttDetail(null, null);
         }
+        scheduleGanttColumnResize();
     }
 
     private void restoreSelectedGanttCell() {
@@ -996,24 +1166,15 @@ public class DashboardGUI extends JFrame {
     }
 
     private void loadDashboardData(boolean showMessage) {
-        List<DashboardGanttRow> ganttRows = dashboardDAO.getRoomGanttRows(LocalDate.now(), GANTT_DAY_COUNT);
-        String errorMessage = safeValue(dashboardDAO.getLastErrorMessage(), "");
+        String errorMessage = reloadGanttData(false);
 
         DashboardSummary summary = dashboardDAO.getDashboardSummary();
-        errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
-
-        List<DashboardChartPoint> revenuePoints = dashboardDAO.getRevenueLast7Days();
-        errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
-
-        List<DashboardChartPoint> bookingPoints = dashboardDAO.getBookingLast7Days();
         errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
 
         List<DashboardTaskRow> taskRows = dashboardDAO.getTodayTasks();
         errorMessage = mergeErrors(errorMessage, dashboardDAO.getLastErrorMessage());
 
-        loadGanttRows(ganttRows);
         loadSummaryCards(summary);
-        loadCharts(revenuePoints, bookingPoints);
         loadTaskTable(taskRows);
         updateInfoRow();
 
@@ -1085,6 +1246,9 @@ public class DashboardGUI extends JFrame {
     }
 
     private void updateInfoRow() {
+        if (lblNgayLamViecValue == null || lblLanCapNhatValue == null) {
+            return;
+        }
         lblNgayLamViecValue.setText(LocalDate.now().format(DATE_LABEL_FORMAT));
         lblLanCapNhatValue.setText(LocalDateTime.now().format(DATETIME_LABEL_FORMAT));
     }

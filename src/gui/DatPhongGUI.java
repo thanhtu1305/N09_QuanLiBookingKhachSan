@@ -109,6 +109,7 @@ public class DatPhongGUI extends JFrame {
     private JTable tblBookingDetails;
     private DefaultTableModel bookingDetailModel;
     private JTextArea txtGhiChu;
+    private JButton btnRestoreBooking;
 
     public DatPhongGUI() {
         this("guest", "Lễ tân");
@@ -197,6 +198,10 @@ public class DatPhongGUI extends JFrame {
 
         card.add(left, BorderLayout.WEST);
         card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "màn hình Đặt phòng"), BorderLayout.EAST);
+        btnRestoreBooking = createOutlineButton("KhÃ´i phá»¥c booking", new Color(37, 99, 235), e -> openRestoreBookingDialog());
+        btnRestoreBooking.setEnabled(false);
+        btnRestoreBooking = createOutlineButton("Khôi phục booking", new Color(37, 99, 235), e -> openRestoreBookingDialog());
+        btnRestoreBooking.setEnabled(false);
         return card;
     }
 
@@ -206,6 +211,9 @@ public class DatPhongGUI extends JFrame {
         card.add(createPrimaryButton("Xác nhận", new Color(37, 99, 235), Color.WHITE, e -> openConfirmBookingDialog()));
         card.add(createPrimaryButton("Nhận cọc", new Color(245, 158, 11), TEXT_PRIMARY, e -> openDepositDialog()));
         card.add(createPrimaryButton("Hủy booking", new Color(220, 38, 38), Color.WHITE, e -> openCancelBookingDialog()));
+        btnRestoreBooking = createOutlineButton("Khôi phục booking", new Color(37, 99, 235), e -> openRestoreBookingDialog());
+        btnRestoreBooking.setEnabled(false);
+        card.add(btnRestoreBooking);
         return card;
     }
 
@@ -215,7 +223,7 @@ public class DatPhongGUI extends JFrame {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
-        cboTrangThai = createComboBox(new String[]{"T\u1ea5t c\u1ea3", "\u0110\u00e3 \u0111\u1eb7t", "\u0110\u00e3 x\u00e1c nh\u1eadn", "\u0110\u00e3 c\u1ecdc", "Ch\u1edd check-in"});
+        cboTrangThai = createComboBox(new String[]{"T\u1ea5t c\u1ea3", "\u0110\u00e3 \u0111\u1eb7t", "\u0110\u00e3 x\u00e1c nh\u1eadn", "\u0110\u00e3 c\u1ecdc", "Ch\u1edd check-in", "Đã hủy"});
         cboNguonDat = createComboBox(new String[]{"Tất cả", "Đặt trước", "Walk-in"});
         cboLoaiPhong = createComboBox(new String[]{"Tất cả", "Standard", "Deluxe", "Suite", "Family"});
         txtTuNgay = new AppDatePickerField("", false);
@@ -567,7 +575,7 @@ public class DatPhongGUI extends JFrame {
             for (entity.DatPhong datPhong : datPhongDAO.getAll()) {
                 BookingRecord booking = toBookingRecord(datPhong);
                 booking.trangThai = DatPhongDAO.normalizeStageStatus(booking.trangThai);
-                if (DatPhongDAO.isBookingStageStatus(booking.trangThai)) {
+                if (DatPhongDAO.isBookingStageStatus(booking.trangThai) || isCancelledBooking(booking.trangThai)) {
                     allBookings.add(booking);
                 }
             }
@@ -805,6 +813,7 @@ public class DatPhongGUI extends JFrame {
         txtGhiChu.setText(booking.ghiChu.isEmpty() ? "-" : booking.ghiChu);
         txtGhiChu.setCaretPosition(0);
         refillBookingDetailTable(booking);
+        updateActionButtonStates(booking);
     }
 
     private void clearDetailPanel() {
@@ -822,6 +831,7 @@ public class DatPhongGUI extends JFrame {
         if (bookingDetailModel != null) {
             bookingDetailModel.setRowCount(0);
         }
+        updateActionButtonStates(null);
     }
 
     private void refillBookingDetailTable(BookingRecord booking) {
@@ -862,6 +872,10 @@ public class DatPhongGUI extends JFrame {
         if (booking == null) {
             return;
         }
+        if (isCancelledBooking(booking.trangThai)) {
+            showWarning("Booking Ä‘Ã£ há»§y. Vui lÃ²ng khÃ´i phá»¥c trÆ°á»›c khi xÃ¡c nháº­n.");
+            return;
+        }
         if (!canConfirmBooking(booking.trangThai)) {
             showWarning("Chỉ booking chưa check-in mới có thể xác nhận.");
             return;
@@ -872,6 +886,10 @@ public class DatPhongGUI extends JFrame {
     private void openDepositDialog() {
         BookingRecord booking = getSelectedBooking();
         if (booking != null) {
+            if (isCancelledBooking(booking.trangThai)) {
+                showWarning("Booking Ä‘Ã£ há»§y. Vui lÃ²ng khÃ´i phá»¥c trÆ°á»›c khi nháº­n cá»c.");
+                return;
+            }
             new DepositDialog(this, booking).setVisible(true);
         }
     }
@@ -879,6 +897,10 @@ public class DatPhongGUI extends JFrame {
     private void openUpdateBookingDialog() {
         BookingRecord booking = getSelectedBooking();
         if (booking != null) {
+            if (isCancelledBooking(booking.trangThai)) {
+                showWarning("Booking Ä‘Ã£ há»§y. Vui lÃ²ng khÃ´i phá»¥c trÆ°á»›c khi cáº­p nháº­t.");
+                return;
+            }
             new BookingEditorDialog(this, booking).setVisible(true);
         }
     }
@@ -886,8 +908,24 @@ public class DatPhongGUI extends JFrame {
     private void openCancelBookingDialog() {
         BookingRecord booking = getSelectedBooking();
         if (booking != null) {
+            if (isCancelledBooking(booking.trangThai)) {
+                showWarning("Booking nÃ y Ä‘Ã£ á»Ÿ tráº¡ng thÃ¡i ÄÃ£ há»§y.");
+                return;
+            }
             new CancelBookingDialog(this, booking).setVisible(true);
         }
+    }
+
+    private void openRestoreBookingDialog() {
+        BookingRecord booking = getSelectedBooking();
+        if (booking == null) {
+            return;
+        }
+        if (!isCancelledBooking(booking.trangThai)) {
+            showWarning("Chá»‰ booking Ä‘Ã£ há»§y má»›i cÃ³ thá»ƒ khÃ´i phá»¥c.");
+            return;
+        }
+        new RestoreBookingDialog(this, booking).setVisible(true);
     }
 
     private void openViewBookingDialog() {
@@ -917,6 +955,32 @@ public class DatPhongGUI extends JFrame {
             return true;
         }
         return "Đã đặt".equalsIgnoreCase(status) || "Chờ xác nhận".equalsIgnoreCase(status);
+    }
+
+    private boolean isCancelledBooking(String trangThai) {
+        String status = safeValue(trangThai, "");
+        return DatPhongDAO.STATUS_CANCELLED.equalsIgnoreCase(status) || DatPhongDAO.STATUS_CANCELLED_BOOKING.equalsIgnoreCase(status);
+    }
+
+    private void updateActionButtonStates(BookingRecord booking) {
+        if (btnRestoreBooking != null) {
+            btnRestoreBooking.setEnabled(booking != null && isCancelledBooking(booking.trangThai));
+        }
+    }
+
+    private String resolveRestoreStatus(BookingRecord booking) {
+        return DatPhongDAO.STATUS_PENDING_CHECKIN;
+    }
+
+    private String buildRestoreConflictMessage(DatPhongConflictInfo conflictInfo) {
+        if (conflictInfo == null) {
+            return "Má»™t hoáº·c nhiá»u phÃ²ng trong booking Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng ngÃ y cÅ©. KhÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.";
+        }
+        return "PhÃ²ng " + safeValue(conflictInfo.getSoPhong(), "-")
+                + " Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng " + formatDate(conflictInfo.getNgayNhanPhong())
+                + " - " + formatDate(conflictInfo.getNgayTraPhong())
+                + " do trÃ¹ng vá»›i booking DP" + conflictInfo.getMaDatPhong()
+                + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
     }
 
     private void showMessageDialog(String title, String message, Color accentColor) {
@@ -2862,6 +2926,7 @@ public class DatPhongGUI extends JFrame {
                 }
                 releaseAssignedRooms(con, roomIds);
                 con.commit();
+                prepareFocusOnBooking(booking.maDatPhong);
                 refreshAllOpenInstances();
                 showSuccess("Hủy booking thành công.");
                 dispose();
@@ -2872,6 +2937,60 @@ public class DatPhongGUI extends JFrame {
             } finally {
                 try { con.setAutoCommit(true); } catch (Exception ignore) {}
             }
+        }
+    }
+
+    private final class RestoreBookingDialog extends BaseBookingDialog {
+        private final BookingRecord booking;
+
+        private RestoreBookingDialog(Window owner, BookingRecord booking) {
+            super(owner, "Khôi phục booking", 620, 380);
+            this.booking = booking;
+
+            JPanel content = new JPanel(new BorderLayout(0, 12));
+            content.setOpaque(false);
+            content.add(buildDialogHeader("KHÔI PHỤC BOOKING", "Khôi phục booking đã hủy về trạng thái có thể tiếp tục xử lý."), BorderLayout.NORTH);
+
+            JPanel form = createDialogFormPanel();
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
+            gbc.anchor = GridBagConstraints.WEST;
+
+            addFormRow(form, gbc, 0, "Mã booking", createValueTag("DP" + booking.maDatPhong));
+            addFormRow(form, gbc, 1, "Khách hàng", createValueTag(booking.khachHang));
+            addFormRow(form, gbc, 2, "Trạng thái hiện tại", createValueTag(booking.trangThai));
+            addFormRow(form, gbc, 3, "Khôi phục về", createValueTag(resolveRestoreStatus(booking)));
+            addFormRow(form, gbc, 4, "Phòng / loại", createValueTag(booking.getRoomSummary()));
+            addFormRow(form, gbc, 5, "Check-in / Check-out", createValueTag(booking.formatNgayNhanPhong() + " - " + booking.formatNgayTraPhong()));
+
+            JPanel card = createDialogCardPanel();
+            card.add(form, BorderLayout.CENTER);
+            content.add(card, BorderLayout.CENTER);
+
+            JButton btnConfirm = createPrimaryButton("Khôi phục booking", new Color(37, 99, 235), Color.WHITE, e -> submit());
+            JButton btnCancel = createOutlineButton("Đóng", new Color(107, 114, 128), e -> dispose());
+            content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
+            add(content, BorderLayout.CENTER);
+        }
+
+        private void submit() {
+            if (!isCancelledBooking(booking.trangThai)) {
+                showError("Booking này không còn ở trạng thái Đã hủy.");
+                return;
+            }
+
+            String restoreStatus = resolveRestoreStatus(booking);
+            boolean restored = datPhongDAO.restoreCancelledBooking(String.valueOf(booking.maDatPhong), restoreStatus);
+            if (!restored) {
+                String message = safeValue(datPhongDAO.getLastErrorMessage(), "");
+                showError(message.isEmpty() ? buildRestoreConflictMessage(null) : message);
+                return;
+            }
+
+            prepareFocusOnBooking(booking.maDatPhong);
+            refreshAllOpenInstances();
+            showSuccess("Khôi phục booking thành công.");
+            dispose();
         }
     }
 

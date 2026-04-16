@@ -131,17 +131,8 @@ public class DatPhongDAO {
             return null;
         }
 
-        String sql = SELECT_HEADER_BASE + " WHERE dp.maDatPhong = ?";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setInt(1, id.intValue());
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    DatPhong datPhong = mapDatPhongHeader(rs);
-                    datPhong.getChiTietDatPhongs().addAll(getChiTietByMaDatPhongInternal(con, datPhong));
-                    normalizeBooking(con, datPhong);
-                    return datPhong;
-                }
-            }
+        try {
+            return findByIdInternal(con, id.intValue());
         } catch (SQLException e) {
             setLastError(e.getMessage());
             e.printStackTrace();
@@ -326,7 +317,7 @@ public class DatPhongDAO {
                     return false;
                 }
             }
-            DatPhong booking = findById(String.valueOf(id.intValue()));
+            DatPhong booking = findByIdInternal(con, id.intValue());
             if (booking != null) {
                 if ("Đã hủy".equalsIgnoreCase(trangThai)) {
                     refreshRoomStatuses(con, getAssignedRoomIds(con, id.intValue()));
@@ -334,6 +325,102 @@ public class DatPhongDAO {
                     updateAssignedRoomStatuses(con, booking, resolveRoomStatusForBooking(trangThai));
                 }
             }
+            con.commit();
+            return true;
+        } catch (Exception e) {
+            rollbackQuietly(con);
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return false;
+        } finally {
+            resetAutoCommit(con);
+        }
+    }
+
+    public boolean restoreCancelledBooking(String maDatPhong, String trangThaiKhoiPhuc) {
+        clearLastError();
+        Connection con = getReadyConnection();
+        Integer id = parseIntOrNull(maDatPhong);
+        String targetStatus = safeTrim(trangThaiKhoiPhuc);
+        if (con == null || id == null) {
+            setLastError(con == null ? "KhÃ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MÃ£ Ä‘áº·t phÃ²ng khÃ´ng há»£p lá»‡.");
+            return false;
+        }
+        if (targetStatus.isEmpty()) {
+            targetStatus = STATUS_PENDING_CHECKIN;
+        }
+
+        try {
+            con.setAutoCommit(false);
+            DatPhong booking = findByIdInternal(con, id.intValue());
+            if (booking == null) {
+                con.rollback();
+                setLastError("KhÃ´ng tÃ¬m tháº¥y booking cáº§n khÃ´i phá»¥c.");
+                return false;
+            }
+
+            String currentStatus = safeTrim(booking.getTrangThaiDatPhong());
+            if (!STATUS_CANCELLED.equalsIgnoreCase(currentStatus) && !STATUS_CANCELLED_BOOKING.equalsIgnoreCase(currentStatus)) {
+                con.rollback();
+                setLastError("Booking nÃ y khÃ´ng á»Ÿ tráº¡ng thÃ¡i ÄÃ£ há»§y.");
+                return false;
+            }
+            if (hasLuuTruForBooking(con, id.intValue())) {
+                con.rollback();
+                setLastError("Booking Ä‘Ã£ phÃ¡t sinh lÆ°u trÃº, khÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.");
+                return false;
+            }
+            if (booking.getChiTietDatPhongs() == null || booking.getChiTietDatPhongs().isEmpty()) {
+                con.rollback();
+                setLastError("Booking khÃ´ng cÃ²n dÃ²ng chi tiáº¿t phÃ²ng Ä‘á»ƒ khÃ´i phá»¥c.");
+                return false;
+            }
+
+            for (ChiTietDatPhong detail : booking.getChiTietDatPhongs()) {
+                Integer roomId = parseIntOrNull(detail.getMaPhong());
+                if (roomId == null || roomId.intValue() <= 0) {
+                    con.rollback();
+                    setLastError("Booking cÃ²n dÃ²ng chi tiáº¿t chÆ°a gÃ¡n phÃ²ng, khÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.");
+                    return false;
+                }
+                if (detail.getCheckInDuKien() == null || detail.getCheckOutDuKien() == null
+                        || !detail.getCheckOutDuKien().isAfter(detail.getCheckInDuKien())) {
+                    con.rollback();
+                    setLastError("Khoáº£ng ngÃ y cá»§a booking khÃ´ng há»£p lá»‡, khÃ´ng thá»ƒ khÃ´i phá»¥c.");
+                    return false;
+                }
+
+                DatPhongConflictInfo conflictInfo = findRoomConflict(
+                        roomId.intValue(),
+                        detail.getCheckInDuKien(),
+                        detail.getCheckOutDuKien(),
+                        Integer.valueOf(id.intValue())
+                );
+                String conflictError = safeTrim(getLastErrorMessage());
+                if (!conflictError.isEmpty()) {
+                    con.rollback();
+                    setLastError(conflictError);
+                    return false;
+                }
+                if (conflictInfo != null) {
+                    con.rollback();
+                    setLastError(buildRestoreConflictMessage(conflictInfo));
+                    return false;
+                }
+            }
+
+            try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.DatPhong SET trangThai = ? WHERE maDatPhong = ?")) {
+                stmt.setString(1, targetStatus);
+                stmt.setInt(2, id.intValue());
+                if (stmt.executeUpdate() <= 0) {
+                    con.rollback();
+                    setLastError("KhÃ´ng thá»ƒ cáº­p nháº­t tráº¡ng thÃ¡i khÃ´i phá»¥c.");
+                    return false;
+                }
+            }
+
+            booking.setTrangThaiDatPhong(targetStatus);
+            updateAssignedRoomStatuses(con, booking, resolveRoomStatusForBooking(targetStatus));
             con.commit();
             return true;
         } catch (Exception e) {
@@ -558,6 +645,37 @@ public class DatPhongDAO {
             e.printStackTrace();
         }
         return details;
+    }
+
+    private DatPhong findByIdInternal(Connection con, int maDatPhong) throws SQLException {
+        String sql = SELECT_HEADER_BASE + " WHERE dp.maDatPhong = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    DatPhong datPhong = mapDatPhongHeader(rs);
+                    datPhong.getChiTietDatPhongs().addAll(getChiTietByMaDatPhongInternal(con, datPhong));
+                    normalizeBooking(con, datPhong);
+                    return datPhong;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String buildRestoreConflictMessage(DatPhongConflictInfo conflictInfo) {
+        if (conflictInfo == null) {
+            return "Má»™t hoáº·c nhiá»u phÃ²ng trong booking Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng ngÃ y cÅ©. KhÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.";
+        }
+        return "PhÃ²ng " + defaultIfEmpty(conflictInfo.getSoPhong(), "-")
+                + " Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng " + formatDateValue(conflictInfo.getNgayNhanPhong())
+                + " - " + formatDateValue(conflictInfo.getNgayTraPhong())
+                + " do trÃ¹ng vá»›i booking DP" + conflictInfo.getMaDatPhong()
+                + " (" + defaultIfEmpty(conflictInfo.getTrangThai(), "-") + ").";
+    }
+
+    private String formatDateValue(LocalDate value) {
+        return value == null ? "-" : value.toString();
     }
 
     private DatPhong mapDatPhongHeader(ResultSet rs) throws SQLException {

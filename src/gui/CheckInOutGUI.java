@@ -1461,14 +1461,22 @@ public class CheckInOutGUI extends JFrame {
             return rooms;
         }
         try {
-            return loadAvailableRooms(con, staySnapshot, changeTime);
+            return loadAvailableRoomsUsingDao(con, staySnapshot, changeTime);
         } catch (Exception e) {
             e.printStackTrace();
             return rooms;
         }
     }
 
+    // Keep the legacy overload aligned with the DAO-backed room-change filter.
+    private boolean shouldUseRoomChangeDaoAvailability() {
+        return checkInOutDAO != null;
+    }
+
     private List<RoomOption> loadAvailableRooms(Connection con, ActiveStaySnapshot staySnapshot, LocalDateTime changeTime) throws Exception {
+        if (shouldUseRoomChangeDaoAvailability()) {
+            return loadAvailableRoomsUsingDao(con, staySnapshot, changeTime);
+        }
         List<RoomOption> rooms = new ArrayList<RoomOption>();
         if (con == null || staySnapshot == null || changeTime == null
                 || staySnapshot.expectedCheckOut == null
@@ -1518,6 +1526,43 @@ public class CheckInOutGUI extends JFrame {
                     ));
                 }
             }
+        }
+        return rooms;
+    }
+
+    private List<RoomOption> loadAvailableRoomsUsingDao(Connection con, ActiveStaySnapshot staySnapshot, LocalDateTime changeTime) throws Exception {
+        List<RoomOption> rooms = new ArrayList<RoomOption>();
+        Timestamp expectedCheckOut = staySnapshot == null ? null : normalizeExpectedCheckOut(staySnapshot.expectedCheckOut);
+        if (con == null || staySnapshot == null || changeTime == null
+                || expectedCheckOut == null
+                || !expectedCheckOut.toLocalDateTime().isAfter(changeTime)) {
+            return rooms;
+        }
+
+        List<CheckInOutDAO.RoomChangeCandidate> candidates = checkInOutDAO.getAvailableRoomsForRoomChange(
+                con,
+                staySnapshot.maDatPhong,
+                staySnapshot.maChiTietDatPhong,
+                staySnapshot.maLuuTru,
+                staySnapshot.maPhong,
+                staySnapshot.maLoaiPhong,
+                changeTime,
+                expectedCheckOut.toLocalDateTime()
+        );
+        for (CheckInOutDAO.RoomChangeCandidate candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            rooms.add(new RoomOption(
+                    candidate.getMaPhong(),
+                    candidate.getMaLoaiPhong(),
+                    candidate.getSucChuaToiDa(),
+                    safeValue(candidate.getSoPhong(), "-"),
+                    safeValue(candidate.getTang(), "-"),
+                    safeValue(candidate.getKhuVuc(), "-"),
+                    safeValue(candidate.getTenLoaiPhong(), "-"),
+                    candidate.getGiaThamChieu()
+            ));
         }
         return rooms;
     }
@@ -2501,6 +2546,11 @@ public class CheckInOutGUI extends JFrame {
             } else {
                 lblAvailabilityHint.setText("Chỉ hiển thị phòng đang trống, không bảo trì và không bị booking/lưu trú khác chồng lấn.");
             }
+            if (roomOptions.isEmpty()) {
+                lblAvailabilityHint.setText("Kh\u00f4ng c\u00f3 ph\u00f2ng tr\u1ed1ng ph\u00f9 h\u1ee3p \u0111\u1ec3 \u0111\u1ed5i.");
+            } else {
+                lblAvailabilityHint.setText("Ch\u1ec9 hi\u1ec3n th\u1ecb ph\u00f2ng tr\u1ed1ng h\u1ee3p l\u1ec7, kh\u00f4ng tr\u00f9ng booking hi\u1ec7n t\u1ea1i v\u00e0 kh\u00f4ng b\u1ecb gi\u1eef b\u1edfi kh\u00e1ch kh\u00e1c.");
+            }
             btnConfirm.setEnabled(!roomOptions.isEmpty());
         }
 
@@ -2530,10 +2580,11 @@ public class CheckInOutGUI extends JFrame {
             if (staySnapshot.checkIn != null && !changeTime.isAfter(staySnapshot.checkIn.toLocalDateTime())) {
                 return "Thời điểm đổi phải sau giờ check-in của phòng hiện tại.";
             }
-            if (staySnapshot.expectedCheckOut == null) {
+            Timestamp expectedCheckOut = normalizeExpectedCheckOut(staySnapshot.expectedCheckOut);
+            if (expectedCheckOut == null) {
                 return "Không xác định được giờ trả phòng dự kiến của booking.";
             }
-            if (!staySnapshot.expectedCheckOut.toLocalDateTime().isAfter(changeTime)) {
+            if (!expectedCheckOut.toLocalDateTime().isAfter(changeTime)) {
                 return "Thời điểm đổi phải trước giờ trả phòng dự kiến.";
             }
             if (changeTime.isAfter(LocalDateTime.now().plusMinutes(1L))) {
@@ -2608,7 +2659,7 @@ public class CheckInOutGUI extends JFrame {
                     return;
                 }
 
-                List<RoomOption> latestOptions = loadAvailableRooms(con, staySnapshot, changeTime);
+                List<RoomOption> latestOptions = loadAvailableRoomsUsingDao(con, staySnapshot, changeTime);
                 RoomOption targetRoom = findRoomOption(latestOptions, selectedRoom.maPhong);
                 if (targetRoom == null) {
                     con.rollback();

@@ -14,6 +14,7 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +41,7 @@ public class CheckInOutDAO {
     private static final String STATUS_DEPOSITED = "\u0110\u00e3 c\u1ecdc";
     private static final String STATUS_PENDING_CHECKIN = "Ch\u1edd check-in";
     private static final String STATUS_ACTIVE = "\u0110ang \u1edf";
+    private static final String STATUS_ACTIVE_STAY = "\u0110ang l\u01b0u tr\u00fa";
     private static final String STATUS_PARTIAL_CHECKOUT = "Check-out m\u1ed9t ph\u1ea7n";
     private static final String STATUS_WAIT_PAYMENT = "Ch\u1edd thanh to\u00e1n";
     private static final String STATUS_PAID = "\u0110\u00e3 thanh to\u00e1n";
@@ -48,7 +50,10 @@ public class CheckInOutDAO {
     private static final String STATUS_CANCELLED = "\u0110\u00e3 h\u1ee7y";
     private static final String STATUS_CANCELLED_BOOKING = "H\u1ee7y booking";
     private static final String STATUS_ROOM_ACTIVE = "Ho\u1ea1t \u0111\u1ed9ng";
+    private static final String STATUS_ROOM_EMPTY = "Tr\u1ed1ng";
+    private static final String STATUS_ROOM_READY = "S\u1eb5n s\u00e0ng";
     private static final String STATUS_ROOM_OCCUPIED = "\u0110ang \u1edf";
+    private static final LocalTime LEGACY_BOOKING_TIME_BOUNDARY = LocalTime.of(12, 0);
     private static boolean representativeGuestSchemaEnsured = false;
 
     private String lastErrorMessage = "";
@@ -294,6 +299,155 @@ public class CheckInOutDAO {
             e.printStackTrace();
         }
         return result;
+    }
+
+    public List<RoomChangeCandidate> getAvailableRoomsForRoomChange(int maDatPhong,
+                                                                    int maChiTietDatPhong,
+                                                                    int maLuuTru,
+                                                                    int maPhongHienTai,
+                                                                    int maLoaiPhongUuTien,
+                                                                    LocalDateTime thoiDiemDoi,
+                                                                    LocalDateTime thoiGianTraDuKien) {
+        clearLastError();
+        List<RoomChangeCandidate> result = new ArrayList<RoomChangeCandidate>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
+            return result;
+        }
+        try {
+            return getAvailableRoomsForRoomChange(
+                    con,
+                    maDatPhong,
+                    maChiTietDatPhong,
+                    maLuuTru,
+                    maPhongHienTai,
+                    maLoaiPhongUuTien,
+                    thoiDiemDoi,
+                    thoiGianTraDuKien
+            );
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return result;
+        }
+    }
+
+    public List<RoomChangeCandidate> getAvailableRoomsForRoomChange(Connection con,
+                                                                    int maDatPhong,
+                                                                    int maChiTietDatPhong,
+                                                                    int maLuuTru,
+                                                                    int maPhongHienTai,
+                                                                    int maLoaiPhongUuTien,
+                                                                    LocalDateTime thoiDiemDoi,
+                                                                    LocalDateTime thoiGianTraDuKien) throws SQLException {
+        clearLastError();
+        List<RoomChangeCandidate> result = new ArrayList<RoomChangeCandidate>();
+        if (con == null
+                || maDatPhong <= 0
+                || maChiTietDatPhong <= 0
+                || maLuuTru <= 0
+                || maPhongHienTai <= 0
+                || thoiDiemDoi == null
+                || thoiGianTraDuKien == null
+                || !thoiGianTraDuKien.isAfter(thoiDiemDoi)) {
+            return result;
+        }
+
+        // DatPhong stores DATE only, so legacy midnight values are treated as the system's noon boundary.
+        LocalDateTime normalizedExpectedCheckOut = normalizeLegacyBookingBoundary(thoiGianTraDuKien);
+        if (!normalizedExpectedCheckOut.isAfter(thoiDiemDoi)) {
+            return result;
+        }
+
+        Timestamp changeTimestamp = Timestamp.valueOf(thoiDiemDoi);
+        Timestamp expectedCheckOutTimestamp = Timestamp.valueOf(normalizedExpectedCheckOut);
+
+        String sql = "SELECT p.maPhong, p.soPhong, ISNULL(p.tang, N'-') AS tang, ISNULL(p.khuVuc, N'-') AS khuVuc, "
+                + "ISNULL(p.sucChuaToiDa, 0) AS sucChuaToiDa, lp.maLoaiPhong, "
+                + "COALESCE(lp.tenLoaiPhong, N'-') AS tenLoaiPhong, ISNULL(lp.giaThamChieu, 0) AS giaThamChieu "
+                + "FROM dbo.Phong p "
+                + "JOIN dbo.LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong "
+                + "WHERE p.maPhong <> ? "
+                + "AND ISNULL(p.trangThai, N'') IN (N'" + STATUS_ROOM_ACTIVE + "', N'" + STATUS_ROOM_EMPTY + "', N'" + STATUS_ROOM_READY + "') "
+                + "AND NOT EXISTS ( "
+                + "    SELECT 1 "
+                + "    FROM dbo.ChiTietDatPhong ctdpSameBooking "
+                + "    WHERE ctdpSameBooking.maDatPhong = ? "
+                + "      AND ctdpSameBooking.maPhong = p.maPhong "
+                + "      AND ctdpSameBooking.maChiTietDatPhong <> ? "
+                + ") "
+                + "AND NOT EXISTS ( "
+                + "    SELECT 1 "
+                + "    FROM dbo.LuuTru ltActive "
+                + "    WHERE ltActive.maPhong = p.maPhong "
+                + "      AND ltActive.checkOut IS NULL "
+                + "      AND ltActive.maLuuTru <> ? "
+                + ") "
+                + "AND NOT EXISTS ( "
+                + "    SELECT 1 "
+                + "    FROM dbo.ChiTietDatPhong ctdpHold "
+                + "    JOIN dbo.DatPhong dpHold ON dpHold.maDatPhong = ctdpHold.maDatPhong "
+                + "    WHERE ctdpHold.maPhong = p.maPhong "
+                + "      AND ctdpHold.maDatPhong <> ? "
+                + "      AND ISNULL(dpHold.trangThai, N'') IN ("
+                + "N'" + STATUS_BOOKED + "', "
+                + "N'" + STATUS_CONFIRMED + "', "
+                + "N'" + STATUS_DEPOSITED + "', "
+                + "N'" + STATUS_PENDING_CHECKIN + "', "
+                + "N'" + STATUS_ACTIVE + "', "
+                + "N'" + STATUS_ACTIVE_STAY + "', "
+                + "N'" + STATUS_PARTIAL_CHECKOUT + "', "
+                + "N'" + STATUS_CHECKED_IN + "') "
+                + "      AND DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour() + ", CAST(dpHold.ngayNhanPhong AS DATETIME2)) < ? "
+                + "      AND DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour() + ", CAST(dpHold.ngayTraPhong AS DATETIME2)) > ? "
+                + "      AND NOT EXISTS ( "
+                + "          SELECT 1 "
+                + "          FROM dbo.LuuTru ltBooked "
+                + "          WHERE ltBooked.maChiTietDatPhong = ctdpHold.maChiTietDatPhong "
+                + "      ) "
+                + ") "
+                + "ORDER BY CASE WHEN lp.maLoaiPhong = ? THEN 0 ELSE 1 END, "
+                + "CASE WHEN TRY_CAST(REPLACE(p.tang, N'T\u1ea7ng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, "
+                + "TRY_CAST(REPLACE(p.tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
+
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            int index = 1;
+            stmt.setInt(index++, maPhongHienTai);
+            stmt.setInt(index++, maDatPhong);
+            stmt.setInt(index++, maChiTietDatPhong);
+            stmt.setInt(index++, maLuuTru);
+            stmt.setInt(index++, maDatPhong);
+            stmt.setTimestamp(index++, expectedCheckOutTimestamp);
+            stmt.setTimestamp(index++, changeTimestamp);
+            stmt.setInt(index, maLoaiPhongUuTien);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    RoomChangeCandidate item = new RoomChangeCandidate();
+                    item.setMaPhong(rs.getInt("maPhong"));
+                    item.setMaLoaiPhong(rs.getInt("maLoaiPhong"));
+                    item.setSucChuaToiDa(rs.getInt("sucChuaToiDa"));
+                    item.setSoPhong(safeTrim(rs.getString("soPhong")));
+                    item.setTang(safeTrim(rs.getString("tang")));
+                    item.setKhuVuc(safeTrim(rs.getString("khuVuc")));
+                    item.setTenLoaiPhong(safeTrim(rs.getString("tenLoaiPhong")));
+                    item.setGiaThamChieu(rs.getDouble("giaThamChieu"));
+                    result.add(item);
+                }
+            }
+        }
+        return result;
+    }
+
+    private LocalDateTime normalizeLegacyBookingBoundary(LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        if (value.toLocalTime().equals(LocalTime.MIDNIGHT)) {
+            return LocalDateTime.of(value.toLocalDate(), LEGACY_BOOKING_TIME_BOUNDARY);
+        }
+        return value;
     }
 
     public List<CheckInBookingItem> getBookingCheckInItems(String maDatPhong) {
@@ -1243,6 +1397,81 @@ public class CheckInOutDAO {
 
         public boolean canCheckIn() {
             return maChiTietDatPhong > 0 && maPhong > 0 && "Ch\u1edd check-in".equalsIgnoreCase(trangThai);
+        }
+    }
+
+    public static final class RoomChangeCandidate {
+        private int maPhong;
+        private int maLoaiPhong;
+        private int sucChuaToiDa;
+        private String soPhong;
+        private String tang;
+        private String khuVuc;
+        private String tenLoaiPhong;
+        private double giaThamChieu;
+
+        public int getMaPhong() {
+            return maPhong;
+        }
+
+        public void setMaPhong(int maPhong) {
+            this.maPhong = maPhong;
+        }
+
+        public int getMaLoaiPhong() {
+            return maLoaiPhong;
+        }
+
+        public void setMaLoaiPhong(int maLoaiPhong) {
+            this.maLoaiPhong = maLoaiPhong;
+        }
+
+        public int getSucChuaToiDa() {
+            return sucChuaToiDa;
+        }
+
+        public void setSucChuaToiDa(int sucChuaToiDa) {
+            this.sucChuaToiDa = sucChuaToiDa;
+        }
+
+        public String getSoPhong() {
+            return soPhong;
+        }
+
+        public void setSoPhong(String soPhong) {
+            this.soPhong = soPhong;
+        }
+
+        public String getTang() {
+            return tang;
+        }
+
+        public void setTang(String tang) {
+            this.tang = tang;
+        }
+
+        public String getKhuVuc() {
+            return khuVuc;
+        }
+
+        public void setKhuVuc(String khuVuc) {
+            this.khuVuc = khuVuc;
+        }
+
+        public String getTenLoaiPhong() {
+            return tenLoaiPhong;
+        }
+
+        public void setTenLoaiPhong(String tenLoaiPhong) {
+            this.tenLoaiPhong = tenLoaiPhong;
+        }
+
+        public double getGiaThamChieu() {
+            return giaThamChieu;
+        }
+
+        public void setGiaThamChieu(double giaThamChieu) {
+            this.giaThamChieu = giaThamChieu;
         }
     }
 }

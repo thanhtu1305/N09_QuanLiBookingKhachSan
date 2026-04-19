@@ -713,6 +713,7 @@ public class ThanhToanDAO {
                 "LEFT JOIN ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "WHERE lt.maDatPhong = ? " +
                 "ORDER BY lt.maLuuTru ASC";
+        roomSql = normalizeActivePriceStatusLiteral(roomSql);
         try (PreparedStatement ps = con.prepareStatement(roomSql)) {
             ps.setInt(1, maDatPhong);
             try (ResultSet rs = ps.executeQuery()) {
@@ -780,6 +781,7 @@ public class ThanhToanDAO {
                 "LEFT JOIN ChiTietDatPhong ctdp ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "WHERE " + (scope.isRoomScoped() ? "lt.maChiTietDatPhong = ? " : "lt.maDatPhong = ? ") +
                 "ORDER BY lt.maLuuTru ASC";
+        roomSql = normalizeActivePriceStatusLiteral(roomSql);
         try (PreparedStatement ps = con.prepareStatement(roomSql)) {
             ps.setInt(1, scope.isRoomScoped() ? scope.maChiTietDatPhong : scope.maDatPhong);
             try (ResultSet rs = ps.executeQuery()) {
@@ -868,6 +870,15 @@ public class ThanhToanDAO {
             normalized = normalized.substring(0, maxLength - 1).trim() + "…";
         }
         return normalized;
+    }
+
+    private String normalizeActivePriceStatusLiteral(String sql) {
+        if (sql == null || sql.indexOf("bgRoom.trangThai") < 0) {
+            return sql;
+        }
+        return sql.replaceAll(
+                "bgRoom\\.trangThai = N'[^']*'",
+                "bgRoom.trangThai = N'\u0110ang \u00e1p d\u1ee5ng'");
     }
 
     private void loadInvoiceLines(Connection con, ThanhToan invoice) throws Exception {
@@ -1671,6 +1682,7 @@ public class ThanhToanDAO {
                     "   FROM ChiTietDatPhong ctdp WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong) ct " +
                 "WHERE lt.checkOut IS NOT NULL " +
                 "ORDER BY lt.maLuuTru ASC";
+        sql = normalizeActivePriceStatusLiteral(sql);
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, maLuuTru);
             try (ResultSet rs = ps.executeQuery()) {

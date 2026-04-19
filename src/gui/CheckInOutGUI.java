@@ -84,6 +84,7 @@ public class CheckInOutGUI extends JFrame {
     private static final Font LABEL_FONT = AppFonts.label(12);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
 
     private static final List<CheckInOutGUI> OPEN_INSTANCES = new ArrayList<CheckInOutGUI>();
     private static Integer pendingFocusedBookingId;
@@ -686,8 +687,12 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return;
         }
+        datPhongDAO.ensureDetailScheduleSchema(con);
 
-        String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, ctdp.soNguoi, " +
+        String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, "
+                + "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
+                + "dp.trangThai, ctdp.soNguoi, " +
                 "ctdp.maPhong, ISNULL(p.soPhong, N'Ch\u01b0a g\u00e1n') AS soPhong, ISNULL(p.tang, N'-') AS tang, " +
                 "ISNULL(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhong " +
                 "FROM DatPhong dp " +
@@ -716,13 +721,15 @@ public class CheckInOutGUI extends JFrame {
                     record.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), "-");
                     record.tienCoc = formatMoney(rs.getDouble("tienCoc"));
                     record.dichVuPhatSinh = "0";
-                    record.gioVao = rs.getDate("ngayNhanPhong") == null ? "-" : DATE_FORMAT.format(((Date) rs.getDate("ngayNhanPhong")).toLocalDate());
-                    record.gioRaDuKien = rs.getDate("ngayTraPhong") == null ? "-" : DATE_FORMAT.format(((Date) rs.getDate("ngayTraPhong")).toLocalDate());
+                    Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
+                    Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                    record.gioVao = checkInDuKien == null ? "-" : formatDateTime(checkInDuKien);
+                    record.gioRaDuKien = checkOutDuKien == null ? "-" : formatDateTime(checkOutDuKien);
                     record.tang = safeValue(rs.getString("tang"), "-");
                     record.caLam = resolveCurrentShift();
                     record.bookingTrangThai = safeValue(rs.getString("trangThai"), "Ch\u1edd check-in");
-                    record.expectedCheckInDate = rs.getDate("ngayNhanPhong") == null ? LocalDate.now() : ((Date) rs.getDate("ngayNhanPhong")).toLocalDate();
-                    record.expectedCheckOutDate = rs.getDate("ngayTraPhong") == null ? LocalDate.now().plusDays(1) : ((Date) rs.getDate("ngayTraPhong")).toLocalDate();
+                    record.expectedCheckInDate = checkInDuKien == null ? LocalDate.now() : checkInDuKien.toLocalDateTime().toLocalDate();
+                    record.expectedCheckOutDate = checkOutDuKien == null ? LocalDate.now().plusDays(1) : checkOutDuKien.toLocalDateTime().toLocalDate();
                     grouped.put(Integer.valueOf(bookingId), record);
                 }
 
@@ -732,6 +739,22 @@ public class CheckInOutGUI extends JFrame {
                 record.soNguoi += rs.getInt("soNguoi");
                 record.hasPendingCheckInRooms = true;
                 record.addBookingDetail(maChiTietDatPhong);
+                Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
+                Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                if (checkInDuKien != null) {
+                    LocalDate current = checkInDuKien.toLocalDateTime().toLocalDate();
+                    if (record.expectedCheckInDate == null || current.isBefore(record.expectedCheckInDate)) {
+                        record.expectedCheckInDate = current;
+                        record.gioVao = formatDateTime(checkInDuKien);
+                    }
+                }
+                if (checkOutDuKien != null) {
+                    LocalDate current = checkOutDuKien.toLocalDateTime().toLocalDate();
+                    if (record.expectedCheckOutDate == null || current.isAfter(record.expectedCheckOutDate)) {
+                        record.expectedCheckOutDate = current;
+                        record.gioRaDuKien = formatDateTime(checkOutDuKien);
+                    }
+                }
 
                 if (maPhongId > 0) {
                     record.addRoom(maPhongId, safeValue(rs.getString("soPhong"), "-"));
@@ -751,7 +774,9 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return;
         }
-        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai AS trangThaiDatPhong, dp.ngayTraPhong, ctdp.soNguoi, " +
+        datPhongDAO.ensureDetailScheduleSchema(con);
+        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai AS trangThaiDatPhong, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, ctdp.soNguoi, " +
                 "ISNULL(SUM(sddv.thanhTien), 0) AS tienDichVu, lt.checkIn, lt.checkOut " +
                 "FROM LuuTru lt " +
                 "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
@@ -761,7 +786,7 @@ public class CheckInOutGUI extends JFrame {
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "LEFT JOIN SuDungDichVu sddv ON lt.maLuuTru = sddv.maLuuTru " +
                 "WHERE lt.checkOut IS NULL " +
-                "GROUP BY lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai, dp.ngayTraPhong, ctdp.soNguoi, lt.checkIn, lt.checkOut " +
+                "GROUP BY lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, kh.hoTen, p.soPhong, lp.tenLoaiPhong, p.trangThai, p.tang, lt.tienCoc, dp.trangThai, ctdp.checkOutDuKien, dp.ngayTraPhong, ctdp.soNguoi, lt.checkIn, lt.checkOut " +
                 "ORDER BY lt.maDatPhong DESC, CASE WHEN TRY_CAST(p.soPhong AS INT) IS NULL THEN 1 ELSE 0 END, TRY_CAST(p.soPhong AS INT), p.soPhong, lt.maLuuTru";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -779,10 +804,10 @@ public class CheckInOutGUI extends JFrame {
                     record.tang = safeValue(rs.getString("tang"), "-");
                     record.caLam = resolveCurrentShift();
                     record.bookingTrangThai = safeValue(rs.getString("trangThaiDatPhong"), "\u0110ang \u1edf");
-                    Date expectedCheckOutDate = rs.getDate("ngayTraPhong");
-                    if (expectedCheckOutDate != null) {
-                        record.expectedCheckOutDate = expectedCheckOutDate.toLocalDate();
-                        record.gioRaDuKien = DATE_FORMAT.format(record.expectedCheckOutDate);
+                    Timestamp expectedCheckOut = rs.getTimestamp("checkOutDuKien");
+                    if (expectedCheckOut != null) {
+                        record.expectedCheckOutDate = expectedCheckOut.toLocalDateTime().toLocalDate();
+                        record.gioRaDuKien = formatDateTime(expectedCheckOut);
                     }
                     grouped.put(Integer.valueOf(bookingId), record);
                 }
@@ -805,12 +830,12 @@ public class CheckInOutGUI extends JFrame {
                         record.gioVao = DATE_FORMAT.format(current.toLocalDate()) + " " + TIME_FORMAT.format(current.toLocalTime());
                     }
                 }
-                Date expectedCheckOutDate = rs.getDate("ngayTraPhong");
-                if (expectedCheckOutDate != null) {
-                    LocalDate current = expectedCheckOutDate.toLocalDate();
+                Timestamp expectedCheckOut = rs.getTimestamp("checkOutDuKien");
+                if (expectedCheckOut != null) {
+                    LocalDate current = expectedCheckOut.toLocalDateTime().toLocalDate();
                     if (record.expectedCheckOutDate == null || current.isAfter(record.expectedCheckOutDate)) {
                         record.expectedCheckOutDate = current;
-                        record.gioRaDuKien = DATE_FORMAT.format(current);
+                        record.gioRaDuKien = formatDateTime(expectedCheckOut);
                     }
                 }
             }
@@ -825,8 +850,12 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return;
         }
+        datPhongDAO.ensureDetailScheduleSchema(con);
 
-        String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, ctdp.soNguoi, " +
+        String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, "
+                + "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
+                + "dp.trangThai, ctdp.soNguoi, " +
                 "ctdp.maPhong, ISNULL(p.soPhong, N'Ch\u01b0a g\u00e1n') AS soPhong, ISNULL(p.tang, N'-') AS tang, " +
                 "ISNULL(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhong, " +
                 "ISNULL((SELECT SUM(sddv.thanhTien) FROM LuuTru lt2 LEFT JOIN SuDungDichVu sddv ON sddv.maLuuTru = lt2.maLuuTru WHERE lt2.maDatPhong = dp.maDatPhong), 0) AS tienDichVu " +
@@ -855,15 +884,33 @@ public class CheckInOutGUI extends JFrame {
                     record.tang = safeValue(rs.getString("tang"), "-");
                     record.caLam = resolveCurrentShift();
                     record.bookingTrangThai = safeValue(rs.getString("trangThai"), "Ch\u1edd thanh to\u00e1n");
-                    record.expectedCheckInDate = rs.getDate("ngayNhanPhong") == null ? null : rs.getDate("ngayNhanPhong").toLocalDate();
-                    record.expectedCheckOutDate = rs.getDate("ngayTraPhong") == null ? null : rs.getDate("ngayTraPhong").toLocalDate();
-                    record.gioVao = record.expectedCheckInDate == null ? "-" : DATE_FORMAT.format(record.expectedCheckInDate);
-                    record.gioRaDuKien = record.expectedCheckOutDate == null ? "-" : DATE_FORMAT.format(record.expectedCheckOutDate);
+                    Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
+                    Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                    record.expectedCheckInDate = checkInDuKien == null ? null : checkInDuKien.toLocalDateTime().toLocalDate();
+                    record.expectedCheckOutDate = checkOutDuKien == null ? null : checkOutDuKien.toLocalDateTime().toLocalDate();
+                    record.gioVao = checkInDuKien == null ? "-" : formatDateTime(checkInDuKien);
+                    record.gioRaDuKien = checkOutDuKien == null ? "-" : formatDateTime(checkOutDuKien);
                     grouped.put(Integer.valueOf(bookingId), record);
                 }
 
                 record.soNguoi += rs.getInt("soNguoi");
                 record.addBookingDetail(rs.getInt("maChiTietDatPhong"));
+                Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
+                Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                if (checkInDuKien != null) {
+                    LocalDate current = checkInDuKien.toLocalDateTime().toLocalDate();
+                    if (record.expectedCheckInDate == null || current.isBefore(record.expectedCheckInDate)) {
+                        record.expectedCheckInDate = current;
+                        record.gioVao = formatDateTime(checkInDuKien);
+                    }
+                }
+                if (checkOutDuKien != null) {
+                    LocalDate current = checkOutDuKien.toLocalDateTime().toLocalDate();
+                    if (record.expectedCheckOutDate == null || current.isAfter(record.expectedCheckOutDate)) {
+                        record.expectedCheckOutDate = current;
+                        record.gioRaDuKien = formatDateTime(checkOutDuKien);
+                    }
+                }
                 int maPhong = rs.getObject("maPhong") == null ? 0 : rs.getInt("maPhong");
                 if (maPhong > 0) {
                     record.addRoom(maPhong, safeValue(rs.getString("soPhong"), "-"));
@@ -1345,6 +1392,14 @@ public class CheckInOutGUI extends JFrame {
         return value == null ? "-" : DATE_FORMAT.format(value);
     }
 
+    private String formatDateTime(Timestamp value) {
+        if (value == null) {
+            return "-";
+        }
+        LocalDateTime dateTime = value.toLocalDateTime();
+        return DATE_FORMAT.format(dateTime.toLocalDate()) + " " + TIME_FORMAT.format(dateTime.toLocalTime());
+    }
+
     private String formatMoney(double value) {
         return String.format(Locale.US, "%,.0f", value).replace(',', '.');
     }
@@ -1409,11 +1464,14 @@ public class CheckInOutGUI extends JFrame {
         if (con == null || maLuuTru <= 0) {
             return null;
         }
+        datPhongDAO.ensureDetailScheduleSchema(con);
         String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.soNguoi, lt.giaPhong, lt.tienCoc, "
-                + "dp.ngayTraPhong AS expectedCheckOut, ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(p.tang, N'-') AS tang, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS expectedCheckOut, "
+                + "ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(p.tang, N'-') AS tang, "
                 + "ISNULL(p.khuVuc, N'-') AS khuVuc, ISNULL(p.maLoaiPhong, 0) AS maLoaiPhong, ISNULL(lp.tenLoaiPhong, N'-') AS tenLoaiPhong "
                 + "FROM LuuTru lt "
                 + "JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
+                + "JOIN ChiTietDatPhong ctdp ON ctdp.maChiTietDatPhong = lt.maChiTietDatPhong "
                 + "LEFT JOIN Phong p ON p.maPhong = lt.maPhong "
                 + "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong "
                 + "WHERE lt.maLuuTru = ? AND lt.checkOut IS NULL";
@@ -1712,16 +1770,20 @@ public class CheckInOutGUI extends JFrame {
         private final AppDatePickerField txtNgayRa;
         private final AppTimePickerField txtGioRa;
         private boolean updatingCustomerCells;
+        private boolean updatingScheduleFields;
 
         private CheckInDialog(Frame owner, StayRecord record) {
             super(owner, "Check-in", 820, 540);
             this.record = record;
             bookingItems.addAll(checkInOutDAO.getBookingCheckInItems(String.valueOf(record.maDatPhong)));
+            initializeBookingItemSchedules();
 
-            txtNgayVao = new AppDatePickerField(record.expectedCheckInDate.format(DATE_FORMAT), true);
-            txtGioVao = new AppTimePickerField(LocalTime.now().format(TIME_FORMAT), true);
-            txtNgayRa = new AppDatePickerField(record.expectedCheckOutDate.format(DATE_FORMAT), true);
-            txtGioRa = new AppTimePickerField("12:00", true);
+            LocalDateTime initialCheckIn = resolveDefaultCheckIn();
+            LocalDateTime initialCheckOut = resolveDefaultCheckOut(initialCheckIn);
+            txtNgayVao = new AppDatePickerField(initialCheckIn.toLocalDate().format(DATE_FORMAT), true);
+            txtGioVao = new AppTimePickerField(initialCheckIn.toLocalTime().format(TIME_FORMAT), true);
+            txtNgayRa = new AppDatePickerField(initialCheckOut.toLocalDate().format(DATE_FORMAT), true);
+            txtGioRa = new AppTimePickerField(initialCheckOut.toLocalTime().format(TIME_FORMAT), true);
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
@@ -1758,6 +1820,8 @@ public class CheckInOutGUI extends JFrame {
             tblRooms.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
             configureRoomTableColumns();
             registerCustomerAutoFillListener();
+            registerScheduleFieldListeners();
+            registerRoomSelectionListener();
             refillRoomTable();
 
             JPanel card = createDialogCardPanel();
@@ -1789,6 +1853,107 @@ public class CheckInOutGUI extends JFrame {
             JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnCheckInSelected, btnCheckInAll), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+        }
+
+        private void initializeBookingItemSchedules() {
+            LocalDateTime fallbackCheckIn = resolveDefaultCheckIn();
+            LocalDateTime fallbackCheckOut = resolveDefaultCheckOut(fallbackCheckIn);
+            for (CheckInOutDAO.CheckInBookingItem item : bookingItems) {
+                LocalDateTime checkIn = item.getExpectedCheckIn() == null ? fallbackCheckIn : item.getExpectedCheckIn();
+                LocalDateTime checkOut = item.getExpectedCheckOut() == null ? fallbackCheckOut : item.getExpectedCheckOut();
+                if (!checkOut.isAfter(checkIn)) {
+                    checkOut = checkIn.plusDays(1);
+                }
+                item.setExpectedCheckIn(checkIn);
+                item.setExpectedCheckOut(checkOut);
+            }
+        }
+
+        private LocalDateTime resolveDefaultCheckIn() {
+            if (record.expectedCheckInDate != null) {
+                return LocalDateTime.of(record.expectedCheckInDate, DETAIL_BOOKING_BOUNDARY_TIME);
+            }
+            return LocalDateTime.of(LocalDate.now(), DETAIL_BOOKING_BOUNDARY_TIME);
+        }
+
+        private LocalDateTime resolveDefaultCheckOut(LocalDateTime checkIn) {
+            LocalDate checkOutDate = record.expectedCheckOutDate;
+            if (checkOutDate == null) {
+                return (checkIn == null ? LocalDateTime.of(LocalDate.now().plusDays(1), DETAIL_BOOKING_BOUNDARY_TIME) : checkIn.plusDays(1));
+            }
+            LocalDateTime checkOut = LocalDateTime.of(checkOutDate, DETAIL_BOOKING_BOUNDARY_TIME);
+            if (checkIn != null && !checkOut.isAfter(checkIn)) {
+                return checkIn.plusDays(1);
+            }
+            return checkOut;
+        }
+
+        private void registerRoomSelectionListener() {
+            tblRooms.getSelectionModel().addListSelectionListener(e -> {
+                if (e.getValueIsAdjusting()) {
+                    return;
+                }
+                loadSelectedRoomScheduleIntoEditor();
+            });
+        }
+
+        private void registerScheduleFieldListeners() {
+            txtNgayVao.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
+            txtGioVao.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
+            txtNgayRa.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
+            txtGioRa.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
+        }
+
+        private CheckInOutDAO.CheckInBookingItem getSelectedBookingItem() {
+            int row = tblRooms.getSelectedRow();
+            if (row < 0 || row >= bookingItems.size()) {
+                return null;
+            }
+            return bookingItems.get(row);
+        }
+
+        private void loadSelectedRoomScheduleIntoEditor() {
+            CheckInOutDAO.CheckInBookingItem selected = getSelectedBookingItem();
+            LocalDateTime checkIn = selected == null ? resolveDefaultCheckIn() : selected.getExpectedCheckIn();
+            LocalDateTime checkOut = selected == null ? resolveDefaultCheckOut(checkIn) : selected.getExpectedCheckOut();
+            if (checkIn == null) {
+                checkIn = resolveDefaultCheckIn();
+            }
+            if (checkOut == null || !checkOut.isAfter(checkIn)) {
+                checkOut = resolveDefaultCheckOut(checkIn);
+            }
+            updatingScheduleFields = true;
+            try {
+                txtNgayVao.setDateValue(checkIn.toLocalDate());
+                txtGioVao.setTimeValue(checkIn.toLocalTime());
+                txtNgayRa.setDateValue(checkOut.toLocalDate());
+                txtGioRa.setTimeValue(checkOut.toLocalTime());
+            } finally {
+                updatingScheduleFields = false;
+            }
+        }
+
+        private void syncSelectedRoomScheduleFromEditor() {
+            if (updatingScheduleFields) {
+                return;
+            }
+            CheckInOutDAO.CheckInBookingItem selected = getSelectedBookingItem();
+            if (selected == null) {
+                return;
+            }
+            LocalDate ngayVao = txtNgayVao.getDateValue();
+            LocalTime gioVao = txtGioVao.getTimeValue();
+            LocalDate ngayRa = txtNgayRa.getDateValue();
+            LocalTime gioRa = txtGioRa.getTimeValue();
+            if (ngayVao == null || ngayRa == null || gioVao == null || gioRa == null) {
+                return;
+            }
+            if (ngayVao != null && gioVao != null) {
+                selected.setExpectedCheckIn(LocalDateTime.of(ngayVao, gioVao));
+            }
+            if (ngayRa != null && gioRa != null) {
+                selected.setExpectedCheckOut(LocalDateTime.of(ngayRa, gioRa));
+            }
         }
 
         private void refillRoomTable() {
@@ -1936,9 +2101,14 @@ public class CheckInOutGUI extends JFrame {
             return khachHang;
         }
 
-        private void submit(boolean checkInAll) {
-            if (tblRooms.isEditing() && tblRooms.getCellEditor() != null) {
-                tblRooms.getCellEditor().stopCellEditing();
+        private boolean syncCurrentEditorToSelectedRoom(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            CheckInOutDAO.CheckInBookingItem selected = getSelectedBookingItem();
+            if (selected == null) {
+                return true;
+            }
+            if (targets == null || !targets.contains(selected)) {
+                syncSelectedRoomScheduleFromEditor();
+                return true;
             }
 
             LocalDate ngayVao = txtNgayVao.getDateValue();
@@ -1946,15 +2116,66 @@ public class CheckInOutGUI extends JFrame {
             LocalTime gioVao = txtGioVao.getTimeValue();
             LocalTime gioRa = txtGioRa.getTimeValue();
             if (ngayVao == null || ngayRa == null || gioVao == null || gioRa == null) {
-                showInfo("Ng\u00e0y gi\u1edd v\u00e0o/ra kh\u00f4ng h\u1ee3p l\u1ec7.");
-                return;
+                showInfo("Ngày giờ vào/ra của phòng đang chọn không hợp lệ.");
+                return false;
+            }
+            if (ngayVao == null || ngayRa == null || gioVao == null || gioRa == null) {
+                showInfo("Ngày giờ vào/ra của phòng đang chọn không hợp lệ.");
+                return false;
             }
 
             LocalDateTime checkIn = LocalDateTime.of(ngayVao, gioVao);
             LocalDateTime checkOut = LocalDateTime.of(ngayRa, gioRa);
             if (!checkOut.isAfter(checkIn)) {
-                showInfo("Gi\u1edd ra d\u1ef1 ki\u1ebfn ph\u1ea3i l\u1edbn h\u01a1n gi\u1edd v\u00e0o.");
-                return;
+                showInfo("Giờ ra dự kiến phải lớn hơn giờ vào của phòng đang chọn.");
+                return false;
+            }
+            if (!checkOut.isAfter(checkIn)) {
+                showInfo("Giờ ra dự kiến phải lớn hơn giờ vào của phòng đang chọn.");
+                return false;
+            }
+
+            selected.setExpectedCheckIn(checkIn);
+            selected.setExpectedCheckOut(checkOut);
+            return true;
+        }
+
+        private boolean validateTargetSchedules(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                LocalDateTime checkIn = item.getExpectedCheckIn();
+                LocalDateTime checkOut = item.getExpectedCheckOut();
+                if (checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                    continue;
+                }
+                int row = bookingItems.indexOf(item);
+                if (row >= 0) {
+                    tblRooms.setRowSelectionInterval(row, row);
+                    tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, 0, true));
+                }
+                if (System.currentTimeMillis() >= 0L) {
+                    showInfo("Thời gian check-in / check-out dự kiến của phòng " + safeValue(item.getSoPhong(), "-") + " không hợp lệ.");
+                    return false;
+                }
+                showInfo("Thời gian check-in / check-out dự kiến của phòng " + safeValue(item.getSoPhong(), "-") + " không hợp lệ.");
+                return false;
+            }
+            return true;
+        }
+
+        private Map<Integer, CheckInOutDAO.CheckInTiming> buildScheduleInputs(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            Map<Integer, CheckInOutDAO.CheckInTiming> schedules = new LinkedHashMap<Integer, CheckInOutDAO.CheckInTiming>();
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                schedules.put(
+                        Integer.valueOf(item.getMaChiTietDatPhong()),
+                        new CheckInOutDAO.CheckInTiming(item.getExpectedCheckIn(), item.getExpectedCheckOut())
+                );
+            }
+            return schedules;
+        }
+
+        private void submit(boolean checkInAll) {
+            if (tblRooms.isEditing() && tblRooms.getCellEditor() != null) {
+                tblRooms.getCellEditor().stopCellEditing();
             }
 
             List<CheckInOutDAO.CheckInBookingItem> targets = resolveTargets(checkInAll);
@@ -1962,6 +2183,12 @@ public class CheckInOutGUI extends JFrame {
                 showInfo(checkInAll
                         ? "\u0110\u01a1n n\u00e0y kh\u00f4ng c\u00f2n ph\u00f2ng n\u00e0o s\u1eb5n s\u00e0ng check-in."
                         : "Vui l\u00f2ng ch\u1ecdn ph\u00f2ng \u0111\u00e3 \u0111\u01b0\u1ee3c g\u00e1n \u0111\u1ec3 check-in.");
+                return;
+            }
+            if (!syncCurrentEditorToSelectedRoom(targets)) {
+                return;
+            }
+            if (!validateTargetSchedules(targets)) {
                 return;
             }
             if (!validateRequiredCustomerInfo(targets)) {
@@ -1973,12 +2200,12 @@ public class CheckInOutGUI extends JFrame {
                 detailIds.add(Integer.valueOf(item.getMaChiTietDatPhong()));
             }
             Map<Integer, KhachHang> customerInputs = buildCustomerInputs(targets);
+            Map<Integer, CheckInOutDAO.CheckInTiming> scheduleInputs = buildScheduleInputs(targets);
 
             int affected = checkInOutDAO.checkInBookingDetails(
                     String.valueOf(record.maDatPhong),
                     detailIds,
-                    checkIn,
-                    checkOut,
+                    scheduleInputs,
                     customerInputs
             );
             if (affected <= 0) {
@@ -2006,15 +2233,18 @@ public class CheckInOutGUI extends JFrame {
 
                 String cccdPassport = valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim();
                 String hoTen = valueOf(roomTableModel.getValueAt(row, COL_HO_TEN)).trim();
-                if (!cccdPassport.isEmpty() && !hoTen.isEmpty()) {
+                if (cccdPassport.isEmpty()) {
+                    continue;
+                }
+                if (!hoTen.isEmpty()) {
                     continue;
                 }
 
                 tblRooms.setRowSelectionInterval(row, row);
                 tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, COL_CCCD, true));
                 showInfo("Ph\u00f2ng " + safeValue(item.getSoPhong(), "-")
-                        + " ch\u01b0a \u0111\u1ee7 th\u00f4ng tin kh\u00e1ch h\u00e0ng. "
-                        + "B\u1eaft bu\u1ed9c c\u00f3 CCCD/Passport v\u00e0 H\u1ecd t\u00ean KH tr\u01b0\u1edbc khi check-in.");
+                        + " \u0111\u00e3 nh\u1eadp CCCD/Passport nh\u01b0ng ch\u01b0a c\u00f3 H\u1ecd t\u00ean. "
+                        + "Vui l\u00f2ng b\u1ed5 sung H\u1ecd t\u00ean n\u1ebfu mu\u1ed1n l\u01b0u kh\u00e1ch \u0111\u1ea1i di\u1ec7n.");
                 return false;
             }
             return true;
@@ -2857,11 +3087,14 @@ public class CheckInOutGUI extends JFrame {
         private final List<CheckoutStayItem> stayItems = new ArrayList<CheckoutStayItem>();
         private final JTable tblRooms;
         private final DefaultTableModel roomTableModel;
+        private final JLabel lblPhongDangChonValue;
+        private final JLabel lblCheckInValue;
         private final JLabel lblGioRaDuKienValue;
         private final JLabel lblGioRaThucTeValue;
         private final JLabel lblTraMuonValue;
         private final JLabel lblSoGioTreValue;
         private final JLabel lblPhuThuTreValue;
+        private boolean updatingCheckoutEditor;
 
         private CheckOutDialog(Frame owner, StayRecord record) {
             super(owner, "Check-out", 820, 620);
@@ -2872,6 +3105,7 @@ public class CheckInOutGUI extends JFrame {
                 e.printStackTrace();
                 showInfo("Kh\u00f4ng th\u1ec3 t\u1ea3i danh s\u00e1ch ph\u00f2ng c\u1ea7n check-out.");
             }
+            initializeCheckoutEditorState();
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
@@ -2882,8 +3116,11 @@ public class CheckInOutGUI extends JFrame {
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            AppDatePickerField txtNgayRa = new AppDatePickerField(LocalDate.now().format(DATE_FORMAT), true);
-            AppTimePickerField txtGioRa = new AppTimePickerField(LocalTime.now().format(TIME_FORMAT), true);
+            LocalDateTime initialActualCheckOut = resolveDialogInitialActualCheckOut();
+            AppDatePickerField txtNgayRa = new AppDatePickerField(initialActualCheckOut.toLocalDate().format(DATE_FORMAT), true);
+            AppTimePickerField txtGioRa = new AppTimePickerField(initialActualCheckOut.toLocalTime().format(TIME_FORMAT), true);
+            lblPhongDangChonValue = createValueLabel("-");
+            lblCheckInValue = createValueLabel("-");
             lblGioRaDuKienValue = createValueLabel("-");
             lblGioRaThucTeValue = createValueLabel("-");
             lblTraMuonValue = createValueLabel("Kh\u00f4ng");
@@ -2892,14 +3129,15 @@ public class CheckInOutGUI extends JFrame {
 
             addFormRow(form, gbc, 0, "M\u00e3 h\u1ed3 s\u01a1", createValueLabel(record.maHoSo));
             addFormRow(form, gbc, 1, "Kh\u00e1ch h\u00e0ng", createValueLabel(record.khachHang));
-            addFormRow(form, gbc, 2, "S\u1ed1 ph\u00f2ng", createValueLabel(record.soPhong));
-            addFormRow(form, gbc, 3, "Ng\u00e0y ra", txtNgayRa);
-            addFormRow(form, gbc, 4, "Gi\u1edd ra", txtGioRa);
-            addFormRow(form, gbc, 5, "Gi\u1edd ra d\u1ef1 ki\u1ebfn", lblGioRaDuKienValue);
-            addFormRow(form, gbc, 6, "Gi\u1edd ra th\u1ef1c t\u1ebf", lblGioRaThucTeValue);
-            addFormRow(form, gbc, 7, "Tr\u1ea3 ph\u00f2ng tr\u1ec5", lblTraMuonValue);
-            addFormRow(form, gbc, 8, "S\u1ed1 gi\u1edd tr\u1ec5", lblSoGioTreValue);
-            addFormRow(form, gbc, 9, "Ph\u1ee5 thu tr\u1ea3 mu\u1ed9n", lblPhuThuTreValue);
+            addFormRow(form, gbc, 2, "Ph\u00f2ng \u0111ang ch\u1ecdn", lblPhongDangChonValue);
+            addFormRow(form, gbc, 3, "Gi\u1edd v\u00e0o", lblCheckInValue);
+            addFormRow(form, gbc, 4, "Ng\u00e0y ra", txtNgayRa);
+            addFormRow(form, gbc, 5, "Gi\u1edd ra", txtGioRa);
+            addFormRow(form, gbc, 6, "Gi\u1edd ra d\u1ef1 ki\u1ebfn", lblGioRaDuKienValue);
+            addFormRow(form, gbc, 7, "Gi\u1edd ra th\u1ef1c t\u1ebf", lblGioRaThucTeValue);
+            addFormRow(form, gbc, 8, "Tr\u1ea3 ph\u00f2ng tr\u1ec5", lblTraMuonValue);
+            addFormRow(form, gbc, 9, "S\u1ed1 gi\u1edd tr\u1ec5", lblSoGioTreValue);
+            addFormRow(form, gbc, 10, "Ph\u1ee5 thu tr\u1ea3 mu\u1ed9n", lblPhuThuTreValue);
 
             roomTableModel = new DefaultTableModel(
                     new Object[]{"Ph\u00f2ng", "Lo\u1ea1i ph\u00f2ng", "Tr\u1ea1ng th\u00e1i", "Check-in", "Check-out", "DV ph\u00e1t sinh"}, 0) {
@@ -2913,11 +3151,18 @@ public class CheckInOutGUI extends JFrame {
             tblRooms.setRowHeight(28);
             tblRooms.getSelectionModel().addListSelectionListener(e -> {
                 if (!e.getValueIsAdjusting()) {
+                    loadSelectedCheckoutIntoEditor(txtNgayRa, txtGioRa);
                     refreshLateCheckoutPreview(txtNgayRa, txtGioRa);
                 }
             });
-            txtNgayRa.addTextChangeListener(() -> refreshLateCheckoutPreview(txtNgayRa, txtGioRa));
-            txtGioRa.addTextChangeListener(() -> refreshLateCheckoutPreview(txtNgayRa, txtGioRa));
+            txtNgayRa.addTextChangeListener(() -> {
+                syncSelectedCheckoutFromEditor(txtNgayRa, txtGioRa);
+                refreshLateCheckoutPreview(txtNgayRa, txtGioRa);
+            });
+            txtGioRa.addTextChangeListener(() -> {
+                syncSelectedCheckoutFromEditor(txtNgayRa, txtGioRa);
+                refreshLateCheckoutPreview(txtNgayRa, txtGioRa);
+            });
             refillRoomTable();
 
             JPanel card = createDialogCardPanel();
@@ -2948,6 +3193,7 @@ public class CheckInOutGUI extends JFrame {
             JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
             content.add(buildDialogButtons(btnCancel, btnCheckOutSelected, btnCheckOutAll), BorderLayout.SOUTH);
             add(content, BorderLayout.CENTER);
+            loadSelectedCheckoutIntoEditor(txtNgayRa, txtGioRa);
             refreshLateCheckoutPreview(txtNgayRa, txtGioRa);
         }
 
@@ -2963,24 +3209,107 @@ public class CheckInOutGUI extends JFrame {
                         formatMoney(item.tienDichVu)
                 });
             }
-            if (!stayItems.isEmpty()) {
-                tblRooms.setRowSelectionInterval(0, 0);
+            selectFirstActiveStay();
+        }
+
+        private void initializeCheckoutEditorState() {
+            for (CheckoutStayItem item : stayItems) {
+                item.editedActualCheckOut = item.checkOut == null ? null : item.checkOut.toLocalDateTime();
             }
         }
 
-        private void submit(AppDatePickerField txtNgayRa, AppTimePickerField txtGioRa, boolean checkOutAll) {
-            if (txtNgayRa.getDateValue() == null || txtGioRa.getTimeValue() == null) {
-                showInfo("Ng\u00e0y gi\u1edd ra kh\u00f4ng h\u1ee3p l\u1ec7.");
+        private LocalDateTime resolveDialogInitialActualCheckOut() {
+            CheckoutStayItem selected = resolveFirstSelectableStay();
+            return resolveEffectiveActualCheckOut(selected, LocalDateTime.now().withSecond(0).withNano(0));
+        }
+
+        private CheckoutStayItem resolveFirstSelectableStay() {
+            for (CheckoutStayItem item : stayItems) {
+                if (!item.isCheckedOut()) {
+                    return item;
+                }
+            }
+            return stayItems.isEmpty() ? null : stayItems.get(0);
+        }
+
+        private void selectFirstActiveStay() {
+            CheckoutStayItem first = resolveFirstSelectableStay();
+            if (first == null) {
                 return;
             }
-            LocalDateTime checkOut = LocalDateTime.of(txtNgayRa.getDateValue(), txtGioRa.getTimeValue());
+            int row = stayItems.indexOf(first);
+            if (row >= 0) {
+                tblRooms.setRowSelectionInterval(row, row);
+            }
+        }
+
+        private CheckoutStayItem getSelectedCheckoutItem() {
+            int row = tblRooms.getSelectedRow();
+            if (row < 0 || row >= stayItems.size()) {
+                return resolveFirstSelectableStay();
+            }
+            return stayItems.get(row);
+        }
+
+        private LocalDateTime resolveEffectiveActualCheckOut(CheckoutStayItem item, LocalDateTime fallbackNow) {
+            if (item == null) {
+                return fallbackNow;
+            }
+            if (item.editedActualCheckOut != null) {
+                return item.editedActualCheckOut;
+            }
+            if (item.checkOut != null) {
+                return item.checkOut.toLocalDateTime();
+            }
+            return fallbackNow;
+        }
+
+        private void loadSelectedCheckoutIntoEditor(AppDatePickerField txtNgayRa, AppTimePickerField txtGioRa) {
+            CheckoutStayItem selected = getSelectedCheckoutItem();
+            LocalDateTime effectiveActual = resolveEffectiveActualCheckOut(selected, LocalDateTime.now().withSecond(0).withNano(0));
+            if (selected != null && selected.editedActualCheckOut == null && selected.checkOut == null) {
+                selected.editedActualCheckOut = effectiveActual;
+            }
+
+            updatingCheckoutEditor = true;
+            try {
+                txtNgayRa.setDateValue(effectiveActual == null ? null : effectiveActual.toLocalDate());
+                txtGioRa.setTimeValue(effectiveActual == null ? null : effectiveActual.toLocalTime());
+            } finally {
+                updatingCheckoutEditor = false;
+            }
+        }
+
+        private void syncSelectedCheckoutFromEditor(AppDatePickerField txtNgayRa, AppTimePickerField txtGioRa) {
+            if (updatingCheckoutEditor) {
+                return;
+            }
+            CheckoutStayItem selected = getSelectedCheckoutItem();
+            if (selected == null) {
+                return;
+            }
+            LocalDate ngayRa = txtNgayRa.getDateValue();
+            LocalTime gioRa = txtGioRa.getTimeValue();
+            if (ngayRa == null || gioRa == null) {
+                selected.editedActualCheckOut = null;
+                return;
+            }
+            selected.editedActualCheckOut = LocalDateTime.of(ngayRa, gioRa);
+        }
+
+        private void submit(AppDatePickerField txtNgayRa, AppTimePickerField txtGioRa, boolean checkOutAll) {
             List<CheckoutStayItem> targets = resolveTargets(checkOutAll);
             if (targets.isEmpty()) {
                 showInfo(checkOutAll ? "\u0110\u01a1n n\u00e0y kh\u00f4ng c\u00f2n ph\u00f2ng n\u00e0o \u0111ang \u1edf \u0111\u1ec3 check-out." : "Vui l\u00f2ng ch\u1ecdn ph\u00f2ng \u0111ang \u1edf \u0111\u1ec3 check-out.");
                 return;
             }
+            if (!syncCurrentEditorToSelectedStay(txtNgayRa, txtGioRa, targets)) {
+                return;
+            }
+            LocalDateTime fallbackNow = LocalDateTime.now().withSecond(0).withNano(0);
             for (CheckoutStayItem item : targets) {
-                if (item.checkIn != null && !checkOut.isAfter(item.checkIn.toLocalDateTime())) {
+                LocalDateTime actualCheckOut = resolveEffectiveActualCheckOut(item, fallbackNow);
+                if (item.checkIn != null && !actualCheckOut.isAfter(item.checkIn.toLocalDateTime())) {
                     showInfo("Gi\u1edd check-out ph\u1ea3i l\u1edbn h\u01a1n gi\u1edd check-in c\u1ee7a ph\u00f2ng " + item.soPhong + ".");
                     return;
                 }
@@ -2993,7 +3322,7 @@ public class CheckInOutGUI extends JFrame {
             }
             try {
                 con.setAutoCommit(false);
-                int affected = processCheckout(con, targets, checkOut);
+                int affected = processCheckout(con, targets, fallbackNow);
                 if (affected <= 0) {
                     con.rollback();
                     showInfo("Kh\u00f4ng c\u00f3 ph\u00f2ng n\u00e0o \u0111\u01b0\u1ee3c check-out. D\u1eef li\u1ec7u c\u00f3 th\u1ec3 \u0111\u00e3 \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt tr\u01b0\u1edbc \u0111\u00f3.");
@@ -3050,6 +3379,31 @@ public class CheckInOutGUI extends JFrame {
             }
         }
 
+        private boolean syncCurrentEditorToSelectedStay(AppDatePickerField txtNgayRa,
+                                                        AppTimePickerField txtGioRa,
+                                                        List<CheckoutStayItem> targets) {
+            CheckoutStayItem selected = getSelectedCheckoutItem();
+            if (selected == null) {
+                return true;
+            }
+            if (targets == null || !targets.contains(selected)) {
+                syncSelectedCheckoutFromEditor(txtNgayRa, txtGioRa);
+                return true;
+            }
+            LocalDate selectedDate = txtNgayRa.getDateValue();
+            LocalTime selectedTime = txtGioRa.getTimeValue();
+            if (selectedDate == null || selectedTime == null) {
+                showInfo("Ngay gio ra cua phong dang chon khong hop le.");
+                return false;
+            }
+            if (false && (txtNgayRa.getDateValue() == null || txtGioRa.getTimeValue() == null)) {
+                showInfo("Ngày giờ ra của phòng đang chọn không hợp lệ.");
+                return false;
+            }
+            selected.editedActualCheckOut = LocalDateTime.of(selectedDate, selectedTime);
+            return true;
+        }
+
         private List<CheckoutStayItem> resolveTargets(boolean checkOutAll) {
             List<CheckoutStayItem> targets = new ArrayList<CheckoutStayItem>();
             if (checkOutAll) {
@@ -3095,6 +3449,8 @@ public class CheckInOutGUI extends JFrame {
 
         private void refreshLateCheckoutPreview(AppDatePickerField txtNgayRa, AppTimePickerField txtGioRa) {
             CheckoutStayItem selected = getSelectedPreviewItem();
+            lblPhongDangChonValue.setText(selected == null ? "-" : safeValue(selected.soPhong, "-"));
+            lblCheckInValue.setText(selected == null ? "-" : formatDateTime(selected.checkIn));
             LocalDate selectedDate = txtNgayRa.getDateValue();
             LocalTime selectedTime = txtGioRa.getTimeValue();
             LocalDateTime actualCheckOut = selectedDate == null || selectedTime == null ? null : LocalDateTime.of(selectedDate, selectedTime);
@@ -3113,11 +3469,7 @@ public class CheckInOutGUI extends JFrame {
         }
 
         private CheckoutStayItem getSelectedPreviewItem() {
-            int row = tblRooms.getSelectedRow();
-            if (row < 0 || row >= stayItems.size()) {
-                return stayItems.isEmpty() ? null : stayItems.get(0);
-            }
-            return stayItems.get(row);
+            return getSelectedCheckoutItem();
         }
 
         private LateCheckoutInfo buildLateCheckoutInfo(CheckoutStayItem item, LocalDateTime actualCheckOut) {
@@ -3176,12 +3528,15 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return items;
         }
+        datPhongDAO.ensureDetailScheduleSchema(con);
         String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maPhong, p.soPhong, " +
-                "COALESCE(lp.tenLoaiPhong, N'-') AS tenLoaiPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS checkOutDuKien, " +
+                "COALESCE(lp.tenLoaiPhong, N'-') AS tenLoaiPhong, lt.checkIn, lt.checkOut, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, " +
                 "ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, " +
                 "ISNULL(SUM(sddv.thanhTien), 0) AS tienDichVu " +
                 "FROM LuuTru lt " +
                 "JOIN DatPhong dp ON lt.maDatPhong = dp.maDatPhong " +
+                "JOIN ChiTietDatPhong ctdp ON ctdp.maChiTietDatPhong = lt.maChiTietDatPhong " +
                 "JOIN Phong p ON lt.maPhong = p.maPhong " +
                 "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
                 "LEFT JOIN BangGia bgHeader ON dp.maBangGia = bgHeader.maBangGia " +
@@ -3191,7 +3546,7 @@ public class CheckInOutGUI extends JFrame {
                 "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved " +
                 "LEFT JOIN SuDungDichVu sddv ON sddv.maLuuTru = lt.maLuuTru " +
                 "WHERE lt.maDatPhong = ? " +
-                "GROUP BY lt.maLuuTru, lt.maChiTietDatPhong, lt.maPhong, p.soPhong, lp.tenLoaiPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong, bgResolved.maBangGia, dp.maBangGia " +
+                "GROUP BY lt.maLuuTru, lt.maChiTietDatPhong, lt.maPhong, p.soPhong, lp.tenLoaiPhong, lt.checkIn, lt.checkOut, ctdp.checkOutDuKien, dp.ngayTraPhong, bgResolved.maBangGia, dp.maBangGia " +
                 "ORDER BY CASE WHEN TRY_CAST(p.soPhong AS INT) IS NULL THEN 1 ELSE 0 END, TRY_CAST(p.soPhong AS INT), p.soPhong, lt.maLuuTru";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, maDatPhong);
@@ -3216,12 +3571,13 @@ public class CheckInOutGUI extends JFrame {
         return items;
     }
 
-    private int processCheckout(Connection con, List<CheckoutStayItem> items, LocalDateTime checkOut) throws Exception {
+    private int processCheckout(Connection con, List<CheckoutStayItem> items, LocalDateTime fallbackNow) throws Exception {
         int affected = 0;
         List<Integer> roomIds = new ArrayList<Integer>();
         try (PreparedStatement updateStay = con.prepareStatement(
                 "UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ? AND checkOut IS NULL")) {
             for (CheckoutStayItem item : items) {
+                LocalDateTime checkOut = item.editedActualCheckOut == null ? fallbackNow : item.editedActualCheckOut;
                 updateStay.setTimestamp(1, Timestamp.valueOf(checkOut));
                 updateStay.setInt(2, item.maLuuTru);
                 int updated = updateStay.executeUpdate();
@@ -3513,6 +3869,7 @@ public class CheckInOutGUI extends JFrame {
         private final Timestamp expectedCheckOut;
         private final int maBangGia;
         private final double tienDichVu;
+        private LocalDateTime editedActualCheckOut;
 
         private CheckoutStayItem(int maLuuTru, int maChiTietDatPhong, int maPhong, String soPhong,
                                  String loaiPhong, String trangThai, Timestamp checkIn, Timestamp checkOut,

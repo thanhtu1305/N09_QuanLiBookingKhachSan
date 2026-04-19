@@ -16,6 +16,8 @@ import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -51,6 +53,8 @@ public class DatPhongDAO {
     private static final String DISPLAY_LOAI_GIA_THEO_NGAY = "Theo ng\u00e0y";
     private static final String DISPLAY_LOAI_GIA_QUA_DEM = "Qua \u0111\u00eam";
     private static final String DISPLAY_LOAI_GIA_THEO_GIO = "Theo gi\u1edd";
+    private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
+    private static boolean detailScheduleSchemaEnsured = false;
 
     public static String normalizeStageStatus(String status) {
         String value = status == null ? "" : status.trim();
@@ -97,6 +101,33 @@ public class DatPhongDAO {
         return lastErrorMessage;
     }
 
+    public void ensureDetailScheduleSchema(Connection con) {
+        if (con == null) {
+            return;
+        }
+        synchronized (DatPhongDAO.class) {
+            if (detailScheduleSchemaEnsured) {
+                return;
+            }
+            try (PreparedStatement stmt = con.prepareStatement(
+                    "IF COL_LENGTH('dbo.ChiTietDatPhong', 'checkInDuKien') IS NULL "
+                            + "BEGIN ALTER TABLE dbo.ChiTietDatPhong ADD checkInDuKien DATETIME2 NULL END "
+                            + "IF COL_LENGTH('dbo.ChiTietDatPhong', 'checkOutDuKien') IS NULL "
+                            + "BEGIN ALTER TABLE dbo.ChiTietDatPhong ADD checkOutDuKien DATETIME2 NULL END "
+                            + "UPDATE ctdp "
+                            + "SET checkInDuKien = COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))), "
+                            + "    checkOutDuKien = COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) "
+                            + "FROM dbo.ChiTietDatPhong ctdp "
+                            + "JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong")) {
+                stmt.execute();
+                detailScheduleSchemaEnsured = true;
+            } catch (SQLException e) {
+                setLastError(e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
     public List<DatPhong> getAll() {
         clearLastError();
         List<DatPhong> result = new ArrayList<DatPhong>();
@@ -106,6 +137,7 @@ public class DatPhongDAO {
             return result;
         }
 
+        ensureDetailScheduleSchema(con);
         String sql = SELECT_HEADER_BASE + " ORDER BY dp.maDatPhong DESC";
         try (PreparedStatement stmt = con.prepareStatement(sql);
              ResultSet rs = stmt.executeQuery()) {
@@ -131,6 +163,7 @@ public class DatPhongDAO {
             return null;
         }
 
+        ensureDetailScheduleSchema(con);
         try {
             return findByIdInternal(con, id.intValue());
         } catch (SQLException e) {
@@ -160,6 +193,7 @@ public class DatPhongDAO {
             return false;
         }
 
+        ensureDetailScheduleSchema(con);
         String sql = "INSERT INTO DatPhong(maKhachHang, maNhanVien, maBangGia, ngayDat, ngayNhanPhong, ngayTraPhong, soLuongPhong, soNguoi, tienCoc, trangThai) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
@@ -204,6 +238,7 @@ public class DatPhongDAO {
             return false;
         }
 
+        ensureDetailScheduleSchema(con);
         String sql = "UPDATE DatPhong SET maKhachHang = ?, maNhanVien = ?, maBangGia = ?, ngayDat = ?, ngayNhanPhong = ?, ngayTraPhong = ?, "
                 + "soLuongPhong = ?, soNguoi = ?, tienCoc = ?, trangThai = ? WHERE maDatPhong = ?";
 
@@ -250,6 +285,7 @@ public class DatPhongDAO {
             return false;
         }
 
+        ensureDetailScheduleSchema(con);
         try {
             con.setAutoCommit(false);
             if (hasLuuTruForBooking(con, id.intValue())) {
@@ -292,6 +328,7 @@ public class DatPhongDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
             return new ArrayList<ChiTietDatPhong>();
         }
+        ensureDetailScheduleSchema(con);
         DatPhong temp = new DatPhong();
         temp.setMaDatPhong(String.valueOf(id.intValue()));
         return getChiTietByMaDatPhongInternal(con, temp);
@@ -306,6 +343,7 @@ public class DatPhongDAO {
             return false;
         }
 
+        ensureDetailScheduleSchema(con);
         try {
             con.setAutoCommit(false);
             String sql = "UPDATE dbo.DatPhong SET trangThai = ? WHERE maDatPhong = ?";
@@ -346,6 +384,7 @@ public class DatPhongDAO {
             setLastError(con == null ? "KhÃ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MÃ£ Ä‘áº·t phÃ²ng khÃ´ng há»£p lá»‡.");
             return false;
         }
+        ensureDetailScheduleSchema(con);
         if (targetStatus.isEmpty()) {
             targetStatus = STATUS_PENDING_CHECKIN;
         }
@@ -439,17 +478,20 @@ public class DatPhongDAO {
         if (con == null) {
             return null;
         }
+        ensureDetailScheduleSchema(con);
         if (maPhong <= 0 || ngayNhanPhong == null || ngayTraPhong == null || !ngayTraPhong.isAfter(ngayNhanPhong)) {
             return null;
         }
 
+        String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
+        String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT TOP 1 dp.maDatPhong, ctdp.maChiTietDatPhong, ")
                 .append("ISNULL(lt.maLuuTru, 0) AS maLuuTru, ")
                 .append("ISNULL(kh.hoTen, N'Khách chưa xác định') AS tenKhachHang, ")
                 .append("ISNULL(p.soPhong, CAST(ctdp.maPhong AS NVARCHAR(20))) AS soPhong, ")
-                .append("CAST(COALESCE(lt.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS DATE) AS ngayNhanPhong, ")
-                .append("CAST(COALESCE(lt.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS DATE) AS ngayTraPhong, ")
+                .append("CAST(COALESCE(lt.checkIn, ").append(detailCheckInExpr).append(") AS DATE) AS ngayNhanPhong, ")
+                .append("CAST(COALESCE(lt.checkOut, ").append(detailCheckOutExpr).append(") AS DATE) AS ngayTraPhong, ")
                 .append("CASE ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang ở' ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang ở' ")
@@ -461,8 +503,8 @@ public class DatPhongDAO {
                 .append("LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong ")
                 .append("LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong ")
                 .append("WHERE ctdp.maPhong = ? ")
-                .append("AND CAST(COALESCE(lt.checkIn, CAST(dp.ngayNhanPhong AS DATETIME)) AS DATE) < ? ")
-                .append("AND CAST(COALESCE(lt.checkOut, CAST(dp.ngayTraPhong AS DATETIME)) AS DATE) > ? ");
+                .append("AND CAST(COALESCE(lt.checkIn, ").append(detailCheckInExpr).append(") AS DATE) < ? ")
+                .append("AND CAST(COALESCE(lt.checkOut, ").append(detailCheckOutExpr).append(") AS DATE) > ? ");
         if (excludeMaDatPhong != null && excludeMaDatPhong.intValue() > 0) {
             sql.append("AND dp.maDatPhong <> ? ");
         }
@@ -510,10 +552,13 @@ public class DatPhongDAO {
         if (con == null) {
             return result;
         }
+        ensureDetailScheduleSchema(con);
         if (ngayNhanPhong == null || ngayTraPhong == null || !ngayTraPhong.isAfter(ngayNhanPhong)) {
             return result;
         }
 
+        String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
+        String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
                 "FROM dbo.Phong p " +
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
@@ -536,8 +581,8 @@ public class DatPhongDAO {
                 "      AND (? IS NULL OR dp.maDatPhong <> ?) " +
                 "      AND latestLt.maLuuTru IS NULL " +
                 "      AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') " +
-                "      AND dp.ngayNhanPhong < ? " +
-                "      AND dp.ngayTraPhong > ? " +
+                "      AND CAST(" + detailCheckInExpr + " AS DATE) < ? " +
+                "      AND CAST(" + detailCheckOutExpr + " AS DATE) > ? " +
                 ") " +
                 "ORDER BY CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, " +
                 "TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
@@ -593,9 +638,15 @@ public class DatPhongDAO {
             return details;
         }
 
+        ensureDetailScheduleSchema(con);
         int detailCount = countDetails(con, bookingId.intValue());
+        String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
+        String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, ctdp.thanhTien, "
-                + "dp.ngayNhanPhong, dp.ngayTraPhong, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, dp.tienCoc AS tienCocHeader, dp.trangThai AS trangThaiDatPhong, "
+                + "dp.ngayNhanPhong, dp.ngayTraPhong, "
+                + detailCheckInExpr + " AS checkInDuKien, "
+                + detailCheckOutExpr + " AS checkOutDuKien, "
+                + "ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, dp.tienCoc AS tienCocHeader, dp.trangThai AS trangThaiDatPhong, "
                 + "p.soPhong, p.tang, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, "
                 + "COALESCE(CAST(p.maLoaiPhong AS NVARCHAR(20)), CAST(bg.maLoaiPhong AS NVARCHAR(20))) AS maLoaiPhongResolved, "
                 + "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong) AS tenLoaiPhongResolved "
@@ -627,8 +678,10 @@ public class DatPhongDAO {
                     detail.setMaLoaiPhong(safeTrim(rs.getString("maLoaiPhongResolved")));
                     detail.setMaBangGia(rs.getObject("maBangGiaResolved") == null ? "" : String.valueOf(rs.getInt("maBangGiaResolved")));
                     detail.setMaChiTietBangGia("");
-                    detail.setCheckInDuKien(toLocalDate(rs.getDate("ngayNhanPhong")));
-                    detail.setCheckOutDuKien(toLocalDate(rs.getDate("ngayTraPhong")));
+                    Timestamp detailCheckIn = rs.getTimestamp("checkInDuKien");
+                    Timestamp detailCheckOut = rs.getTimestamp("checkOutDuKien");
+                    detail.setCheckInDuKien(detailCheckIn == null ? toLocalDate(rs.getDate("ngayNhanPhong")) : detailCheckIn.toLocalDateTime().toLocalDate());
+                    detail.setCheckOutDuKien(detailCheckOut == null ? toLocalDate(rs.getDate("ngayTraPhong")) : detailCheckOut.toLocalDateTime().toLocalDate());
                     detail.setSoNguoi(rs.getInt("soNguoi"));
                     detail.setGiaApDung(rs.getDouble("giaPhong"));
                     detail.setTienDatCocChiTiet(detailCount <= 0 ? 0d : rs.getDouble("tienCocHeader") / detailCount);
@@ -718,8 +771,9 @@ public class DatPhongDAO {
         if (details == null || details.isEmpty()) {
             return;
         }
+        ensureDetailScheduleSchema(con);
 
-        String sql = "INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement stmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             for (ChiTietDatPhong detail : details) {
                 String detailBangGia = resolveBangGiaForDetail(con, detail, datPhong.getMaBangGia());
@@ -729,6 +783,8 @@ public class DatPhongDAO {
                 stmt.setInt(3, detail.getSoNguoi() <= 0 ? 1 : detail.getSoNguoi());
                 stmt.setDouble(4, detail.getGiaApDung());
                 stmt.setDouble(5, calculateThanhTien(detail));
+                stmt.setTimestamp(6, toDetailScheduleTimestamp(detail.getCheckInDuKien() == null ? datPhong.getNgayNhanPhong() : detail.getCheckInDuKien()));
+                stmt.setTimestamp(7, toDetailScheduleTimestamp(detail.getCheckOutDuKien() == null ? datPhong.getNgayTraPhong() : detail.getCheckOutDuKien()));
                 stmt.executeUpdate();
 
                 try (ResultSet rs = stmt.getGeneratedKeys()) {
@@ -1515,6 +1571,20 @@ public class DatPhongDAO {
 
     private Date toSqlDate(LocalDate value) {
         return value == null ? null : Date.valueOf(value);
+    }
+
+    private Timestamp toDetailScheduleTimestamp(LocalDate value) {
+        return value == null ? null : Timestamp.valueOf(LocalDateTime.of(value, DETAIL_BOOKING_BOUNDARY_TIME));
+    }
+
+    private String buildDetailCheckInExpr(String detailAlias, String headerAlias) {
+        return "COALESCE(" + detailAlias + ".checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour()
+                + ", CAST(" + headerAlias + ".ngayNhanPhong AS DATETIME2)))";
+    }
+
+    private String buildDetailCheckOutExpr(String detailAlias, String headerAlias) {
+        return "COALESCE(" + detailAlias + ".checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour()
+                + ", CAST(" + headerAlias + ".ngayTraPhong AS DATETIME2)))";
     }
 
     private LocalDate toLocalDate(Date value) {

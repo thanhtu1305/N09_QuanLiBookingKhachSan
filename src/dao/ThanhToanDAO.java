@@ -451,9 +451,11 @@ public class ThanhToanDAO {
         }
         synchronizingInvoices = true;
         try {
+            new DatPhongDAO().ensureDetailScheduleSchema(con);
             String readyForPaymentClause = "(" + buildBookingReadyForPaymentClause("lt.maDatPhong") + ") " +
                     "AND NOT EXISTS (SELECT 1 FROM HoaDon hdRoom WHERE hdRoom.maDatPhong = lt.maDatPhong AND hdRoom.maChiTietDatPhong IS NOT NULL)";
-            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, lt.maChiTietDatPhong, dp.maKhachHang, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS ngayTraPhong, " +
+            String sql = "SELECT lt.maLuuTru, lt.maDatPhong, lt.maChiTietDatPhong, dp.maKhachHang, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+                    "ISNULL(ct.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS ngayTraPhong, " +
                     "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, " +
                     "ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
                     "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong " +
@@ -467,7 +469,10 @@ public class ThanhToanDAO {
                     "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved " +
                     "OUTER APPLY ( " +
                     "   SELECT TOP 1 " +
-                    "       ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
+                    "       ISNULL(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, " +
+                    "       ISNULL(DATEDIFF(DAY, " +
+                    "           CAST(ISNULL(ctdp.checkInDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS DATE), " +
+                    "           CAST(ISNULL(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS DATE)),0) AS soDemDatPhong, " +
                     "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
                     "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
                     "   FROM ChiTietDatPhong ctdp " +
@@ -688,9 +693,13 @@ public class ThanhToanDAO {
         if (useScopedInvoiceQuery()) {
             return insertRoomChargeLines(con, maHoaDon, loadInvoiceScope(con, maHoaDon), invoice);
         }
-        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS checkOutDuKien, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, " +
+        new DatPhongDAO().ensureDetailScheduleSchema(con);
+        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+                "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, " +
                 "ISNULL(p.soPhong, N'Phong') AS soPhong, " +
-                "ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
+                "ISNULL(DATEDIFF(DAY, " +
+                "    CAST(COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS DATE), " +
+                "    CAST(COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS DATE)),0) AS soDemDatPhong, " +
                 "ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
                 "ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
                 "FROM LuuTru lt " +
@@ -751,9 +760,13 @@ public class ThanhToanDAO {
         if (scope == null) {
             return 0d;
         }
-        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS checkOutDuKien, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, " +
+        new DatPhongDAO().ensureDetailScheduleSchema(con);
+        String roomSql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.giaPhong, lt.checkIn, lt.checkOut, " +
+                "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, " +
                 "ISNULL(p.soPhong, N'Phong') AS soPhong, " +
-                "ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
+                "ISNULL(DATEDIFF(DAY, " +
+                "    CAST(COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS DATE), " +
+                "    CAST(COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS DATE)),0) AS soDemDatPhong, " +
                 "ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
                 "ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
                 "FROM LuuTru lt " +
@@ -1563,10 +1576,11 @@ public class ThanhToanDAO {
     }
 
     private InvoiceAggregate loadRoomInvoiceAggregate(Connection con, int maLuuTru) throws Exception {
+        new DatPhongDAO().ensureDetailScheduleSchema(con);
         String sql = "SELECT lt.maLuuTru, lt.maDatPhong, lt.maChiTietDatPhong, " +
                 "COALESCE(roomGuest.maKhachHang, dp.maKhachHang) AS maKhachHang, " +
                 "ISNULL(bgResolved.maBangGia, dp.maBangGia) AS maBangGiaResolved, ISNULL(dp.tienCoc, 0) AS tienCocDatPhong, " +
-                "lt.giaPhong, lt.checkIn, lt.checkOut, dp.ngayTraPhong AS ngayTraPhong, " +
+                "lt.giaPhong, lt.checkIn, lt.checkOut, ISNULL(ct.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS ngayTraPhong, " +
                 "ISNULL(ct.soDemDatPhong,0) AS soDemDatPhong, ISNULL(ct.giaPhongDatPhong,0) AS giaPhongDatPhong, " +
                 "ISNULL(ct.thanhTienDatPhong,0) AS thanhTienDatPhong, " +
                 "(SELECT COUNT(1) FROM ChiTietDatPhong WHERE maDatPhong = lt.maDatPhong) AS tongChiTiet " +
@@ -1579,12 +1593,15 @@ public class ThanhToanDAO {
                 "OUTER APPLY (SELECT TOP 1 bgRoom.maBangGia FROM BangGia bgRoom " +
                 "             WHERE bgRoom.maLoaiPhong = COALESCE(p.maLoaiPhong, bgHeader.maLoaiPhong) " +
                 "               AND bgRoom.trangThai = N'Äang Ã¡p dá»¥ng' " +
-                "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved " +
-                "OUTER APPLY (SELECT TOP 1 " +
-                "       ISNULL(DATEDIFF(DAY, dp.ngayNhanPhong, dp.ngayTraPhong),0) AS soDemDatPhong, " +
-                "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
-                "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
-                "   FROM ChiTietDatPhong ctdp WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong) ct " +
+                    "             ORDER BY CASE WHEN bgRoom.maBangGia = dp.maBangGia THEN 0 ELSE 1 END, bgRoom.maBangGia DESC) bgResolved " +
+                    "OUTER APPLY (SELECT TOP 1 " +
+                    "       ISNULL(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, " +
+                    "       ISNULL(DATEDIFF(DAY, " +
+                    "           CAST(ISNULL(ctdp.checkInDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS DATE), " +
+                    "           CAST(ISNULL(ctdp.checkOutDuKien, DATEADD(HOUR, " + LEGACY_EXPECTED_CHECKOUT_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS DATE)),0) AS soDemDatPhong, " +
+                    "       ISNULL(ctdp.giaPhong,0) AS giaPhongDatPhong, " +
+                    "       ISNULL(ctdp.thanhTien,0) AS thanhTienDatPhong " +
+                    "   FROM ChiTietDatPhong ctdp WHERE ctdp.maChiTietDatPhong = lt.maChiTietDatPhong) ct " +
                 "WHERE lt.checkOut IS NOT NULL " +
                 "ORDER BY lt.maLuuTru ASC";
         try (PreparedStatement ps = con.prepareStatement(sql)) {

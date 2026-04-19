@@ -315,6 +315,7 @@ public class CheckInOutDAO {
             setLastError("Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
             return result;
         }
+        ensureDetailScheduleSchema(con);
         try {
             return getAvailableRoomsForRoomChange(
                     con,
@@ -353,6 +354,7 @@ public class CheckInOutDAO {
                 || !thoiGianTraDuKien.isAfter(thoiDiemDoi)) {
             return result;
         }
+        ensureDetailScheduleSchema(con);
 
         // DatPhong stores DATE only, so legacy midnight values are treated as the system's noon boundary.
         LocalDateTime normalizedExpectedCheckOut = normalizeLegacyBookingBoundary(thoiGianTraDuKien);
@@ -362,6 +364,8 @@ public class CheckInOutDAO {
 
         Timestamp changeTimestamp = Timestamp.valueOf(thoiDiemDoi);
         Timestamp expectedCheckOutTimestamp = Timestamp.valueOf(normalizedExpectedCheckOut);
+        String detailHoldCheckInExpr = buildDetailCheckInExpr("ctdpHold", "dpHold");
+        String detailHoldCheckOutExpr = buildDetailCheckOutExpr("ctdpHold", "dpHold");
 
         String sql = "SELECT p.maPhong, p.soPhong, ISNULL(p.tang, N'-') AS tang, ISNULL(p.khuVuc, N'-') AS khuVuc, "
                 + "ISNULL(p.sucChuaToiDa, 0) AS sucChuaToiDa, lp.maLoaiPhong, "
@@ -399,8 +403,8 @@ public class CheckInOutDAO {
                 + "N'" + STATUS_ACTIVE_STAY + "', "
                 + "N'" + STATUS_PARTIAL_CHECKOUT + "', "
                 + "N'" + STATUS_CHECKED_IN + "') "
-                + "      AND DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour() + ", CAST(dpHold.ngayNhanPhong AS DATETIME2)) < ? "
-                + "      AND DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour() + ", CAST(dpHold.ngayTraPhong AS DATETIME2)) > ? "
+                + "      AND " + detailHoldCheckInExpr + " < ? "
+                + "      AND " + detailHoldCheckOutExpr + " > ? "
                 + "      AND NOT EXISTS ( "
                 + "          SELECT 1 "
                 + "          FROM dbo.LuuTru ltBooked "
@@ -450,6 +454,20 @@ public class CheckInOutDAO {
         return value;
     }
 
+    private void ensureDetailScheduleSchema(Connection con) {
+        new DatPhongDAO().ensureDetailScheduleSchema(con);
+    }
+
+    private String buildDetailCheckInExpr(String detailAlias, String headerAlias) {
+        return "COALESCE(" + detailAlias + ".checkInDuKien, DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour()
+                + ", CAST(" + headerAlias + ".ngayNhanPhong AS DATETIME2)))";
+    }
+
+    private String buildDetailCheckOutExpr(String detailAlias, String headerAlias) {
+        return "COALESCE(" + detailAlias + ".checkOutDuKien, DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour()
+                + ", CAST(" + headerAlias + ".ngayTraPhong AS DATETIME2)))";
+    }
+
     public List<CheckInBookingItem> getBookingCheckInItems(String maDatPhong) {
         clearLastError();
         List<CheckInBookingItem> items = new ArrayList<CheckInBookingItem>();
@@ -460,10 +478,15 @@ public class CheckInOutDAO {
             return items;
         }
 
+        ensureDetailScheduleSchema(con);
         ensureRepresentativeGuestSchema(con);
+        String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
+        String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, " +
                 "ISNULL(p.soPhong, N'ChĂ†Â°a gÄ‚Â¡n') AS soPhong, " +
                 "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong, N'-') AS tenLoaiPhong, " +
+                detailCheckInExpr + " AS checkInDuKien, " +
+                detailCheckOutExpr + " AS checkOutDuKien, " +
                 "dp.trangThai AS trangThaiDatPhong, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, " +
                 "roomGuest.maKhachHang AS maKhachHangDaiDien, " +
                 "ISNULL(roomKh.cccdPassport, N'') AS cccdPassportDaiDien, " +
@@ -506,6 +529,8 @@ public class CheckInOutDAO {
                     item.setSoNguoi(rs.getInt("soNguoi"));
                     item.setGiaPhong(rs.getDouble("giaPhong"));
                     item.setTienCoc(rs.getDouble("tienCoc"));
+                    item.setExpectedCheckIn(normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkInDuKien"))));
+                    item.setExpectedCheckOut(normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkOutDuKien"))));
                     Integer latestStayId = rs.getObject("maLuuTruGanNhat") == null ? null : Integer.valueOf(rs.getInt("maLuuTruGanNhat"));
                     item.setTrangThai(resolveCheckInItemStatus(
                             item.getMaPhong(),
@@ -513,7 +538,7 @@ public class CheckInOutDAO {
                             latestStayId,
                             rs.getTimestamp("checkOutGanNhat")
                     ));
-                    fillCheckInItemCustomer(item, rs, latestStayId != null);
+                    fillCheckInItemCustomer(item, rs);
                     items.add(item);
                 }
             }
@@ -558,13 +583,25 @@ public class CheckInOutDAO {
     }
 
     public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
-        return checkInBookingDetails(maDatPhong, maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien, null);
+        return checkInBookingDetails(maDatPhong, maChiTietDatPhongIds, buildUniformCheckInTimings(maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien), null);
     }
 
     public int checkInBookingDetails(String maDatPhong,
                                      List<Integer> maChiTietDatPhongIds,
                                      LocalDateTime thoiGianCheckIn,
                                      LocalDateTime thoiGianCheckOutDuKien,
+                                     Map<Integer, KhachHang> customerByDetailId) {
+        return checkInBookingDetails(
+                maDatPhong,
+                maChiTietDatPhongIds,
+                buildUniformCheckInTimings(maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien),
+                customerByDetailId
+        );
+    }
+
+    public int checkInBookingDetails(String maDatPhong,
+                                     List<Integer> maChiTietDatPhongIds,
+                                     Map<Integer, CheckInTiming> scheduleByDetailId,
                                      Map<Integer, KhachHang> customerByDetailId) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -579,8 +616,12 @@ public class CheckInOutDAO {
             return 0;
         }
 
+        String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
+        String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc ")
+        sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, ")
+                .append(detailCheckInExpr).append(" AS checkInDuKien, ")
+                .append(detailCheckOutExpr).append(" AS checkOutDuKien ")
                 .append("FROM ChiTietDatPhong ctdp ")
                 .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
                 .append("WHERE ctdp.maDatPhong = ? ")
@@ -596,11 +637,14 @@ public class CheckInOutDAO {
 
         try {
             con.setAutoCommit(false);
+            ensureDetailScheduleSchema(con);
             ensureRepresentativeGuestSchema(con);
             int affected = 0;
             try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
                  PreparedStatement insertStmt = con.prepareStatement(
                          "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                 PreparedStatement detailScheduleStmt = con.prepareStatement(
+                         "UPDATE ChiTietDatPhong SET checkInDuKien = ?, checkOutDuKien = ? WHERE maChiTietDatPhong = ?");
                  PreparedStatement roomStmt = con.prepareStatement("UPDATE Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? AND trangThai <> N'B\u1ea3o tr\u00ec'")) {
                 int index = 1;
                 selectStmt.setInt(index++, bookingId.intValue());
@@ -614,16 +658,32 @@ public class CheckInOutDAO {
                         }
 
                         int maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
+                        CheckInTiming timing = resolveCheckInTiming(
+                                maChiTietDatPhong,
+                                scheduleByDetailId,
+                                normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkInDuKien"))),
+                                normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkOutDuKien")))
+                        );
+                        if (timing == null || !timing.isValid()) {
+                            con.rollback();
+                            setLastError("Thời gian check-in / check-out dự kiến của chi tiết đặt phòng CTDP" + maChiTietDatPhong + " không hợp lệ.");
+                            return 0;
+                        }
                         int maPhong = rs.getInt("maPhong");
                         insertStmt.setInt(1, maChiTietDatPhong);
                         insertStmt.setInt(2, bookingId.intValue());
                         insertStmt.setInt(3, maPhong);
-                        insertStmt.setTimestamp(4, toTimestamp(thoiGianCheckIn));
+                        insertStmt.setTimestamp(4, toTimestamp(timing.getCheckIn()));
                         insertStmt.setTimestamp(5, null);
                         insertStmt.setInt(6, rs.getInt("soNguoi"));
                         insertStmt.setDouble(7, rs.getDouble("giaPhong"));
                         insertStmt.setDouble(8, rs.getDouble("tienCoc"));
                         affected += insertStmt.executeUpdate();
+
+                        detailScheduleStmt.setTimestamp(1, toTimestamp(timing.getCheckIn()));
+                        detailScheduleStmt.setTimestamp(2, toTimestamp(timing.getExpectedCheckOut()));
+                        detailScheduleStmt.setInt(3, maChiTietDatPhong);
+                        detailScheduleStmt.executeUpdate();
 
                         roomStmt.setInt(1, maPhong);
                         roomStmt.executeUpdate();
@@ -642,7 +702,7 @@ public class CheckInOutDAO {
                 return 0;
             }
 
-            updateBookingExpectedCheckOut(con, bookingId.intValue(), thoiGianCheckOutDuKien);
+            updateBookingScheduleSummaryFromDetails(con, bookingId.intValue());
             refreshBookingStatusAfterCheckIn(con, bookingId.intValue());
             synchronizeOperationalStatuses(con);
             con.commit();
@@ -826,14 +886,22 @@ public class CheckInOutDAO {
         updateBookingStatus(con, maDatPhong, resolvedStatus);
     }
 
-    private void updateBookingExpectedCheckOut(Connection con, int maDatPhong, LocalDateTime thoiGianCheckOutDuKien) throws SQLException {
-        if (con == null || thoiGianCheckOutDuKien == null) {
+    private void updateBookingScheduleSummaryFromDetails(Connection con, int maDatPhong) throws SQLException {
+        if (con == null || maDatPhong <= 0) {
             return;
         }
         try (PreparedStatement stmt = con.prepareStatement(
-                "UPDATE DatPhong SET ngayTraPhong = ? WHERE maDatPhong = ?")) {
-            stmt.setTimestamp(1, Timestamp.valueOf(thoiGianCheckOutDuKien));
-            stmt.setInt(2, maDatPhong);
+                "UPDATE dp "
+                        + "SET dp.ngayNhanPhong = agg.minCheckIn, dp.ngayTraPhong = agg.maxCheckOut "
+                        + "FROM DatPhong dp "
+                        + "CROSS APPLY ("
+                        + "    SELECT CAST(MIN(" + buildDetailCheckInExpr("ctdp", "dp") + ") AS DATE) AS minCheckIn, "
+                        + "           CAST(MAX(" + buildDetailCheckOutExpr("ctdp", "dp") + ") AS DATE) AS maxCheckOut "
+                        + "    FROM ChiTietDatPhong ctdp "
+                        + "    WHERE ctdp.maDatPhong = dp.maDatPhong"
+                        + ") agg "
+                        + "WHERE dp.maDatPhong = ?")) {
+            stmt.setInt(1, maDatPhong);
             stmt.executeUpdate();
         }
     }
@@ -978,7 +1046,7 @@ public class CheckInOutDAO {
         return STATUS_PENDING_CHECKIN;
     }
 
-    private void fillCheckInItemCustomer(CheckInBookingItem item, ResultSet rs, boolean hasExistingStay) throws SQLException {
+    private void fillCheckInItemCustomer(CheckInBookingItem item, ResultSet rs) throws SQLException {
         if (item == null || rs == null) {
             return;
         }
@@ -990,9 +1058,6 @@ public class CheckInOutDAO {
             item.setEmail(safeTrim(rs.getString("emailDaiDien")));
             item.setDiaChi(safeTrim(rs.getString("diaChiDaiDien")));
             item.setGhiChu(safeTrim(rs.getString("ghiChuDaiDien")));
-            return;
-        }
-        if (!hasExistingStay) {
             return;
         }
         item.setCccdPassport(safeTrim(rs.getString("cccdPassportBooking")));
@@ -1258,6 +1323,51 @@ public class CheckInOutDAO {
         return detailIds;
     }
 
+    private Map<Integer, CheckInTiming> buildUniformCheckInTimings(List<Integer> maChiTietDatPhongIds,
+                                                                   LocalDateTime thoiGianCheckIn,
+                                                                   LocalDateTime thoiGianCheckOutDuKien) {
+        Map<Integer, CheckInTiming> timings = new java.util.LinkedHashMap<Integer, CheckInTiming>();
+        CheckInTiming timing = new CheckInTiming(thoiGianCheckIn, thoiGianCheckOutDuKien);
+        for (Integer detailId : sanitizeDetailIds(maChiTietDatPhongIds)) {
+            timings.put(detailId, timing);
+        }
+        return timings;
+    }
+
+    private CheckInTiming resolveCheckInTiming(int maChiTietDatPhong,
+                                               Map<Integer, CheckInTiming> scheduleByDetailId,
+                                               LocalDateTime fallbackCheckIn,
+                                               LocalDateTime fallbackCheckOut) {
+        CheckInTiming timing = scheduleByDetailId == null ? null : scheduleByDetailId.get(Integer.valueOf(maChiTietDatPhong));
+        if (timing != null && timing.isValid()) {
+            return timing;
+        }
+        CheckInTiming fallback = new CheckInTiming(fallbackCheckIn, fallbackCheckOut);
+        return fallback.isValid() ? fallback : null;
+    }
+
+    public static final class CheckInTiming {
+        private final LocalDateTime checkIn;
+        private final LocalDateTime expectedCheckOut;
+
+        public CheckInTiming(LocalDateTime checkIn, LocalDateTime expectedCheckOut) {
+            this.checkIn = checkIn;
+            this.expectedCheckOut = expectedCheckOut;
+        }
+
+        public LocalDateTime getCheckIn() {
+            return checkIn;
+        }
+
+        public LocalDateTime getExpectedCheckOut() {
+            return expectedCheckOut;
+        }
+
+        public boolean isValid() {
+            return checkIn != null && expectedCheckOut != null && expectedCheckOut.isAfter(checkIn);
+        }
+    }
+
     public static final class CheckInBookingItem {
         private int maChiTietDatPhong;
         private int maPhong;
@@ -1267,6 +1377,8 @@ public class CheckInOutDAO {
         private double giaPhong;
         private double tienCoc;
         private String trangThai;
+        private LocalDateTime expectedCheckIn;
+        private LocalDateTime expectedCheckOut;
         private String cccdPassport;
         private String hoTenKhach;
         private String soDienThoai;
@@ -1337,6 +1449,22 @@ public class CheckInOutDAO {
 
         public void setTrangThai(String trangThai) {
             this.trangThai = trangThai;
+        }
+
+        public LocalDateTime getExpectedCheckIn() {
+            return expectedCheckIn;
+        }
+
+        public void setExpectedCheckIn(LocalDateTime expectedCheckIn) {
+            this.expectedCheckIn = expectedCheckIn;
+        }
+
+        public LocalDateTime getExpectedCheckOut() {
+            return expectedCheckOut;
+        }
+
+        public void setExpectedCheckOut(LocalDateTime expectedCheckOut) {
+            this.expectedCheckOut = expectedCheckOut;
         }
 
         public String getCccdPassport() {

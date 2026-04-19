@@ -51,7 +51,10 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
@@ -76,6 +79,7 @@ public class DatPhongGUI extends JFrame {
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.forLanguageTag("vi-VN")).withResolverStyle(ResolverStyle.STRICT);
+    private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
 
     private static final List<DatPhongGUI> OPEN_INSTANCES = new ArrayList<DatPhongGUI>();
     private static Integer pendingFocusedBookingId;
@@ -593,9 +597,12 @@ public class DatPhongGUI extends JFrame {
         if (con == null) {
             return details;
         }
+        datPhongDAO.ensureDetailScheduleSchema(con);
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong AS maPhongId, ctdp.soNguoi, ctdp.giaPhong, ctdp.thanhTien, " +
                 "ISNULL(p.soPhong, N'Chưa gán') AS soPhong, " +
-                "dp.ngayNhanPhong, dp.ngayTraPhong, dp.trangThai, " +
+                "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, " +
+                "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, " +
+                "dp.trangThai, " +
                 "ISNULL(lp.tenLoaiPhong, ?) AS tenLoaiPhong, " +
                 "ISNULL(CAST(lp.maLoaiPhong AS NVARCHAR(20)), '') AS maLoaiPhong " +
                 "FROM ChiTietDatPhong ctdp " +
@@ -615,8 +622,8 @@ public class DatPhongGUI extends JFrame {
                     detail.maPhong = safeValue(rs.getString("soPhong"), "Chưa gán");
                     detail.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), headerLoaiPhong);
                     detail.maLoaiPhong = rs.getObject("maLoaiPhong") == null ? 0 : Integer.parseInt(safeValue(rs.getString("maLoaiPhong"), "0"));
-                    detail.checkInDuKien = toLocalDate(rs.getDate("ngayNhanPhong"));
-                    detail.checkOutDuKien = toLocalDate(rs.getDate("ngayTraPhong"));
+                    detail.checkInDuKien = rs.getTimestamp("checkInDuKien") == null ? null : rs.getTimestamp("checkInDuKien").toLocalDateTime().toLocalDate();
+                    detail.checkOutDuKien = rs.getTimestamp("checkOutDuKien") == null ? null : rs.getTimestamp("checkOutDuKien").toLocalDateTime().toLocalDate();
                     detail.soNguoi = rs.getInt("soNguoi");
                     detail.giaApDung = rs.getDouble("giaPhong");
                     detail.tienDatCocChiTiet = 0;
@@ -2159,6 +2166,7 @@ public class DatPhongGUI extends JFrame {
                 return;
             }
 
+            datPhongDAO.ensureDetailScheduleSchema(con);
             try {
                 con.setAutoCommit(false);
 
@@ -2246,7 +2254,7 @@ public class DatPhongGUI extends JFrame {
                     }
                 }
 
-                try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien) VALUES (?, ?, ?, ?, ?)")) {
+                try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
                     for (BookingDetailRecord detail : detailRows) {
                         refreshResolvedRate(con, detail);
                         ps.setInt(1, maDatPhong);
@@ -2254,6 +2262,8 @@ public class DatPhongGUI extends JFrame {
                         ps.setInt(3, detail.soNguoi);
                         ps.setDouble(4, detail.giaApDung);
                         ps.setDouble(5, detail.computeThanhTien());
+                        ps.setTimestamp(6, Timestamp.valueOf(LocalDateTime.of(detail.checkInDuKien, DETAIL_BOOKING_BOUNDARY_TIME)));
+                        ps.setTimestamp(7, Timestamp.valueOf(LocalDateTime.of(detail.checkOutDuKien, DETAIL_BOOKING_BOUNDARY_TIME)));
                         ps.addBatch();
                     }
                     ps.executeBatch();

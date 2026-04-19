@@ -345,11 +345,18 @@ public class DatPhongGUI extends JFrame {
     }
 
     private JPanel buildRightColumn() {
-        JPanel wrapper = new JPanel(new BorderLayout(0, 12));
+        ensureHiddenDetailFieldsInitialized();
+        JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
-        wrapper.add(buildDetailCard(), BorderLayout.CENTER);
-        wrapper.add(buildDetailLinesCard(), BorderLayout.SOUTH);
+        wrapper.add(buildDetailLinesCard(), BorderLayout.CENTER);
         return wrapper;
+    }
+
+    private void ensureHiddenDetailFieldsInitialized() {
+        if (lblMaDatPhong != null && lblKhachHang != null && txtGhiChu != null) {
+            return;
+        }
+        buildDetailCard();
     }
 
     private JPanel buildDetailCard() {
@@ -812,6 +819,7 @@ public class DatPhongGUI extends JFrame {
     }
 
     private void updateDetailPanel(BookingRecord booking) {
+        ensureHiddenDetailFieldsInitialized();
         lblMaDatPhong.setText("DP" + booking.maDatPhong);
         lblKhachHang.setText(booking.khachHang);
         lblSoDienThoai.setText(booking.soDienThoai);
@@ -829,6 +837,7 @@ public class DatPhongGUI extends JFrame {
     }
 
     private void clearDetailPanel() {
+        ensureHiddenDetailFieldsInitialized();
         lblMaDatPhong.setText("-");
         lblKhachHang.setText("-");
         lblSoDienThoai.setText("-");
@@ -885,7 +894,7 @@ public class DatPhongGUI extends JFrame {
             return;
         }
         if (isCancelledBooking(booking.trangThai)) {
-            showWarning("Booking Ä‘Ã£ há»§y. Vui lÃ²ng khÃ´i phá»¥c trÆ°á»›c khi xÃ¡c nháº­n.");
+            showWarning("Booking đã huỷ. Vui lòng khôi phục trước khi xác nhận.");
             return;
         }
         if (!canConfirmBooking(booking.trangThai)) {

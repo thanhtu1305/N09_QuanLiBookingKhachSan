@@ -347,13 +347,7 @@ public class ThanhToanGUI extends JFrame {
         JPanel wrapper = new JPanel(new BorderLayout(0, 12));
         wrapper.setOpaque(false);
         wrapper.add(buildDetailCard(), BorderLayout.CENTER);
-
-        JPanel bottom = new JPanel(new GridLayout(1, 2, 12, 0));
-        bottom.setOpaque(false);
-        bottom.add(buildSummaryCard());
-        bottom.add(buildMethodCard());
-
-        wrapper.add(bottom, BorderLayout.SOUTH);
+        wrapper.add(buildSummaryCard(), BorderLayout.SOUTH);
         return wrapper;
     }
 

@@ -725,6 +725,8 @@ public class CheckInOutGUI extends JFrame {
                     Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
                     record.gioVao = checkInDuKien == null ? "-" : formatDateTime(checkInDuKien);
                     record.gioRaDuKien = checkOutDuKien == null ? "-" : formatDateTime(checkOutDuKien);
+                    record.observeSummaryCheckIn(checkInDuKien);
+                    record.observeSummaryCheckOut(checkOutDuKien);
                     record.tang = safeValue(rs.getString("tang"), "-");
                     record.caLam = resolveCurrentShift();
                     record.bookingTrangThai = safeValue(rs.getString("trangThai"), "Ch\u1edd check-in");
@@ -741,6 +743,8 @@ public class CheckInOutGUI extends JFrame {
                 record.addBookingDetail(maChiTietDatPhong);
                 Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
                 Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                record.observeSummaryCheckIn(checkInDuKien);
+                record.observeSummaryCheckOut(checkOutDuKien);
                 if (checkInDuKien != null) {
                     LocalDate current = checkInDuKien.toLocalDateTime().toLocalDate();
                     if (record.expectedCheckInDate == null || current.isBefore(record.expectedCheckInDate)) {
@@ -808,6 +812,7 @@ public class CheckInOutGUI extends JFrame {
                     if (expectedCheckOut != null) {
                         record.expectedCheckOutDate = expectedCheckOut.toLocalDateTime().toLocalDate();
                         record.gioRaDuKien = formatDateTime(expectedCheckOut);
+                        record.observeSummaryCheckOut(expectedCheckOut);
                     }
                     grouped.put(Integer.valueOf(bookingId), record);
                 }
@@ -823,6 +828,7 @@ public class CheckInOutGUI extends JFrame {
                 record.dichVuPhatSinh = formatMoney(parseDoubleMoney(record.dichVuPhatSinh) + rs.getDouble("tienDichVu"));
 
                 Timestamp checkInTs = rs.getTimestamp("checkIn");
+                record.observeSummaryCheckIn(checkInTs);
                 if (checkInTs != null) {
                     LocalDateTime current = checkInTs.toLocalDateTime();
                     if (record.expectedCheckInDate == null || current.toLocalDate().isBefore(record.expectedCheckInDate)) {
@@ -831,6 +837,7 @@ public class CheckInOutGUI extends JFrame {
                     }
                 }
                 Timestamp expectedCheckOut = rs.getTimestamp("checkOutDuKien");
+                record.observeSummaryCheckOut(expectedCheckOut);
                 if (expectedCheckOut != null) {
                     LocalDate current = expectedCheckOut.toLocalDateTime().toLocalDate();
                     if (record.expectedCheckOutDate == null || current.isAfter(record.expectedCheckOutDate)) {
@@ -890,6 +897,8 @@ public class CheckInOutGUI extends JFrame {
                     record.expectedCheckOutDate = checkOutDuKien == null ? null : checkOutDuKien.toLocalDateTime().toLocalDate();
                     record.gioVao = checkInDuKien == null ? "-" : formatDateTime(checkInDuKien);
                     record.gioRaDuKien = checkOutDuKien == null ? "-" : formatDateTime(checkOutDuKien);
+                    record.observeSummaryCheckIn(checkInDuKien);
+                    record.observeSummaryCheckOut(checkOutDuKien);
                     grouped.put(Integer.valueOf(bookingId), record);
                 }
 
@@ -897,6 +906,8 @@ public class CheckInOutGUI extends JFrame {
                 record.addBookingDetail(rs.getInt("maChiTietDatPhong"));
                 Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
                 Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                record.observeSummaryCheckIn(checkInDuKien);
+                record.observeSummaryCheckOut(checkOutDuKien);
                 if (checkInDuKien != null) {
                     LocalDate current = checkInDuKien.toLocalDateTime().toLocalDate();
                     if (record.expectedCheckInDate == null || current.isBefore(record.expectedCheckInDate)) {
@@ -970,8 +981,8 @@ public class CheckInOutGUI extends JFrame {
                     record.khachHang,
                     record.soPhong,
                     record.soLuongPhong,
-                    record.gioVao,
-                    record.gioRaDuKien,
+                    record.getSummaryCheckInDisplay(),
+                    record.getSummaryCheckOutDisplay(),
                     record.trangThai
             });
         }
@@ -3751,6 +3762,8 @@ public class CheckInOutGUI extends JFrame {
         private String caLam;
         private LocalDate expectedCheckInDate;
         private LocalDate expectedCheckOutDate;
+        private final Set<String> summaryCheckInTimes = new LinkedHashSet<String>();
+        private final Set<String> summaryCheckOutTimes = new LinkedHashSet<String>();
         private int soNguoi;
         private int soLuongPhong;
         private boolean hasUnassignedRoom;
@@ -3821,6 +3834,51 @@ public class CheckInOutGUI extends JFrame {
 
         private List<ServiceStayOption> getActiveStayOptions() {
             return new ArrayList<ServiceStayOption>(activeStayOptions);
+        }
+
+        private void observeSummaryCheckIn(Timestamp value) {
+            observeSummaryTime(summaryCheckInTimes, value);
+        }
+
+        private void observeSummaryCheckOut(Timestamp value) {
+            observeSummaryTime(summaryCheckOutTimes, value);
+        }
+
+        private String getSummaryCheckInDisplay() {
+            return resolveSummaryDisplay(summaryCheckInTimes, gioVao);
+        }
+
+        private String getSummaryCheckOutDisplay() {
+            return resolveSummaryDisplay(summaryCheckOutTimes, gioRaDuKien);
+        }
+
+        private void observeSummaryTime(Set<String> summaryValues, Timestamp value) {
+            if (value == null) {
+                return;
+            }
+            summaryValues.add(formatSummaryDateTime(value));
+        }
+
+        private String resolveSummaryDisplay(Set<String> summaryValues, String fallback) {
+            if (summaryValues.isEmpty()) {
+                return normalizeSummaryDisplay(fallback);
+            }
+            if (summaryValues.size() > 1) {
+                return "Kh\u00e1c nhau";
+            }
+            return summaryValues.iterator().next();
+        }
+
+        private String normalizeSummaryDisplay(String value) {
+            return value == null || value.trim().isEmpty() ? "-" : value.trim();
+        }
+
+        private String formatSummaryDateTime(Timestamp value) {
+            if (value == null) {
+                return "-";
+            }
+            LocalDateTime dateTime = value.toLocalDateTime();
+            return DATE_FORMAT.format(dateTime.toLocalDate()) + " " + TIME_FORMAT.format(dateTime.toLocalTime());
         }
 
         private void updateRoomSummary() {

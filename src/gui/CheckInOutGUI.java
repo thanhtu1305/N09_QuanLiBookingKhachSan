@@ -1754,13 +1754,17 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private final class CheckInDialog extends BaseStayDialog {
-        private static final int COL_CCCD = 4;
-        private static final int COL_HO_TEN = 5;
-        private static final int COL_SDT = 6;
-        private static final int COL_NGAY_SINH = 7;
-        private static final int COL_EMAIL = 8;
-        private static final int COL_DIA_CHI = 9;
-        private static final int COL_GHI_CHU = 10;
+        private static final int COL_CHECK_IN_DATE = 4;
+        private static final int COL_CHECK_IN_TIME = 5;
+        private static final int COL_CHECK_OUT_DATE = 6;
+        private static final int COL_CHECK_OUT_TIME = 7;
+        private static final int COL_CCCD = 8;
+        private static final int COL_HO_TEN = 9;
+        private static final int COL_SDT = 10;
+        private static final int COL_NGAY_SINH = 11;
+        private static final int COL_EMAIL = 12;
+        private static final int COL_DIA_CHI = 13;
+        private static final int COL_GHI_CHU = 14;
         private final StayRecord record;
         private final List<CheckInOutDAO.CheckInBookingItem> bookingItems = new ArrayList<CheckInOutDAO.CheckInBookingItem>();
         private final JTable tblRooms;
@@ -1808,6 +1812,7 @@ public class CheckInOutGUI extends JFrame {
 
             roomTableModel = new DefaultTableModel(
                     new Object[]{"Ph\u00f2ng", "Lo\u1ea1i ph\u00f2ng", "Tr\u1ea1ng th\u00e1i", "S\u1ed1 ng\u01b0\u1eddi",
+                            "Ng\u00e0y v\u00e0o", "Gi\u1edd v\u00e0o", "Ng\u00e0y ra DK", "Gi\u1edd ra DK",
                             "CCCD/Passport", "H\u1ecd t\u00ean KH", "S\u0110T", "Ng\u00e0y sinh", "Email", "\u0110\u1ecba ch\u1ec9", "Ghi ch\u00fa"}, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
@@ -1823,6 +1828,7 @@ public class CheckInOutGUI extends JFrame {
             registerScheduleFieldListeners();
             registerRoomSelectionListener();
             refillRoomTable();
+            loadSelectedRoomScheduleIntoEditor();
 
             JPanel card = createDialogCardPanel();
             card.add(form, BorderLayout.NORTH);
@@ -1832,7 +1838,16 @@ public class CheckInOutGUI extends JFrame {
             JLabel lblRooms = new JLabel("Danh s\u00e1ch ph\u00f2ng trong \u0111\u01a1n");
             lblRooms.setFont(AppFonts.section(14));
             lblRooms.setForeground(TEXT_PRIMARY);
-            roomPanel.add(lblRooms, BorderLayout.NORTH);
+            JPanel roomHeader = new JPanel();
+            roomHeader.setOpaque(false);
+            roomHeader.setLayout(new BoxLayout(roomHeader, BoxLayout.Y_AXIS));
+            roomHeader.add(lblRooms);
+            roomHeader.add(Box.createVerticalStrut(4));
+            JLabel lblRoomHint = new JLabel("4 \u00f4 ng\u00e0y/gi\u1edd ph\u00eda tr\u00ean \u0111ang ch\u1ec9nh cho d\u00f2ng ph\u00f2ng \u0111ang ch\u1ecdn.");
+            lblRoomHint.setFont(AppFonts.body(12));
+            lblRoomHint.setForeground(TEXT_MUTED);
+            roomHeader.add(lblRoomHint);
+            roomPanel.add(roomHeader, BorderLayout.NORTH);
             roomPanel.add(new JScrollPane(tblRooms), BorderLayout.CENTER);
             card.add(roomPanel, BorderLayout.CENTER);
 
@@ -1922,6 +1937,11 @@ public class CheckInOutGUI extends JFrame {
             if (checkOut == null || !checkOut.isAfter(checkIn)) {
                 checkOut = resolveDefaultCheckOut(checkIn);
             }
+            if (selected != null) {
+                selected.setExpectedCheckIn(checkIn);
+                selected.setExpectedCheckOut(checkOut);
+                refreshScheduleCellsForItem(selected);
+            }
             updatingScheduleFields = true;
             try {
                 txtNgayVao.setDateValue(checkIn.toLocalDate());
@@ -1954,6 +1974,7 @@ public class CheckInOutGUI extends JFrame {
             if (ngayRa != null && gioRa != null) {
                 selected.setExpectedCheckOut(LocalDateTime.of(ngayRa, gioRa));
             }
+            refreshScheduleCellsForItem(selected);
         }
 
         private void refillRoomTable() {
@@ -1964,6 +1985,10 @@ public class CheckInOutGUI extends JFrame {
                         safeValue(item.getTenLoaiPhong(), "-"),
                         safeValue(item.getTrangThai(), "-"),
                         item.getSoNguoi(),
+                        formatScheduleDate(item.getExpectedCheckIn()),
+                        formatScheduleTime(item.getExpectedCheckIn()),
+                        formatScheduleDate(item.getExpectedCheckOut()),
+                        formatScheduleTime(item.getExpectedCheckOut()),
                         safeValue(item.getCccdPassport(), ""),
                         safeValue(item.getHoTenKhach(), ""),
                         safeValue(item.getSoDienThoai(), ""),
@@ -1977,16 +2002,38 @@ public class CheckInOutGUI extends JFrame {
         }
 
         private void configureRoomTableColumns() {
-            tblRooms.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+            tblRooms.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
 
-            int[] preferredWidths = {70, 110, 100, 60, 120, 160, 105, 95, 170, 190, 180};
-            int[] minWidths = {55, 90, 90, 50, 105, 130, 90, 85, 130, 140, 140};
-            int[] maxWidths = {85, 160, 140, 70, 150, 260, 130, 110, 260, 320, 320};
+            int[] preferredWidths = {70, 110, 100, 60, 95, 70, 95, 70, 120, 160, 105, 95, 170, 190, 180};
+            int[] minWidths = {55, 90, 90, 50, 90, 65, 90, 65, 105, 130, 90, 85, 130, 140, 140};
+            int[] maxWidths = {85, 160, 140, 70, 110, 80, 110, 80, 150, 260, 130, 110, 260, 320, 320};
             for (int i = 0; i < preferredWidths.length && i < tblRooms.getColumnModel().getColumnCount(); i++) {
                 tblRooms.getColumnModel().getColumn(i).setPreferredWidth(preferredWidths[i]);
                 tblRooms.getColumnModel().getColumn(i).setMinWidth(minWidths[i]);
                 tblRooms.getColumnModel().getColumn(i).setMaxWidth(maxWidths[i]);
             }
+        }
+
+        private String formatScheduleDate(LocalDateTime value) {
+            return value == null ? "-" : value.toLocalDate().format(DATE_FORMAT);
+        }
+
+        private String formatScheduleTime(LocalDateTime value) {
+            return value == null ? "-" : value.toLocalTime().format(TIME_FORMAT);
+        }
+
+        private void refreshScheduleCellsForItem(CheckInOutDAO.CheckInBookingItem item) {
+            if (item == null || roomTableModel == null) {
+                return;
+            }
+            int row = bookingItems.indexOf(item);
+            if (row < 0 || row >= roomTableModel.getRowCount()) {
+                return;
+            }
+            roomTableModel.setValueAt(formatScheduleDate(item.getExpectedCheckIn()), row, COL_CHECK_IN_DATE);
+            roomTableModel.setValueAt(formatScheduleTime(item.getExpectedCheckIn()), row, COL_CHECK_IN_TIME);
+            roomTableModel.setValueAt(formatScheduleDate(item.getExpectedCheckOut()), row, COL_CHECK_OUT_DATE);
+            roomTableModel.setValueAt(formatScheduleTime(item.getExpectedCheckOut()), row, COL_CHECK_OUT_TIME);
         }
 
         private void registerCustomerAutoFillListener() {
@@ -2137,6 +2184,7 @@ public class CheckInOutGUI extends JFrame {
 
             selected.setExpectedCheckIn(checkIn);
             selected.setExpectedCheckOut(checkOut);
+            refreshScheduleCellsForItem(selected);
             return true;
         }
 

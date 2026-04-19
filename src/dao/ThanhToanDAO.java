@@ -1154,6 +1154,40 @@ public class ThanhToanDAO {
         return BigDecimal.ZERO;
     }
 
+    private List<LocalDate> resolveOccupiedDates(LocalDateTime checkIn, LocalDateTime checkOut) {
+        List<LocalDate> occupiedDates = new ArrayList<LocalDate>();
+        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+            return occupiedDates;
+        }
+
+        LocalDateTime cursor = checkIn;
+        while (cursor.isBefore(checkOut)) {
+            LocalDate currentDate = cursor.toLocalDate();
+            if (!occupiedDates.contains(currentDate)) {
+                occupiedDates.add(currentDate);
+            }
+
+            LocalDateTime nextBoundary = currentDate.plusDays(1).atStartOfDay();
+            if (!nextBoundary.isAfter(cursor)) {
+                nextBoundary = cursor.plusDays(1);
+            }
+            cursor = nextBoundary;
+        }
+        return occupiedDates;
+    }
+
+    private BigDecimal resolveSurchargeAmount(ChiTietBangGia detail, LocalDateTime checkIn, LocalDateTime checkOut) {
+        if (detail == null) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (LocalDate occupiedDate : resolveOccupiedDates(checkIn, checkOut)) {
+            total = total.add(resolveSurcharge(detail, resolveDayTypeKey(occupiedDate)));
+        }
+        return total;
+    }
+
     private long resolvePricingUnits(String stayType, long stayHours) {
         if (STAY_TYPE_HOURLY.equals(stayType)) {
             return Math.max(1L, stayHours);
@@ -1162,6 +1196,39 @@ public class ThanhToanDAO {
             return 1L;
         }
         return Math.max(1L, (long) Math.ceil(stayHours / 24.0d));
+    }
+
+    private String buildChargedDayTypeSummary(LocalDateTime checkIn, LocalDateTime checkOut) {
+        List<LocalDate> occupiedDates = resolveOccupiedDates(checkIn, checkOut);
+        if (occupiedDates.isEmpty()) {
+            return "Ngay thuong";
+        }
+
+        boolean hasHoliday = false;
+        boolean hasWeekend = false;
+        boolean hasNormal = false;
+        for (LocalDate occupiedDate : occupiedDates) {
+            if (ngayLeDAO.isHoliday(occupiedDate)) {
+                hasHoliday = true;
+            } else if (isWeekend(occupiedDate)) {
+                hasWeekend = true;
+            } else {
+                hasNormal = true;
+            }
+        }
+        if (hasHoliday && (hasWeekend || hasNormal)) {
+            return "Co ngay le trong khoang luu tru";
+        }
+        if (hasHoliday) {
+            return "Ngay le";
+        }
+        if (hasWeekend && hasNormal) {
+            return "Co cuoi tuan trong khoang luu tru";
+        }
+        if (hasWeekend) {
+            return "Cuoi tuan";
+        }
+        return "Ngay thuong";
     }
 
     private double firstPositive(double... values) {
@@ -1296,7 +1363,6 @@ public class ThanhToanDAO {
         }
         LocalDate ngayApDung = start == null ? null : start.toLocalDate();
         long soGio = calculateStayHours(start, billedEnd);
-        String dayType = resolveDayTypeKey(ngayApDung);
         String stayType = resolveStayTypeKey(start, billedEnd, soGio);
         ChiTietBangGia detail = bangGiaDAO.getChiTietBangGiaDangApDung(maBangGia, ngayApDung);
         if (detail == null) {
@@ -1307,7 +1373,7 @@ public class ThanhToanDAO {
         }
 
         RoomChargeBreakdown breakdown = new RoomChargeBreakdown();
-        breakdown.setLoaiNgay(buildDayTypeSummary(start, billedEnd));
+        breakdown.setLoaiNgay(buildChargedDayTypeSummary(start, billedEnd));
         breakdown.setSoGioLuuTru(soGio);
         breakdown.setLoaiGiaApDung(toStayTypeDisplay(stayType));
         breakdown.setDurationLabel(buildDurationLabel(stayType, soGio));
@@ -1315,10 +1381,11 @@ public class ThanhToanDAO {
         BigDecimal tienPhong = BigDecimal.ZERO;
         if (detail != null) {
             BigDecimal baseRate = resolveBaseRate(detail, stayType);
-            BigDecimal surcharge = resolveSurcharge(detail, dayType);
+            BigDecimal surcharge = resolveSurchargeAmount(detail, start, billedEnd);
             long pricingUnits = resolvePricingUnits(stayType, soGio);
-            if (baseRate.signum() > 0 || surcharge.signum() > 0) {
-                tienPhong = baseRate.add(surcharge).multiply(BigDecimal.valueOf(pricingUnits));
+            BigDecimal baseAmount = baseRate.multiply(BigDecimal.valueOf(pricingUnits));
+            if (baseAmount.signum() > 0 || surcharge.signum() > 0) {
+                tienPhong = baseAmount.add(surcharge);
             }
         }
 

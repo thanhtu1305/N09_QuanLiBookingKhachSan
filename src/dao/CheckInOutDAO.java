@@ -891,17 +891,28 @@ public class CheckInOutDAO {
             return;
         }
         try (PreparedStatement stmt = con.prepareStatement(
-                "UPDATE dp "
-                        + "SET dp.ngayNhanPhong = agg.minCheckIn, dp.ngayTraPhong = agg.maxCheckOut "
-                        + "FROM DatPhong dp "
-                        + "CROSS APPLY ("
-                        + "    SELECT CAST(MIN(" + buildDetailCheckInExpr("ctdp", "dp") + ") AS DATE) AS minCheckIn, "
-                        + "           CAST(MAX(" + buildDetailCheckOutExpr("ctdp", "dp") + ") AS DATE) AS maxCheckOut "
+                "WITH detail_bounds AS ("
+                        + "    SELECT ctdp.maDatPhong, "
+                        + "           " + buildDetailCheckInExpr("ctdp", "dp") + " AS resolvedCheckIn, "
+                        + "           " + buildDetailCheckOutExpr("ctdp", "dp") + " AS resolvedCheckOut "
                         + "    FROM ChiTietDatPhong ctdp "
-                        + "    WHERE ctdp.maDatPhong = dp.maDatPhong"
-                        + ") agg "
+                        + "    JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
+                        + "    WHERE ctdp.maDatPhong = ?"
+                        + "), aggregated AS ("
+                        + "    SELECT maDatPhong, "
+                        + "           CAST(MIN(resolvedCheckIn) AS DATE) AS minCheckIn, "
+                        + "           CAST(MAX(resolvedCheckOut) AS DATE) AS maxCheckOut "
+                        + "    FROM detail_bounds "
+                        + "    GROUP BY maDatPhong"
+                        + ") "
+                        + "UPDATE dp "
+                        + "SET dp.ngayNhanPhong = COALESCE(agg.minCheckIn, dp.ngayNhanPhong), "
+                        + "    dp.ngayTraPhong = COALESCE(agg.maxCheckOut, dp.ngayTraPhong) "
+                        + "FROM DatPhong dp "
+                        + "LEFT JOIN aggregated agg ON agg.maDatPhong = dp.maDatPhong "
                         + "WHERE dp.maDatPhong = ?")) {
             stmt.setInt(1, maDatPhong);
+            stmt.setInt(2, maDatPhong);
             stmt.executeUpdate();
         }
     }

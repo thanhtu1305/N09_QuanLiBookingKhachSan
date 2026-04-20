@@ -473,6 +473,15 @@ public class DatPhongDAO {
     }
 
     public DatPhongConflictInfo findRoomConflict(int maPhong, LocalDate ngayNhanPhong, LocalDate ngayTraPhong, Integer excludeMaDatPhong) {
+        return findRoomConflict(
+                maPhong,
+                toDetailScheduleDateTime(ngayNhanPhong),
+                toDetailScheduleDateTime(ngayTraPhong),
+                excludeMaDatPhong
+        );
+    }
+
+    public DatPhongConflictInfo findRoomConflict(int maPhong, LocalDateTime ngayNhanPhong, LocalDateTime ngayTraPhong, Integer excludeMaDatPhong) {
         clearLastError();
         Connection con = getReadyConnection();
         if (con == null) {
@@ -485,13 +494,15 @@ public class DatPhongDAO {
 
         String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
         String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
+        String conflictCheckInExpr = "COALESCE(lt.checkIn, " + detailCheckInExpr + ")";
+        String conflictCheckOutExpr = "COALESCE(lt.checkOut, " + detailCheckOutExpr + ")";
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT TOP 1 dp.maDatPhong, ctdp.maChiTietDatPhong, ")
                 .append("ISNULL(lt.maLuuTru, 0) AS maLuuTru, ")
                 .append("ISNULL(kh.hoTen, N'Khách chưa xác định') AS tenKhachHang, ")
                 .append("ISNULL(p.soPhong, CAST(ctdp.maPhong AS NVARCHAR(20))) AS soPhong, ")
-                .append("CAST(COALESCE(lt.checkIn, ").append(detailCheckInExpr).append(") AS DATE) AS ngayNhanPhong, ")
-                .append("CAST(COALESCE(lt.checkOut, ").append(detailCheckOutExpr).append(") AS DATE) AS ngayTraPhong, ")
+                .append(conflictCheckInExpr).append(" AS ngayNhanPhong, ")
+                .append(conflictCheckOutExpr).append(" AS ngayTraPhong, ")
                 .append("CASE ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang ở' ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang ở' ")
@@ -503,26 +514,28 @@ public class DatPhongDAO {
                 .append("LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong ")
                 .append("LEFT JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong ")
                 .append("WHERE ctdp.maPhong = ? ")
-                .append("AND CAST(COALESCE(lt.checkIn, ").append(detailCheckInExpr).append(") AS DATE) < ? ")
-                .append("AND CAST(COALESCE(lt.checkOut, ").append(detailCheckOutExpr).append(") AS DATE) > ? ");
+                .append("AND ").append(conflictCheckInExpr).append(" < ? ")
+                .append("AND ").append(conflictCheckOutExpr).append(" > ? ");
         if (excludeMaDatPhong != null && excludeMaDatPhong.intValue() > 0) {
             sql.append("AND dp.maDatPhong <> ? ");
         }
         sql.append("AND (")
                 .append(" dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in') ")
-                .append(" OR (lt.maLuuTru IS NOT NULL AND (lt.checkOut IS NULL OR CAST(lt.checkOut AS DATE) > ?))")
+                .append(" OR (lt.maLuuTru IS NOT NULL AND (lt.checkOut IS NULL OR lt.checkOut > ?))")
                 .append(") ")
-                .append("ORDER BY CASE WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN 0 ELSE 1 END, dp.ngayNhanPhong ASC, dp.maDatPhong DESC");
+                .append("ORDER BY CASE WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN 0 ELSE 1 END, ")
+                .append(conflictCheckInExpr)
+                .append(" ASC, dp.maDatPhong DESC");
 
         try (PreparedStatement stmt = con.prepareStatement(sql.toString())) {
             int index = 1;
             stmt.setInt(index++, maPhong);
-            stmt.setDate(index++, Date.valueOf(ngayTraPhong));
-            stmt.setDate(index++, Date.valueOf(ngayNhanPhong));
+            stmt.setTimestamp(index++, Timestamp.valueOf(ngayTraPhong));
+            stmt.setTimestamp(index++, Timestamp.valueOf(ngayNhanPhong));
             if (excludeMaDatPhong != null && excludeMaDatPhong.intValue() > 0) {
                 stmt.setInt(index++, excludeMaDatPhong.intValue());
             }
-            stmt.setDate(index, Date.valueOf(ngayNhanPhong));
+            stmt.setTimestamp(index, Timestamp.valueOf(ngayNhanPhong));
 
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
@@ -532,8 +545,8 @@ public class DatPhongDAO {
                     info.setMaLuuTru(rs.getInt("maLuuTru"));
                     info.setTenKhachHang(safeTrim(rs.getString("tenKhachHang")));
                     info.setSoPhong(safeTrim(rs.getString("soPhong")));
-                    info.setNgayNhanPhong(toLocalDate(rs.getDate("ngayNhanPhong")));
-                    info.setNgayTraPhong(toLocalDate(rs.getDate("ngayTraPhong")));
+                    info.setNgayNhanPhongDateTime(toLocalDateTime(rs.getTimestamp("ngayNhanPhong")));
+                    info.setNgayTraPhongDateTime(toLocalDateTime(rs.getTimestamp("ngayTraPhong")));
                     info.setTrangThai(safeTrim(rs.getString("trangThai")));
                     return info;
                 }
@@ -546,6 +559,15 @@ public class DatPhongDAO {
     }
 
     public List<AvailableRoomInfo> getAvailableRooms(LocalDate ngayNhanPhong, LocalDate ngayTraPhong, Integer excludeMaDatPhong, Integer includeMaPhong) {
+        return getAvailableRooms(
+                toDetailScheduleDateTime(ngayNhanPhong),
+                toDetailScheduleDateTime(ngayTraPhong),
+                excludeMaDatPhong,
+                includeMaPhong
+        );
+    }
+
+    public List<AvailableRoomInfo> getAvailableRooms(LocalDateTime ngayNhanPhong, LocalDateTime ngayTraPhong, Integer excludeMaDatPhong, Integer includeMaPhong) {
         clearLastError();
         List<AvailableRoomInfo> result = new ArrayList<AvailableRoomInfo>();
         Connection con = getReadyConnection();
@@ -581,8 +603,8 @@ public class DatPhongDAO {
                 "      AND (? IS NULL OR dp.maDatPhong <> ?) " +
                 "      AND latestLt.maLuuTru IS NULL " +
                 "      AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') " +
-                "      AND CAST(" + detailCheckInExpr + " AS DATE) < ? " +
-                "      AND CAST(" + detailCheckOutExpr + " AS DATE) > ? " +
+                "      AND " + detailCheckInExpr + " < ? " +
+                "      AND " + detailCheckOutExpr + " > ? " +
                 ") " +
                 "ORDER BY CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, " +
                 "TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
@@ -607,8 +629,8 @@ public class DatPhongDAO {
                 stmt.setInt(index++, excludeMaDatPhong.intValue());
                 stmt.setInt(index++, excludeMaDatPhong.intValue());
             }
-            stmt.setDate(index++, Date.valueOf(ngayTraPhong));
-            stmt.setDate(index, Date.valueOf(ngayNhanPhong));
+            stmt.setTimestamp(index++, Timestamp.valueOf(ngayTraPhong));
+            stmt.setTimestamp(index, Timestamp.valueOf(ngayNhanPhong));
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
@@ -1573,8 +1595,16 @@ public class DatPhongDAO {
         return value == null ? null : Date.valueOf(value);
     }
 
+    private LocalDateTime toDetailScheduleDateTime(LocalDate value) {
+        return value == null ? null : LocalDateTime.of(value, DETAIL_BOOKING_BOUNDARY_TIME);
+    }
+
     private Timestamp toDetailScheduleTimestamp(LocalDate value) {
-        return value == null ? null : Timestamp.valueOf(LocalDateTime.of(value, DETAIL_BOOKING_BOUNDARY_TIME));
+        return value == null ? null : Timestamp.valueOf(toDetailScheduleDateTime(value));
+    }
+
+    private LocalDateTime toLocalDateTime(Timestamp value) {
+        return value == null ? null : value.toLocalDateTime();
     }
 
     private String buildDetailCheckInExpr(String detailAlias, String headerAlias) {

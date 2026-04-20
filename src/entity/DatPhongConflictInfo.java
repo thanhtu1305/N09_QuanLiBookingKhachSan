@@ -1,6 +1,7 @@
 package entity;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class DatPhongConflictInfo {
     private int maDatPhong;
@@ -8,8 +9,8 @@ public class DatPhongConflictInfo {
     private int maLuuTru;
     private String tenKhachHang;
     private String soPhong;
-    private LocalDate ngayNhanPhong;
-    private LocalDate ngayTraPhong;
+    private LocalDateTime ngayNhanPhong;
+    private LocalDateTime ngayTraPhong;
     private String trangThai;
 
     public int getMaDatPhong() {
@@ -53,18 +54,34 @@ public class DatPhongConflictInfo {
     }
 
     public LocalDate getNgayNhanPhong() {
-        return ngayNhanPhong;
+        return ngayNhanPhong == null ? null : ngayNhanPhong.toLocalDate();
     }
 
     public void setNgayNhanPhong(LocalDate ngayNhanPhong) {
+        this.ngayNhanPhong = ngayNhanPhong == null ? null : ngayNhanPhong.atStartOfDay();
+    }
+
+    public LocalDateTime getNgayNhanPhongDateTime() {
+        return ngayNhanPhong;
+    }
+
+    public void setNgayNhanPhongDateTime(LocalDateTime ngayNhanPhong) {
         this.ngayNhanPhong = ngayNhanPhong;
     }
 
     public LocalDate getNgayTraPhong() {
-        return ngayTraPhong;
+        return ngayTraPhong == null ? null : ngayTraPhong.toLocalDate();
     }
 
     public void setNgayTraPhong(LocalDate ngayTraPhong) {
+        this.ngayTraPhong = ngayTraPhong == null ? null : ngayTraPhong.atStartOfDay();
+    }
+
+    public LocalDateTime getNgayTraPhongDateTime() {
+        return ngayTraPhong;
+    }
+
+    public void setNgayTraPhongDateTime(LocalDateTime ngayTraPhong) {
         this.ngayTraPhong = ngayTraPhong;
     }
 

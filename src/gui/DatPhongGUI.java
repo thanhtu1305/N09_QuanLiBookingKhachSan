@@ -5,6 +5,7 @@ import db.ConnectDB;
 import entity.DatPhongConflictInfo;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
+import gui.common.AppTimePickerField;
 import gui.common.ScreenUIHelper;
 import gui.common.SidebarFactory;
 import utils.NavigationUtil;
@@ -55,6 +56,7 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
@@ -79,6 +81,8 @@ public class DatPhongGUI extends JFrame {
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/uuuu", Locale.forLanguageTag("vi-VN")).withResolverStyle(ResolverStyle.STRICT);
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm", Locale.forLanguageTag("vi-VN"));
+    private static final DateTimeFormatter DATETIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/uuuu HH:mm", Locale.forLanguageTag("vi-VN")).withResolverStyle(ResolverStyle.STRICT);
     private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
 
     private static final List<DatPhongGUI> OPEN_INSTANCES = new ArrayList<DatPhongGUI>();
@@ -629,8 +633,10 @@ public class DatPhongGUI extends JFrame {
                     detail.maPhong = safeValue(rs.getString("soPhong"), "Chưa gán");
                     detail.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), headerLoaiPhong);
                     detail.maLoaiPhong = rs.getObject("maLoaiPhong") == null ? 0 : Integer.parseInt(safeValue(rs.getString("maLoaiPhong"), "0"));
-                    detail.checkInDuKien = rs.getTimestamp("checkInDuKien") == null ? null : rs.getTimestamp("checkInDuKien").toLocalDateTime().toLocalDate();
-                    detail.checkOutDuKien = rs.getTimestamp("checkOutDuKien") == null ? null : rs.getTimestamp("checkOutDuKien").toLocalDateTime().toLocalDate();
+                    Timestamp checkInTs = rs.getTimestamp("checkInDuKien");
+                    Timestamp checkOutTs = rs.getTimestamp("checkOutDuKien");
+                    detail.checkInDuKien = normalizeLegacyDetailDateTime(checkInTs == null ? null : checkInTs.toLocalDateTime());
+                    detail.checkOutDuKien = normalizeLegacyDetailDateTime(checkOutTs == null ? null : checkOutTs.toLocalDateTime());
                     detail.soNguoi = rs.getInt("soNguoi");
                     detail.giaApDung = rs.getDouble("giaPhong");
                     detail.tienDatCocChiTiet = 0;
@@ -659,8 +665,13 @@ public class DatPhongGUI extends JFrame {
         booking.trangThai = safeValue(datPhong.getTrangThaiDatPhong(), DatPhongDAO.STATUS_PENDING_CHECKIN);
         booking.ghiChu = safeValue(datPhong.getGhiChu(), "");
         booking.tongTienDatCoc = datPhong.getTongTienDatCoc() > 0d ? datPhong.getTongTienDatCoc() : datPhong.getTienCoc();
-        for (entity.ChiTietDatPhong detail : datPhong.getChiTietDatPhongs()) {
-            booking.details.add(toBookingDetailRecord(detail));
+        List<BookingDetailRecord> loadedDetails = loadDetailsForBooking(booking.maDatPhong, "-");
+        if (loadedDetails.isEmpty()) {
+            for (entity.ChiTietDatPhong detail : datPhong.getChiTietDatPhongs()) {
+                booking.details.add(toBookingDetailRecord(detail));
+            }
+        } else {
+            booking.details.addAll(loadedDetails);
         }
         if (!booking.details.isEmpty()) {
             distributeHeaderDeposit(booking.details, booking.tongTienDatCoc);
@@ -676,8 +687,8 @@ public class DatPhongGUI extends JFrame {
         record.maLoaiPhong = parseIntSafe(detail.getMaLoaiPhong());
         record.maPhongId = parseIntSafe(detail.getMaPhong());
         record.maPhong = safeValue(detail.getSoPhong(), safeValue(detail.getPhong(), "Chưa gán"));
-        record.checkInDuKien = detail.getCheckInDuKien();
-        record.checkOutDuKien = detail.getCheckOutDuKien();
+        record.checkInDuKien = toDefaultDetailDateTime(detail.getCheckInDuKien());
+        record.checkOutDuKien = toDefaultDetailDateTime(detail.getCheckOutDuKien());
         record.soNguoi = detail.getSoNguoi();
         record.giaApDung = detail.getGiaApDung();
         record.tienDatCocChiTiet = detail.getTienDatCocChiTiet();
@@ -998,8 +1009,8 @@ public class DatPhongGUI extends JFrame {
             return "Má»™t hoáº·c nhiá»u phÃ²ng trong booking Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng ngÃ y cÅ©. KhÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.";
         }
         return "PhÃ²ng " + safeValue(conflictInfo.getSoPhong(), "-")
-                + " Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng " + formatDate(conflictInfo.getNgayNhanPhong())
-                + " - " + formatDate(conflictInfo.getNgayTraPhong())
+                + " Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng " + formatDateTime(conflictInfo.getNgayNhanPhongDateTime())
+                + " - " + formatDateTime(conflictInfo.getNgayTraPhongDateTime())
                 + " do trÃ¹ng vá»›i booking DP" + conflictInfo.getMaDatPhong()
                 + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
     }
@@ -1055,6 +1066,61 @@ public class DatPhongGUI extends JFrame {
         }
         field.setText(normalized);
         return LocalDate.parse(normalized, DATE_FORMAT);
+    }
+
+    private LocalTime normalizeTimeFieldValue(AppTimePickerField field, String errorMessage) {
+        if (field == null) {
+            return null;
+        }
+        String rawValue = field.getText();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            showError(errorMessage);
+            return null;
+        }
+        LocalTime parsed = field.getTimeValue();
+        if (parsed == null) {
+            showError(errorMessage);
+            return null;
+        }
+        LocalTime normalized = parsed.withSecond(0).withNano(0);
+        field.setTimeValue(normalized);
+        return normalized;
+    }
+
+    private void installTimeFieldChangeListener(AppTimePickerField field, Runnable action) {
+        if (field == null || action == null) {
+            return;
+        }
+        field.addTextChangeListener(action);
+    }
+
+    private LocalDateTime combineDateTime(LocalDate date, LocalTime time) {
+        if (date == null || time == null) {
+            return null;
+        }
+        return LocalDateTime.of(date, time.withSecond(0).withNano(0));
+    }
+
+    private LocalDateTime toDefaultDetailDateTime(LocalDate value) {
+        return value == null ? null : LocalDateTime.of(value, DETAIL_BOOKING_BOUNDARY_TIME);
+    }
+
+    private LocalDateTime normalizeLegacyDetailDateTime(LocalDateTime value) {
+        if (value == null) {
+            return null;
+        }
+        LocalDateTime normalized = value.withSecond(0).withNano(0);
+        return normalized.toLocalTime().equals(LocalTime.MIDNIGHT)
+                ? LocalDateTime.of(normalized.toLocalDate(), DETAIL_BOOKING_BOUNDARY_TIME)
+                : normalized;
+    }
+
+    private Timestamp toSqlTimestamp(LocalDateTime value) {
+        return value == null ? null : Timestamp.valueOf(value.withSecond(0).withNano(0));
+    }
+
+    private String formatDateTime(LocalDateTime value) {
+        return value == null ? "-" : value.format(DATETIME_FORMAT);
     }
 
     private LocalDate toLocalDate(java.util.Date date) {
@@ -1411,8 +1477,8 @@ public class DatPhongGUI extends JFrame {
         }
         DatPhongDAO.RoomRateResolution resolution = datPhongDAO.resolveRoomRateWithSurcharge(
                 String.valueOf(maBangGia.intValue()),
-                detail.checkInDuKien,
-                detail.checkOutDuKien
+                detail.checkInDuKien == null ? null : detail.checkInDuKien.toLocalDate(),
+                detail.checkOutDuKien == null ? null : detail.checkOutDuKien.toLocalDate()
         );
         detail.loaiNgayApDung = normalizeAppliedRateText(resolution.getLoaiNgay());
         detail.loaiGiaApDung = normalizeAppliedRateText(resolution.getLoaiGiaApDung());
@@ -1428,7 +1494,7 @@ public class DatPhongGUI extends JFrame {
     }
 
 
-    private List<RoomOption> loadRoomOptions(LocalDate checkIn, LocalDate checkOut, Integer includeRoomId, Integer excludeBookingId,
+    private List<RoomOption> loadRoomOptions(LocalDateTime checkIn, LocalDateTime checkOut, Integer includeRoomId, Integer excludeBookingId,
                                              List<BookingDetailRecord> currentRows, BookingDetailRecord currentDetail) {
         List<RoomOption> options = new ArrayList<RoomOption>();
         if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
@@ -1929,7 +1995,7 @@ public class DatPhongGUI extends JFrame {
             if (tblBookingDetailDialog == null || tblBookingDetailDialog.getColumnModel().getColumnCount() < 11) {
                 return;
             }
-            int[] widths = {55, 85, 140, 105, 105, 90, 105, 105, 145, 120, 120};
+            int[] widths = {55, 85, 140, 145, 145, 90, 105, 105, 145, 120, 120};
             for (int i = 0; i < widths.length; i++) {
                 tblBookingDetailDialog.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
             }
@@ -2079,8 +2145,8 @@ public class DatPhongGUI extends JFrame {
             return "Phong " + safeValue(conflictInfo.getSoPhong(), "-")
                     + " đang trùng với phiếu đặt phòng DP" + conflictInfo.getMaDatPhong()
                     + " của khách " + safeValue(conflictInfo.getTenKhachHang(), "Khách chưa xác định")
-                    + ", tu " + formatDate(conflictInfo.getNgayNhanPhong())
-                    + " den " + formatDate(conflictInfo.getNgayTraPhong())
+                    + ", tu " + formatDateTime(conflictInfo.getNgayNhanPhongDateTime())
+                    + " den " + formatDateTime(conflictInfo.getNgayTraPhongDateTime())
                     + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
         }
 
@@ -2271,8 +2337,8 @@ public class DatPhongGUI extends JFrame {
                         ps.setInt(3, detail.soNguoi);
                         ps.setDouble(4, detail.giaApDung);
                         ps.setDouble(5, detail.computeThanhTien());
-                        ps.setTimestamp(6, Timestamp.valueOf(LocalDateTime.of(detail.checkInDuKien, DETAIL_BOOKING_BOUNDARY_TIME)));
-                        ps.setTimestamp(7, Timestamp.valueOf(LocalDateTime.of(detail.checkOutDuKien, DETAIL_BOOKING_BOUNDARY_TIME)));
+                        ps.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
+                        ps.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
                         ps.addBatch();
                     }
                     ps.executeBatch();
@@ -2301,20 +2367,28 @@ public class DatPhongGUI extends JFrame {
         }
 
         private LocalDate findMinCheckIn(List<BookingDetailRecord> details) {
-            LocalDate min = details.get(0).checkInDuKien;
+            LocalDate min = details.get(0).checkInDuKien == null ? null : details.get(0).checkInDuKien.toLocalDate();
             for (BookingDetailRecord detail : details) {
-                if (detail.checkInDuKien.isBefore(min)) {
-                    min = detail.checkInDuKien;
+                if (detail == null || detail.checkInDuKien == null) {
+                    continue;
+                }
+                LocalDate current = detail.checkInDuKien.toLocalDate();
+                if (min == null || current.isBefore(min)) {
+                    min = current;
                 }
             }
             return min;
         }
 
         private LocalDate findMaxCheckOut(List<BookingDetailRecord> details) {
-            LocalDate max = details.get(0).checkOutDuKien;
+            LocalDate max = details.get(0).checkOutDuKien == null ? null : details.get(0).checkOutDuKien.toLocalDate();
             for (BookingDetailRecord detail : details) {
-                if (detail.checkOutDuKien.isAfter(max)) {
-                    max = detail.checkOutDuKien;
+                if (detail == null || detail.checkOutDuKien == null) {
+                    continue;
+                }
+                LocalDate current = detail.checkOutDuKien.toLocalDate();
+                if (max == null || current.isAfter(max)) {
+                    max = current;
                 }
             }
             return max;
@@ -2341,7 +2415,9 @@ public class DatPhongGUI extends JFrame {
             private final JComboBox<RoomOption> cboPhongDialog;
             private final JTextField txtLoaiPhongDialog;
             private final AppDatePickerField txtCheckInDialog;
+            private final AppTimePickerField txtCheckInTimeDialog;
             private final AppDatePickerField txtCheckOutDialog;
+            private final AppTimePickerField txtCheckOutTimeDialog;
             private final JTextField txtSoNguoiDialog;
             private final JTextField txtDatCocDialog;
             private final JTextArea txtGhiChuChiTietDialog;
@@ -2358,14 +2434,31 @@ public class DatPhongGUI extends JFrame {
             private boolean hasIssue;
             private final Border defaultRoomBorder;
             private final Border defaultCheckInBorder;
+            private final Border defaultCheckInTimeBorder;
             private final Border defaultCheckOutBorder;
+            private final Border defaultCheckOutTimeBorder;
             private final Color defaultRoomBackground;
             private final Color defaultCheckInBackground;
+            private final Color defaultCheckInTimeBackground;
             private final Color defaultCheckOutBackground;
+            private final Color defaultCheckOutTimeBackground;
 
             private BookingDetailEditorDialog(Dialog owner, BookingDetailRecord detail) {
-                super(owner, detail == null ? "Thêm dòng chi tiết" : "Cập nhật dòng chi tiết", 700, 520);
+                super(owner, detail == null ? "Thêm dòng chi tiết" : "Cập nhật dòng chi tiết", 740, 600);
                 this.editingDetail = detail;
+
+                LocalDateTime initialCheckIn = detail == null
+                        ? toDefaultDetailDateTime(LocalDate.now())
+                        : normalizeLegacyDetailDateTime(detail.checkInDuKien);
+                if (initialCheckIn == null) {
+                    initialCheckIn = toDefaultDetailDateTime(LocalDate.now());
+                }
+                LocalDateTime initialCheckOut = detail == null
+                        ? toDefaultDetailDateTime(LocalDate.now().plusDays(1))
+                        : normalizeLegacyDetailDateTime(detail.checkOutDuKien);
+                if (initialCheckOut == null || !initialCheckOut.isAfter(initialCheckIn)) {
+                    initialCheckOut = initialCheckIn.plusDays(1);
+                }
 
                 JPanel content = new JPanel(new BorderLayout(0, 12));
                 content.setOpaque(false);
@@ -2383,10 +2476,14 @@ public class DatPhongGUI extends JFrame {
                 cboPhongDialog.setFont(BODY_FONT);
                 txtLoaiPhongDialog = createInputField("");
                 txtLoaiPhongDialog.setEditable(false);
-                txtCheckInDialog = new AppDatePickerField(detail == null ? LocalDate.now().format(DATE_FORMAT) : detail.formatCheckIn(), true);
-                txtCheckOutDialog = new AppDatePickerField(detail == null ? LocalDate.now().plusDays(1).format(DATE_FORMAT) : detail.formatCheckOut(), true);
+                txtCheckInDialog = new AppDatePickerField(initialCheckIn.toLocalDate().format(DATE_FORMAT), true);
+                txtCheckInTimeDialog = new AppTimePickerField(initialCheckIn.toLocalTime().format(TIME_FORMAT), false);
+                txtCheckOutDialog = new AppDatePickerField(initialCheckOut.toLocalDate().format(DATE_FORMAT), true);
+                txtCheckOutTimeDialog = new AppTimePickerField(initialCheckOut.toLocalTime().format(TIME_FORMAT), false);
                 txtCheckInDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
+                txtCheckInTimeDialog.setToolTipText("Nhập giờ dạng HH:mm, ví dụ: 12:00");
                 txtCheckOutDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 4/3/26");
+                txtCheckOutTimeDialog.setToolTipText("Nhập giờ dạng HH:mm, ví dụ: 12:00");
                 txtSoNguoiDialog = createInputField(detail == null ? "2" : String.valueOf(detail.soNguoi));
                 txtDatCocDialog = createInputField(detail == null ? "0" : formatMoney(detail.tienDatCocChiTiet));
                 txtGhiChuChiTietDialog = createDialogTextArea(2);
@@ -2404,10 +2501,14 @@ public class DatPhongGUI extends JFrame {
                 updateRatePreviewDisplay(detail);
                 defaultRoomBorder = cboPhongDialog.getBorder();
                 defaultCheckInBorder = txtCheckInDialog.getBorder();
+                defaultCheckInTimeBorder = txtCheckInTimeDialog.getBorder();
                 defaultCheckOutBorder = txtCheckOutDialog.getBorder();
+                defaultCheckOutTimeBorder = txtCheckOutTimeDialog.getBorder();
                 defaultRoomBackground = cboPhongDialog.getBackground();
-                defaultCheckInBackground = resolveDateFieldBackground(txtCheckInDialog);
-                defaultCheckOutBackground = resolveDateFieldBackground(txtCheckOutDialog);
+                defaultCheckInBackground = resolveFieldBackground(txtCheckInDialog);
+                defaultCheckInTimeBackground = resolveFieldBackground(txtCheckInTimeDialog);
+                defaultCheckOutBackground = resolveFieldBackground(txtCheckOutDialog);
+                defaultCheckOutTimeBackground = resolveFieldBackground(txtCheckOutTimeDialog);
                 if (detail != null) {
                     txtGhiChuChiTietDialog.setText(detail.ghiChu);
                 }
@@ -2415,20 +2516,28 @@ public class DatPhongGUI extends JFrame {
                 cboPhongDialog.addActionListener(e -> refreshSelectedRatePreview());
                 cboPhongDialog.addActionListener(e -> reevaluateCurrentSelectionState());
                 installDateFieldChangeListener(txtCheckInDialog, this::reloadAvailableRooms);
+                installTimeFieldChangeListener(txtCheckInTimeDialog, this::reloadAvailableRooms);
                 installDateFieldChangeListener(txtCheckOutDialog, this::reloadAvailableRooms);
+                installTimeFieldChangeListener(txtCheckOutTimeDialog, this::reloadAvailableRooms);
                 installDateFieldChangeListener(txtCheckInDialog, this::refreshSelectedRatePreview);
+                installTimeFieldChangeListener(txtCheckInTimeDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckInDialog, this::reevaluateCurrentSelectionState);
+                installTimeFieldChangeListener(txtCheckInTimeDialog, this::reevaluateCurrentSelectionState);
                 installDateFieldChangeListener(txtCheckOutDialog, this::refreshSelectedRatePreview);
+                installTimeFieldChangeListener(txtCheckOutTimeDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckOutDialog, this::reevaluateCurrentSelectionState);
+                installTimeFieldChangeListener(txtCheckOutTimeDialog, this::reevaluateCurrentSelectionState);
 
                 addFormRow(form, gbc, 0, "Phòng", cboPhongDialog);
                 addFormRow(form, gbc, 1, "Loại phòng", txtLoaiPhongDialog);
                 addFormRow(form, gbc, 2, "Check-in dự kiến", txtCheckInDialog);
-                addFormRow(form, gbc, 3, "Check-out dự kiến", txtCheckOutDialog);
-                addFormRow(form, gbc, 4, "Số người", txtSoNguoiDialog);
-                addFormRow(form, gbc, 5, "Thu tiền cọc", txtDatCocDialog);
-                addFormRow(form, gbc, 6, "Giá áp dụng", lblRatePreview);
-                addFormRow(form, gbc, 7, "Ghi chú", new JScrollPane(txtGhiChuChiTietDialog));
+                addFormRow(form, gbc, 3, "Giờ vào dự kiến", txtCheckInTimeDialog);
+                addFormRow(form, gbc, 4, "Check-out dự kiến", txtCheckOutDialog);
+                addFormRow(form, gbc, 5, "Giờ ra dự kiến", txtCheckOutTimeDialog);
+                addFormRow(form, gbc, 6, "Số người", txtSoNguoiDialog);
+                addFormRow(form, gbc, 7, "Thu tiền cọc", txtDatCocDialog);
+                addFormRow(form, gbc, 8, "Giá áp dụng", lblRatePreview);
+                addFormRow(form, gbc, 9, "Ghi chú", new JScrollPane(txtGhiChuChiTietDialog));
 
                 pnlInlineWarning = new JPanel(new BorderLayout());
                 pnlInlineWarning.setBackground(CONFLICT_BG);
@@ -2468,10 +2577,18 @@ public class DatPhongGUI extends JFrame {
                 txtLoaiPhongDialog.setText(option.tenLoaiPhong);
             }
 
+            private LocalDateTime resolveSelectedCheckIn() {
+                return combineDateTime(parseDate(txtCheckInDialog.getText()), txtCheckInTimeDialog.getTimeValue());
+            }
+
+            private LocalDateTime resolveSelectedCheckOut() {
+                return combineDateTime(parseDate(txtCheckOutDialog.getText()), txtCheckOutTimeDialog.getTimeValue());
+            }
+
             private void reloadAvailableRooms() {
                 Integer preferredRoomId = resolvePreferredRoomId();
-                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
-                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                LocalDateTime checkIn = resolveSelectedCheckIn();
+                LocalDateTime checkOut = resolveSelectedCheckOut();
                 List<RoomOption> roomOptions = loadRoomOptions(
                         checkIn,
                         checkOut,
@@ -2518,8 +2635,8 @@ public class DatPhongGUI extends JFrame {
             }
 
             private String resolveRoomAvailabilityMessage() {
-                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
-                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                LocalDateTime checkIn = resolveSelectedCheckIn();
+                LocalDateTime checkOut = resolveSelectedCheckOut();
                 if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
                     return "Vui lòng chọn ngày nhận/trả hợp lệ để xem phòng trống.";
                 }
@@ -2531,8 +2648,8 @@ public class DatPhongGUI extends JFrame {
 
             private void refreshSelectedRatePreview() {
                 RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
-                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
-                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                LocalDateTime checkIn = resolveSelectedCheckIn();
+                LocalDateTime checkOut = resolveSelectedCheckOut();
                 if (option == null || checkIn == null) {
                     updateRatePreviewDisplay(null);
                     return;
@@ -2607,14 +2724,14 @@ public class DatPhongGUI extends JFrame {
 
             private void reevaluateCurrentSelectionState() {
                 RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
-                LocalDate checkIn = parseDate(txtCheckInDialog.getText());
-                LocalDate checkOut = parseDate(txtCheckOutDialog.getText());
+                LocalDateTime checkIn = resolveSelectedCheckIn();
+                LocalDateTime checkOut = resolveSelectedCheckOut();
                 int soNguoi = parsePositiveIntOrZero(txtSoNguoiDialog.getText().trim());
 
                 String warningMessage = null;
                 boolean hasIssue = false;
                 if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
-                    warningMessage = "Ngày trả phòng phải lớn hơn ngày nhận phòng.";
+                    warningMessage = "Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.";
                     hasIssue = true;
                 }
                 if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0 && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
@@ -2627,7 +2744,7 @@ public class DatPhongGUI extends JFrame {
                     warningMessage = "Phòng " + option.soPhong + " đã được chọn trong phiếu đặt phòng này.";
                     hasIssue = true;
                 } else if (!hasIssue && checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
-                    warningMessage = "Ngày trả phòng phải lớn hơn ngày nhận phòng.";
+                    warningMessage = "Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.";
                     hasIssue = true;
                 } else if (!hasIssue && option != null && option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa) {
                     warningMessage = "Phòng " + option.soPhong + " chỉ nhận tối đa " + option.sucChuaToiDa + " khách.";
@@ -2659,17 +2776,21 @@ public class DatPhongGUI extends JFrame {
                 cboPhongDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultRoomBorder);
                 cboPhongDialog.setBackground(hasIssue ? CONFLICT_BG : defaultRoomBackground);
                 txtCheckInDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultCheckInBorder);
+                txtCheckInTimeDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultCheckInTimeBorder);
                 txtCheckOutDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultCheckOutBorder);
-                setDateFieldBackground(txtCheckInDialog, hasIssue ? CONFLICT_BG : defaultCheckInBackground);
-                setDateFieldBackground(txtCheckOutDialog, hasIssue ? CONFLICT_BG : defaultCheckOutBackground);
+                txtCheckOutTimeDialog.setBorder(hasIssue ? BorderFactory.createLineBorder(CONFLICT_BORDER, 1, true) : defaultCheckOutTimeBorder);
+                setFieldBackground(txtCheckInDialog, hasIssue ? CONFLICT_BG : defaultCheckInBackground);
+                setFieldBackground(txtCheckInTimeDialog, hasIssue ? CONFLICT_BG : defaultCheckInTimeBackground);
+                setFieldBackground(txtCheckOutDialog, hasIssue ? CONFLICT_BG : defaultCheckOutBackground);
+                setFieldBackground(txtCheckOutTimeDialog, hasIssue ? CONFLICT_BG : defaultCheckOutTimeBackground);
             }
 
-            private Color resolveDateFieldBackground(AppDatePickerField field) {
+            private Color resolveFieldBackground(Component field) {
                 JTextField editor = findNestedTextField(field);
                 return editor == null ? Color.WHITE : editor.getBackground();
             }
 
-            private void setDateFieldBackground(AppDatePickerField field, Color color) {
+            private void setFieldBackground(Component field, Color color) {
                 JTextField editor = findNestedTextField(field);
                 if (editor != null) {
                     editor.setBackground(color);
@@ -2697,13 +2818,17 @@ public class DatPhongGUI extends JFrame {
                         return;
                     }
                 }
-                LocalDate checkIn = normalizeDateFieldValue(txtCheckInDialog, "Check-in dự kiến không hợp lệ.");
-                LocalDate checkOut = normalizeDateFieldValue(txtCheckOutDialog, "Check-out dự kiến không hợp lệ.");
-                if (checkIn == null || checkOut == null) {
+                LocalDate checkInDate = normalizeDateFieldValue(txtCheckInDialog, "Check-in dự kiến không hợp lệ.");
+                LocalTime checkInTime = normalizeTimeFieldValue(txtCheckInTimeDialog, "Giờ vào dự kiến không hợp lệ.");
+                LocalDate checkOutDate = normalizeDateFieldValue(txtCheckOutDialog, "Check-out dự kiến không hợp lệ.");
+                LocalTime checkOutTime = normalizeTimeFieldValue(txtCheckOutTimeDialog, "Giờ ra dự kiến không hợp lệ.");
+                if (checkInDate == null || checkInTime == null || checkOutDate == null || checkOutTime == null) {
                     return;
                 }
+                LocalDateTime checkIn = combineDateTime(checkInDate, checkInTime);
+                LocalDateTime checkOut = combineDateTime(checkOutDate, checkOutTime);
                 if (!checkOut.isAfter(checkIn)) {
-                    showError("Check-out dự kiến phải lớn hơn check-in dự kiến.");
+                    showError("Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.");
                     return;
                 }
                 int soNguoi;
@@ -3154,11 +3279,17 @@ public class DatPhongGUI extends JFrame {
                 if (detail.loaiPhong != null && !detail.loaiPhong.trim().isEmpty()) {
                     roomTypes.add(detail.loaiPhong.trim());
                 }
-                if (ngayNhanPhong == null || detail.checkInDuKien.isBefore(ngayNhanPhong)) {
-                    ngayNhanPhong = detail.checkInDuKien;
+                if (detail.checkInDuKien != null) {
+                    LocalDate currentCheckIn = detail.checkInDuKien.toLocalDate();
+                    if (ngayNhanPhong == null || currentCheckIn.isBefore(ngayNhanPhong)) {
+                        ngayNhanPhong = currentCheckIn;
+                    }
                 }
-                if (ngayTraPhong == null || detail.checkOutDuKien.isAfter(ngayTraPhong)) {
-                    ngayTraPhong = detail.checkOutDuKien;
+                if (detail.checkOutDuKien != null) {
+                    LocalDate currentCheckOut = detail.checkOutDuKien.toLocalDate();
+                    if (ngayTraPhong == null || currentCheckOut.isAfter(ngayTraPhong)) {
+                        ngayTraPhong = currentCheckOut;
+                    }
                 }
             }
             if (roomTypes.size() > 1) {
@@ -3225,8 +3356,8 @@ public class DatPhongGUI extends JFrame {
         private int maLoaiPhong;
         private int maPhongId;
         private String maPhong;
-        private LocalDate checkInDuKien;
-        private LocalDate checkOutDuKien;
+        private LocalDateTime checkInDuKien;
+        private LocalDateTime checkOutDuKien;
         private int soNguoi;
         private int sucChuaToiDa;
         private double giaApDung;
@@ -3274,7 +3405,10 @@ public class DatPhongGUI extends JFrame {
             if (thanhTien > 0d) {
                 return thanhTien;
             }
-            long soDem = java.time.temporal.ChronoUnit.DAYS.between(checkInDuKien, checkOutDuKien);
+            if (checkInDuKien == null || checkOutDuKien == null) {
+                return giaApDung;
+            }
+            long soDem = ChronoUnit.DAYS.between(checkInDuKien.toLocalDate(), checkOutDuKien.toLocalDate());
             if (soDem <= 0) {
                 soDem = 1;
             }
@@ -3282,11 +3416,11 @@ public class DatPhongGUI extends JFrame {
         }
 
         private String formatCheckIn() {
-            return checkInDuKien == null ? "-" : checkInDuKien.format(DATE_FORMAT);
+            return checkInDuKien == null ? "-" : checkInDuKien.format(DATETIME_FORMAT);
         }
 
         private String formatCheckOut() {
-            return checkOutDuKien == null ? "-" : checkOutDuKien.format(DATE_FORMAT);
+            return checkOutDuKien == null ? "-" : checkOutDuKien.format(DATETIME_FORMAT);
         }
     }
 

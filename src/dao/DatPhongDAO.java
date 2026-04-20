@@ -562,7 +562,7 @@ public class DatPhongDAO {
         String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
                 "FROM dbo.Phong p " +
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE (p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng') OR (? IS NOT NULL AND p.maPhong = ?)) " +
+                "WHERE (p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng', N'Đã đặt') OR (? IS NOT NULL AND p.maPhong = ?)) " +
                 "AND NOT EXISTS ( " +
                 "    SELECT 1 FROM dbo.LuuTru ltActive " +
                 "    WHERE ltActive.maPhong = p.maPhong " +

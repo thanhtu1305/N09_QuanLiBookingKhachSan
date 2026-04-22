@@ -17,6 +17,7 @@ import javax.swing.BoxLayout;
 import javax.swing.AbstractCellEditor;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.DefaultCellEditor;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -39,6 +40,10 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
+import javax.swing.text.AbstractDocument;
+import javax.swing.text.AttributeSet;
+import javax.swing.text.BadLocationException;
+import javax.swing.text.DocumentFilter;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -615,6 +620,7 @@ public class DatPhongGUI extends JFrame {
         datPhongDAO.ensureDetailScheduleSchema(con);
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong AS maPhongId, ctdp.soNguoi, ctdp.giaPhong, ctdp.thanhTien, " +
                 "ISNULL(p.soPhong, N'Chưa gán') AS soPhong, " +
+                "ISNULL(p.sucChuaToiDa, 0) AS sucChuaToiDa, " +
                 "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, " +
                 "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, " +
                 "dp.trangThai, " +
@@ -642,6 +648,7 @@ public class DatPhongGUI extends JFrame {
                     detail.checkInDuKien = normalizeLegacyDetailDateTime(checkInTs == null ? null : checkInTs.toLocalDateTime());
                     detail.checkOutDuKien = normalizeLegacyDetailDateTime(checkOutTs == null ? null : checkOutTs.toLocalDateTime());
                     detail.soNguoi = rs.getInt("soNguoi");
+                    detail.sucChuaToiDa = rs.getInt("sucChuaToiDa");
                     detail.giaApDung = rs.getDouble("giaPhong");
                     detail.tienDatCocChiTiet = 0;
                     detail.thanhTien = rs.getDouble("thanhTien");
@@ -1072,6 +1079,24 @@ public class DatPhongGUI extends JFrame {
         return LocalDate.parse(normalized, DATE_FORMAT);
     }
 
+    private LocalDate normalizeDateFieldValue(JTextField field, String errorMessage) {
+        if (field == null) {
+            return null;
+        }
+        String rawValue = field.getText();
+        if (rawValue == null || rawValue.trim().isEmpty()) {
+            field.setText("");
+            return null;
+        }
+        String normalized = normalizeDateInput(rawValue);
+        if (normalized == null) {
+            showError(errorMessage);
+            return null;
+        }
+        field.setText(normalized);
+        return LocalDate.parse(normalized, DATE_FORMAT);
+    }
+
     private LocalTime normalizeTimeFieldValue(AppTimePickerField field, String errorMessage) {
         if (field == null) {
             return null;
@@ -1319,6 +1344,34 @@ public class DatPhongGUI extends JFrame {
         return String.format(Locale.ROOT, "KH%03d", maKhachHang);
     }
 
+    private String buildCustomerOptionDisplay(CustomerLookup lookup) {
+        if (lookup == null || lookup.maKhachHang <= 0) {
+            return "-- Chọn khách hàng --";
+        }
+        return formatCustomerId(lookup.maKhachHang)
+                + " - " + safeValue(lookup.hoTen, "Chưa có tên")
+                + " - " + safeValue(lookup.soDienThoai, "-");
+    }
+
+    private CustomerLookup createCustomerPlaceholderOption() {
+        CustomerLookup lookup = new CustomerLookup();
+        lookup.displayText = buildCustomerOptionDisplay(null);
+        return lookup;
+    }
+
+    private CustomerLookup mapCustomerLookup(ResultSet rs) throws Exception {
+        CustomerLookup lookup = new CustomerLookup();
+        lookup.maKhachHang = rs.getInt("maKhachHang");
+        lookup.hoTen = safeValue(rs.getString("hoTen"), "");
+        lookup.soDienThoai = safeValue(rs.getString("soDienThoai"), "");
+        lookup.cccdPassport = safeValue(rs.getString("cccdPassport"), "");
+        lookup.ngaySinh = rs.getDate("ngaySinh") == null ? null : rs.getDate("ngaySinh").toLocalDate();
+        lookup.email = safeValue(rs.getString("email"), "");
+        lookup.diaChi = safeValue(rs.getString("diaChi"), "");
+        lookup.displayText = buildCustomerOptionDisplay(lookup);
+        return lookup;
+    }
+
     private Integer findExistingCustomerByPhoneOrPassport(Connection con, String soDienThoai, String cccd) {
         String sql = "SELECT TOP 1 maKhachHang FROM KhachHang WHERE soDienThoai = ? OR (? <> '' AND cccdPassport = ?)";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
@@ -1398,20 +1451,46 @@ public class DatPhongGUI extends JFrame {
             ps.setInt(1, maKhachHang);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    CustomerLookup lookup = new CustomerLookup();
-                    lookup.maKhachHang = rs.getInt("maKhachHang");
-                    lookup.hoTen = safeValue(rs.getString("hoTen"), "");
-                    lookup.soDienThoai = safeValue(rs.getString("soDienThoai"), "");
-                    lookup.cccdPassport = safeValue(rs.getString("cccdPassport"), "");
-                    lookup.ngaySinh = rs.getDate("ngaySinh") == null ? null : rs.getDate("ngaySinh").toLocalDate();
-                    lookup.email = safeValue(rs.getString("email"), "");
-                    lookup.diaChi = safeValue(rs.getString("diaChi"), "");
-                    return lookup;
+                    return mapCustomerLookup(rs);
                 }
             }
         } catch (Exception ignored) {
         }
         return null;
+    }
+
+    private List<CustomerLookup> loadCustomerOptions(Integer preferredCustomerId) {
+        List<CustomerLookup> customers = new ArrayList<CustomerLookup>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return customers;
+        }
+
+        boolean containsPreferred = false;
+        String sql = "SELECT maKhachHang, hoTen, soDienThoai, cccdPassport, ngaySinh, email, diaChi "
+                + "FROM KhachHang "
+                + "WHERE ISNULL(trangThai, N'Hoạt động') <> N'Ngừng giao dịch' "
+                + "ORDER BY maKhachHang DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                CustomerLookup lookup = mapCustomerLookup(rs);
+                customers.add(lookup);
+                if (preferredCustomerId != null && lookup.maKhachHang == preferredCustomerId.intValue()) {
+                    containsPreferred = true;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        if (preferredCustomerId != null && preferredCustomerId.intValue() > 0 && !containsPreferred) {
+            CustomerLookup preferredCustomer = loadCustomerLookup(preferredCustomerId.intValue());
+            if (preferredCustomer != null) {
+                customers.add(0, preferredCustomer);
+            }
+        }
+        return customers;
     }
 
     private CustomerLookup findCustomerByPassportOrCccd(String cccd) {
@@ -1428,14 +1507,10 @@ public class DatPhongGUI extends JFrame {
             ps.setString(1, value);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    CustomerLookup lookup = new CustomerLookup();
-                    lookup.maKhachHang = rs.getInt("maKhachHang");
-                    lookup.hoTen = safeValue(rs.getString("hoTen"), "");
-                    lookup.soDienThoai = safeValue(rs.getString("soDienThoai"), "");
-                    lookup.cccdPassport = safeValue(rs.getString("cccdPassport"), value);
-                    lookup.ngaySinh = rs.getDate("ngaySinh") == null ? null : rs.getDate("ngaySinh").toLocalDate();
-                    lookup.email = safeValue(rs.getString("email"), "");
-                    lookup.diaChi = safeValue(rs.getString("diaChi"), "");
+                    CustomerLookup lookup = mapCustomerLookup(rs);
+                    if (lookup.cccdPassport.isEmpty()) {
+                        lookup.cccdPassport = value;
+                    }
                     return lookup;
                 }
             }
@@ -1638,6 +1713,11 @@ public class DatPhongGUI extends JFrame {
     }
 
     private Integer findOpenBookingIdByCustomer(Connection con, int maKhachHang, Integer excludeMaDatPhong) throws Exception {
+        // Booking availability is validated by room/time conflicts on detail rows,
+        // not by limiting a customer to a single open booking.
+        if (maKhachHang >= 0) {
+            return null;
+        }
         String sql = "SELECT TOP 1 maDatPhong FROM DatPhong " +
                 "WHERE maKhachHang = ? " +
                 "AND trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Chờ check-in') " +
@@ -1756,12 +1836,14 @@ public class DatPhongGUI extends JFrame {
 
         private AppDatePickerField txtNgayDatDialog;
         private JComboBox<String> cboNguonBookingDialog;
+        private JComboBox<CustomerLookup> cboKhachHangDialog;
         private JTextField txtCccdDialog;
         private JTextField txtHoTen;
         private JTextField txtSdt;
-        private AppDatePickerField txtNgaySinhKhach;
+        private JTextField txtNgaySinhKhach;
         private JTextField txtEmailKhach;
         private JTextArea txtDiaChiKhach;
+        private JTextField txtTongSoNguoiDialog;
         private JTextField txtTongDatCocDialog;
         private JTextArea txtGhiChuDialog;
         private AppDatePickerField txtDetailCheckInDate;
@@ -1782,6 +1864,7 @@ public class DatPhongGUI extends JFrame {
         private Border defaultDetailTableBorder;
         private BookingDetailRecord highlightedConflictRow;
         private boolean syncingSharedSchedule;
+        private boolean reloadingCustomerOptions;
         private BookingEditorDialog(Window owner, BookingRecord booking) {
             super(owner, booking == null ? "T?o booking" : "C?p nh?t booking", 1340, 820);
             this.editingBooking = booking;
@@ -1827,7 +1910,7 @@ public class DatPhongGUI extends JFrame {
             reevaluateDetailValidationState(false);
         }
 
-        private JPanel buildHeaderSection() {
+        private JPanel buildHeaderSectionLegacy() {
             JPanel card = createDialogCardPanel();
             JPanel wrapper = new JPanel(new BorderLayout(0, 10));
             wrapper.setOpaque(false);
@@ -1844,18 +1927,29 @@ public class DatPhongGUI extends JFrame {
 
             txtNgayDatDialog = new AppDatePickerField(editing && editingBooking.ngayDat != null ? editingBooking.formatNgayDat() : LocalDate.now().format(DATE_FORMAT), true);
             cboNguonBookingDialog = createComboBox(new String[]{"Đặt trước", "Walk-in"});
-            txtCccdDialog = createInputField(editing ? editingBooking.cccd : "");
-            txtHoTen = createInputField(editing ? safeValue(existingCustomer == null ? editingBooking.khachHang : existingCustomer.hoTen, "") : "");
-            txtSdt = createInputField(editing ? safeValue(existingCustomer == null ? editingBooking.soDienThoai : existingCustomer.soDienThoai, "") : "");
-            LocalDate customerBirthDate = editing ? (existingCustomer == null ? null : existingCustomer.ngaySinh) : null;
-            txtNgaySinhKhach = new AppDatePickerField(customerBirthDate == null ? "" : customerBirthDate.format(DATE_FORMAT), false);
+            cboKhachHangDialog = new JComboBox<CustomerLookup>();
+            cboKhachHangDialog.setFont(BODY_FONT);
+            cboKhachHangDialog.setPreferredSize(new Dimension(240, 34));
+            cboKhachHangDialog.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+
+            JButton btnAddCustomer = createOutlineButton("+", new Color(37, 99, 235), e -> openCreateCustomerDialog());
+            btnAddCustomer.setPreferredSize(new Dimension(44, 34));
+            btnAddCustomer.setToolTipText("Thêm khách hàng mới");
+
+            JPanel customerSelectorPanel = new JPanel(new BorderLayout(8, 0));
+            customerSelectorPanel.setOpaque(false);
+            customerSelectorPanel.add(cboKhachHangDialog, BorderLayout.CENTER);
+            customerSelectorPanel.add(btnAddCustomer, BorderLayout.EAST);
+
+            txtCccdDialog = createInputField("");
+            txtHoTen = createInputField("");
+            txtSdt = createInputField("");
+            txtNgaySinhKhach = createInputField("");
             txtNgayDatDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
             txtNgaySinhKhach.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
-            txtEmailKhach = createInputField(editing && existingCustomer != null ? existingCustomer.email : "");
+            txtEmailKhach = createInputField("");
             txtDiaChiKhach = createDialogTextArea(3);
-            if (editing && existingCustomer != null) {
-                txtDiaChiKhach.setText(existingCustomer.diaChi);
-            }
+            configureReadonlyCustomerFields();
             txtTongDatCocDialog = createInputField(editing ? formatMoney(editingBooking.tongTienDatCoc) : "0");
             txtTongDatCocDialog.setEditable(false);
             txtGhiChuDialog = createDialogTextArea(3);
@@ -1865,11 +1959,16 @@ public class DatPhongGUI extends JFrame {
                 txtGhiChuDialog.setText(editingBooking.ghiChu);
             }
 
-            txtCccdDialog.addActionListener(e -> lookupCustomerByPassportOrCccd());
+            cboKhachHangDialog.addActionListener(e -> {
+                if (!reloadingCustomerOptions) {
+                    applySelectedCustomerToHeader((CustomerLookup) cboKhachHangDialog.getSelectedItem());
+                }
+            });
+            reloadCustomerOptions(editing ? Integer.valueOf(editingBooking.maKhachHang) : null);
 
             addFormRow(form, gbc, 0, "Ngày đặt", txtNgayDatDialog);
             addFormRow(form, gbc, 1, "Nguồn booking", cboNguonBookingDialog);
-            addFormRow(form, gbc, 2, "CCCD/Passport", txtCccdDialog);
+            addFormRow(form, gbc, 2, "Khách hàng", customerSelectorPanel);
             addFormRow(form, gbc, 3, "Họ tên KH", txtHoTen);
             addFormRow(form, gbc, 4, "SĐT", txtSdt);
             addFormRow(form, gbc, 5, "Ngày sinh", txtNgaySinhKhach);
@@ -1884,6 +1983,324 @@ public class DatPhongGUI extends JFrame {
             card.setMinimumSize(new Dimension(400, 0));
             card.add(wrapper, BorderLayout.CENTER);
             return card;
+        }
+
+
+        private JPanel buildHeaderSection() {
+            JPanel card = createDialogCardPanel();
+            JPanel wrapper = new JPanel(new BorderLayout(0, 10));
+            wrapper.setOpaque(false);
+
+            JLabel lblSection = new JLabel("HEADER - THÔNG TIN CHUNG");
+            lblSection.setFont(SECTION_FONT);
+            lblSection.setForeground(TEXT_PRIMARY);
+
+            JPanel form = createDialogFormPanel();
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.insets = new java.awt.Insets(6, 0, 6, 12);
+            gbc.anchor = GridBagConstraints.WEST;
+
+            txtNgayDatDialog = new AppDatePickerField(
+                    editing && editingBooking.ngayDat != null
+                            ? editingBooking.formatNgayDat()
+                            : LocalDate.now().format(DATE_FORMAT),
+                    true
+            );
+            txtNgayDatDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
+
+            cboNguonBookingDialog = createComboBox(new String[]{"Đặt trước", "Walk-in"});
+            cboKhachHangDialog = new JComboBox<CustomerLookup>();
+            cboKhachHangDialog.setFont(BODY_FONT);
+            cboKhachHangDialog.setPreferredSize(new Dimension(240, 34));
+            cboKhachHangDialog.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+
+            JButton btnAddCustomer = createOutlineButton("+", new Color(37, 99, 235), e -> openCreateCustomerDialog());
+            btnAddCustomer.setPreferredSize(new Dimension(44, 34));
+            btnAddCustomer.setToolTipText("Thêm khách hàng mới");
+
+            JPanel customerSelectorPanel = new JPanel(new BorderLayout(8, 0));
+            customerSelectorPanel.setOpaque(false);
+            customerSelectorPanel.add(cboKhachHangDialog, BorderLayout.CENTER);
+            customerSelectorPanel.add(btnAddCustomer, BorderLayout.EAST);
+
+            txtCccdDialog = createInputField("");
+            txtHoTen = createInputField("");
+            txtSdt = createInputField("");
+            txtNgaySinhKhach = createInputField("");
+            txtEmailKhach = createInputField("");
+            txtDiaChiKhach = createDialogTextArea(3);
+            configureReadonlyCustomerFields();
+
+            txtTongSoNguoiDialog = createInputField(String.valueOf(calculateTotalGuests()));
+            configureReadonlyTextField(txtTongSoNguoiDialog);
+            txtTongDatCocDialog = createInputField(editing ? formatMoney(editingBooking.tongTienDatCoc) : "0");
+            txtTongDatCocDialog.setEditable(false);
+            txtGhiChuDialog = createDialogTextArea(3);
+
+            if (editing) {
+                cboNguonBookingDialog.setSelectedItem(editingBooking.nguonDat);
+                txtGhiChuDialog.setText(editingBooking.ghiChu);
+            }
+
+            cboKhachHangDialog.addActionListener(e -> {
+                if (!reloadingCustomerOptions) {
+                    applySelectedCustomerToHeader((CustomerLookup) cboKhachHangDialog.getSelectedItem());
+                }
+            });
+            reloadCustomerOptions(editing ? Integer.valueOf(editingBooking.maKhachHang) : null);
+
+            addFormRow(form, gbc, 0, "Ngày đặt", txtNgayDatDialog);
+            addFormRow(form, gbc, 1, "Nguồn booking", cboNguonBookingDialog);
+            addFormRow(form, gbc, 2, "Khách hàng", customerSelectorPanel);
+            addFormRow(form, gbc, 3, "CCCD/Passport", txtCccdDialog);
+            addFormRow(form, gbc, 4, "Họ tên KH", txtHoTen);
+            addFormRow(form, gbc, 5, "SĐT", txtSdt);
+            addFormRow(form, gbc, 6, "Ngày sinh", txtNgaySinhKhach);
+            addFormRow(form, gbc, 7, "Email", txtEmailKhach);
+            addFormRow(form, gbc, 8, "Địa chỉ", new JScrollPane(txtDiaChiKhach));
+            addFormRow(form, gbc, 9, "Tổng số người", txtTongSoNguoiDialog);
+            addFormRow(form, gbc, 10, "Tổng tiền cọc", txtTongDatCocDialog);
+            addFormRow(form, gbc, 11, "Ghi chú", new JScrollPane(txtGhiChuDialog));
+
+            wrapper.add(lblSection, BorderLayout.NORTH);
+            wrapper.add(form, BorderLayout.CENTER);
+            card.setPreferredSize(new Dimension(430, 0));
+            card.setMinimumSize(new Dimension(400, 0));
+            card.add(wrapper, BorderLayout.CENTER);
+            return card;
+        }
+
+        private void configureReadonlyCustomerFields() {
+            configureReadonlyTextField(txtCccdDialog);
+            configureReadonlyTextField(txtHoTen);
+            configureReadonlyTextField(txtSdt);
+            configureReadonlyTextField(txtNgaySinhKhach);
+            configureReadonlyTextField(txtEmailKhach);
+            txtDiaChiKhach.setEditable(false);
+            txtDiaChiKhach.setBackground(PANEL_SOFT);
+            txtDiaChiKhach.setForeground(TEXT_PRIMARY);
+        }
+
+        private void configureReadonlyTextField(JTextField field) {
+            field.setEditable(false);
+            field.setBackground(PANEL_SOFT);
+            field.setForeground(TEXT_PRIMARY);
+        }
+
+        private void reloadCustomerOptions(Integer preferredCustomerId) {
+            int selectedCustomerId = preferredCustomerId == null ? getSelectedCustomerId() : preferredCustomerId.intValue();
+            List<CustomerLookup> customers = loadCustomerOptions(selectedCustomerId > 0 ? Integer.valueOf(selectedCustomerId) : null);
+            CustomerLookup selectedOption = createCustomerPlaceholderOption();
+
+            reloadingCustomerOptions = true;
+            cboKhachHangDialog.removeAllItems();
+            cboKhachHangDialog.addItem(selectedOption);
+            for (CustomerLookup customer : customers) {
+                cboKhachHangDialog.addItem(customer);
+                if (customer.maKhachHang == selectedCustomerId) {
+                    selectedOption = customer;
+                }
+            }
+            cboKhachHangDialog.setSelectedItem(selectedOption);
+            reloadingCustomerOptions = false;
+            applySelectedCustomerToHeader(selectedOption);
+        }
+
+        private int getSelectedCustomerId() {
+            CustomerLookup selectedCustomer = (CustomerLookup) cboKhachHangDialog.getSelectedItem();
+            return selectedCustomer == null ? 0 : selectedCustomer.maKhachHang;
+        }
+
+        private void applySelectedCustomerToHeader(CustomerLookup customer) {
+            if (customer == null || customer.maKhachHang <= 0) {
+                clearSelectedCustomerInfo();
+                return;
+            }
+            txtCccdDialog.setText(safeValue(customer.cccdPassport, ""));
+            txtHoTen.setText(safeValue(customer.hoTen, ""));
+            txtSdt.setText(safeValue(customer.soDienThoai, ""));
+            txtNgaySinhKhach.setText(customer.ngaySinh == null ? "" : customer.ngaySinh.format(DATE_FORMAT));
+            txtEmailKhach.setText(safeValue(customer.email, ""));
+            txtDiaChiKhach.setText(safeValue(customer.diaChi, ""));
+            txtDiaChiKhach.setCaretPosition(0);
+        }
+
+        private void clearSelectedCustomerInfo() {
+            txtCccdDialog.setText("");
+            txtHoTen.setText("");
+            txtSdt.setText("");
+            txtNgaySinhKhach.setText("");
+            txtEmailKhach.setText("");
+            txtDiaChiKhach.setText("");
+        }
+
+        private void openCreateCustomerDialog() {
+            CustomerQuickCreateDialog dialog = new CustomerQuickCreateDialog(this);
+            dialog.setVisible(true);
+            Integer createdCustomerId = dialog.getCreatedCustomerId();
+            if (createdCustomerId != null && createdCustomerId.intValue() > 0) {
+                reloadCustomerOptions(createdCustomerId);
+                showSuccess("Đã thêm khách hàng mới và có thể chọn ngay cho booking.");
+            }
+        }
+
+        private boolean isCustomerEmailValid(String email) {
+            if (email == null || email.trim().isEmpty()) {
+                return true;
+            }
+            String trimmed = email.trim();
+            return trimmed.contains("@") && trimmed.indexOf('@') > 0 && trimmed.indexOf('@') < trimmed.length() - 1;
+        }
+
+        private boolean isCustomerPassportValueValid(String value) {
+            if (value == null || value.trim().isEmpty()) {
+                return true;
+            }
+            String trimmed = value.trim();
+            return trimmed.length() >= 8 && trimmed.length() <= 20;
+        }
+
+        private Integer insertCustomerFromBooking(String hoTen, String soDienThoai, String cccdPassport,
+                                                  LocalDate ngaySinh, String email, String diaChi) {
+            Connection con = ConnectDB.getConnection();
+            if (con == null) {
+                showError("Không thể kết nối cơ sở dữ liệu.");
+                return null;
+            }
+
+            Integer existingCustomerId = findExistingCustomerByPhoneOrPassport(con, soDienThoai, cccdPassport);
+            if (existingCustomerId != null) {
+                showError("Số điện thoại hoặc CCCD/Passport đã tồn tại. Vui lòng chọn khách hàng có sẵn trong combobox.");
+                return null;
+            }
+
+            String sql = "INSERT INTO KhachHang(hoTen, gioiTinh, ngaySinh, soDienThoai, email, cccdPassport, diaChi, quocTich, loaiKhach, hangKhach, trangThai, nguoiTao, ghiChu) "
+                    + "VALUES (?, N'Khác', ?, ?, ?, ?, ?, N'Việt Nam', N'Cá nhân', N'Thường', N'Hoạt động', ?, N'Tạo từ màn đặt phòng')";
+            try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, hoTen);
+                if (ngaySinh == null) {
+                    ps.setNull(2, java.sql.Types.DATE);
+                } else {
+                    ps.setDate(2, Date.valueOf(ngaySinh));
+                }
+                ps.setString(3, soDienThoai);
+                ps.setString(4, email == null ? "" : email.trim());
+                ps.setString(5, cccdPassport == null ? "" : cccdPassport.trim());
+                ps.setString(6, diaChi == null ? "" : diaChi.trim());
+                ps.setString(7, username);
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        return Integer.valueOf(rs.getInt(1));
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                showError("Không thể thêm khách hàng.");
+            }
+            return null;
+        }
+
+        private final class CustomerQuickCreateDialog extends BaseBookingDialog {
+            private JTextField txtHoTenDialog;
+            private JTextField txtSoDienThoaiDialog;
+            private JTextField txtCccdCustomerDialog;
+            private AppDatePickerField txtNgaySinhDialog;
+            private JTextField txtEmailDialog;
+            private JTextArea txtDiaChiDialog;
+            private Integer createdCustomerId;
+
+            private CustomerQuickCreateDialog(Window owner) {
+                super(owner, "Thêm khách hàng", 640, 520);
+
+                JPanel content = new JPanel(new BorderLayout(0, 12));
+                content.setOpaque(false);
+                content.add(buildDialogHeader(
+                        "THÊM KHÁCH HÀNG",
+                        "Khách hàng mới sẽ được lưu vào bảng KhachHang và nạp lại ngay ở combobox booking."
+                ), BorderLayout.NORTH);
+
+                JPanel form = createDialogFormPanel();
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.insets = new java.awt.Insets(6, 0, 6, 12);
+                gbc.anchor = GridBagConstraints.WEST;
+
+                txtHoTenDialog = createInputField("");
+                txtSoDienThoaiDialog = createInputField("");
+                txtCccdCustomerDialog = createInputField("");
+                txtNgaySinhDialog = new AppDatePickerField("", false);
+                txtEmailDialog = createInputField("");
+                txtDiaChiDialog = createDialogTextArea(3);
+
+                addFormRow(form, gbc, 0, "Họ tên", txtHoTenDialog);
+                addFormRow(form, gbc, 1, "SĐT", txtSoDienThoaiDialog);
+                addFormRow(form, gbc, 2, "CCCD/Passport", txtCccdCustomerDialog);
+                addFormRow(form, gbc, 3, "Ngày sinh", txtNgaySinhDialog);
+                addFormRow(form, gbc, 4, "Email", txtEmailDialog);
+                addFormRow(form, gbc, 5, "Địa chỉ", new JScrollPane(txtDiaChiDialog));
+
+                JPanel card = createDialogCardPanel();
+                card.add(form, BorderLayout.CENTER);
+                content.add(card, BorderLayout.CENTER);
+
+                JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
+                JButton btnSave = createPrimaryButton("Lưu", new Color(22, 163, 74), Color.WHITE, e -> submit());
+                content.add(buildDialogButtons(btnCancel, btnSave), BorderLayout.SOUTH);
+                add(content, BorderLayout.CENTER);
+            }
+
+            private void submit() {
+                String hoTen = txtHoTenDialog.getText().trim();
+                String soDienThoai = txtSoDienThoaiDialog.getText().trim();
+                String cccdPassport = txtCccdCustomerDialog.getText().trim();
+                String email = txtEmailDialog.getText().trim();
+
+                if (hoTen.isEmpty()) {
+                    showError("Họ tên bắt buộc nhập.");
+                    return;
+                }
+                if (soDienThoai.isEmpty()) {
+                    showError("Số điện thoại bắt buộc nhập.");
+                    return;
+                }
+                if (!isCustomerPassportValueValid(cccdPassport)) {
+                    showError("CCCD/Passport không hợp lệ.");
+                    return;
+                }
+                if (!isCustomerEmailValid(email)) {
+                    showError("Email không hợp lệ.");
+                    return;
+                }
+
+                LocalDate ngaySinh = null;
+                String ngaySinhText = txtNgaySinhDialog.getText() == null ? "" : txtNgaySinhDialog.getText().trim();
+                if (!ngaySinhText.isEmpty()) {
+                    ngaySinh = normalizeDateFieldValue(txtNgaySinhDialog, "Ngày sinh không hợp lệ.");
+                    if (ngaySinh == null) {
+                        return;
+                    }
+                }
+
+                Integer newCustomerId = insertCustomerFromBooking(
+                        hoTen,
+                        soDienThoai,
+                        cccdPassport,
+                        ngaySinh,
+                        email,
+                        txtDiaChiDialog.getText().trim()
+                );
+                if (newCustomerId == null) {
+                    return;
+                }
+
+                createdCustomerId = newCustomerId;
+                KhachHangGUI.refreshAllOpenInstances();
+                dispose();
+            }
+
+            private Integer getCreatedCustomerId() {
+                return createdCustomerId;
+            }
         }
 
 
@@ -2110,7 +2527,7 @@ public class DatPhongGUI extends JFrame {
             };
         }
 
-        private AbstractTableModel createSelectedRoomTableModel() {
+        private AbstractTableModel createSelectedRoomTableModelLegacy() {
             return new AbstractTableModel() {
                 private final String[] columns = {"Số phòng", "Số người", "Ngày bắt đầu", "Ngày kết thúc", "Xóa"};
 
@@ -2173,6 +2590,79 @@ public class DatPhongGUI extends JFrame {
                         return;
                     }
                     detail.soNguoi = soNguoiMoi;
+                    reevaluateDetailValidationState(false);
+                    fireTableRowsUpdated(rowIndex, rowIndex);
+                }
+            };
+        }
+
+        private AbstractTableModel createSelectedRoomTableModel() {
+            return new AbstractTableModel() {
+                private final String[] columns = {"Số phòng", "Số người ở", "Ngày bắt đầu", "Ngày kết thúc", "Xóa"};
+
+                @Override
+                public int getRowCount() {
+                    return detailRows.size();
+                }
+
+                @Override
+                public int getColumnCount() {
+                    return columns.length;
+                }
+
+                @Override
+                public String getColumnName(int column) {
+                    return columns[column];
+                }
+
+                @Override
+                public Object getValueAt(int rowIndex, int columnIndex) {
+                    BookingDetailRecord detail = detailRows.get(rowIndex);
+                    switch (columnIndex) {
+                        case 0:
+                            return safeValue(detail.maPhong, detail.maPhongId <= 0 ? "Chưa gán" : String.valueOf(detail.maPhongId));
+                        case 1:
+                            return String.valueOf(detail.soNguoi);
+                        case 2:
+                            return formatDateTime(detail.checkInDuKien);
+                        case 3:
+                            return formatDateTime(detail.checkOutDuKien);
+                        case 4:
+                            return "Xóa";
+                        default:
+                            return "";
+                    }
+                }
+
+                @Override
+                public boolean isCellEditable(int rowIndex, int columnIndex) {
+                    return columnIndex == 1 || columnIndex == 4;
+                }
+
+                @Override
+                public void setValueAt(Object aValue, int rowIndex, int columnIndex) {
+                    if (rowIndex < 0 || rowIndex >= detailRows.size() || columnIndex != 1) {
+                        return;
+                    }
+                    BookingDetailRecord detail = detailRows.get(rowIndex);
+                    int soNguoiMoi;
+                    try {
+                        soNguoiMoi = Integer.parseInt(valueOf(aValue).trim());
+                    } catch (NumberFormatException ex) {
+                        showWarning("Số người ở của phòng " + safeValue(detail.maPhong, String.valueOf(detail.maPhongId)) + " phải là số nguyên hợp lệ.");
+                        fireTableRowsUpdated(rowIndex, rowIndex);
+                        return;
+                    }
+
+                    String guestError = validateGuestCount(detail, soNguoiMoi);
+                    if (guestError != null) {
+                        showWarning(guestError);
+                        fireTableRowsUpdated(rowIndex, rowIndex);
+                        return;
+                    }
+
+                    detail.soNguoi = soNguoiMoi;
+                    refreshHeaderGuestSummary();
                     reevaluateDetailValidationState(false);
                     fireTableRowsUpdated(rowIndex, rowIndex);
                 }
@@ -2252,6 +2742,7 @@ public class DatPhongGUI extends JFrame {
                 }
             });
             applyBookingDetailColumnWidths();
+            tblBookingDetailDialog.getColumnModel().getColumn(1).setCellEditor(createGuestCountCellEditor());
             tblBookingDetailDialog.getColumnModel().getColumn(4).setCellRenderer(new TableActionButtonRenderer(new Color(220, 38, 38), Color.WHITE));
             tblBookingDetailDialog.getColumnModel().getColumn(4).setCellEditor(new TableActionButtonEditor(
                     tblBookingDetailDialog,
@@ -2259,6 +2750,47 @@ public class DatPhongGUI extends JFrame {
                     Color.WHITE,
                     row -> removeDetailRowAt(row)
             ));
+        }
+
+        private TableCellEditor createGuestCountCellEditor() {
+            JTextField field = new JTextField();
+            field.setFont(BODY_FONT);
+            ((AbstractDocument) field.getDocument()).setDocumentFilter(new DigitsOnlyDocumentFilter());
+            return new DefaultCellEditor(field) {
+                @Override
+                public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected, int row, int column) {
+                    JTextField editor = (JTextField) super.getTableCellEditorComponent(table, value, isSelected, row, column);
+                    editor.setText(valueOf(value));
+                    editor.selectAll();
+                    return editor;
+                }
+
+                @Override
+                public Object getCellEditorValue() {
+                    return valueOf(super.getCellEditorValue()).trim();
+                }
+            };
+        }
+
+        private String validateGuestCount(BookingDetailRecord detail, int soNguoi) {
+            String roomLabel = safeValue(detail == null ? null : detail.maPhong, detail == null ? "" : String.valueOf(detail.maPhongId));
+            if (soNguoi <= 0) {
+                return "Số người ở của phòng " + roomLabel + " phải lớn hơn 0.";
+            }
+            if (detail != null && detail.sucChuaToiDa > 0 && soNguoi > detail.sucChuaToiDa) {
+                return "Phòng " + roomLabel + " chỉ cho phép tối đa " + detail.sucChuaToiDa + " người.";
+            }
+            return null;
+        }
+
+        private String validateGuestCount(RoomOption option, int soNguoi) {
+            BookingDetailRecord detail = new BookingDetailRecord();
+            if (option != null) {
+                detail.maPhong = option.soPhong;
+                detail.maPhongId = option.maPhongId;
+                detail.sucChuaToiDa = option.sucChuaToiDa;
+            }
+            return validateGuestCount(detail, soNguoi);
         }
 
         private LocalDateTime resolveInitialSharedCheckIn() {
@@ -2336,6 +2868,7 @@ public class DatPhongGUI extends JFrame {
             for (BookingDetailRecord detail : detailRows) {
                 totalDeposit += detail.tienDatCocChiTiet;
             }
+            refreshHeaderGuestSummary();
             txtTongDatCocDialog.setText(formatMoney(totalDeposit));
             if (lblSuggestedDeposit != null) {
                 lblSuggestedDeposit.setText("Số tiền cần đặt cọc: " + formatMoney(calculateSuggestedDeposit()));
@@ -2345,6 +2878,16 @@ public class DatPhongGUI extends JFrame {
                             + " phòng | Tạm tính: " + formatMoney(calculateSelectedRoomSubtotal())
                             + " | Tổng tiền cọc: " + formatMoney(totalDeposit)
             );
+        }
+
+        private int calculateTotalGuests() {
+            return totalGuests(detailRows);
+        }
+
+        private void refreshHeaderGuestSummary() {
+            if (txtTongSoNguoiDialog != null) {
+                txtTongSoNguoiDialog.setText(String.valueOf(calculateTotalGuests()));
+            }
         }
 
         private LocalDateTime resolveSharedCheckInSelection() {
@@ -2461,8 +3004,7 @@ public class DatPhongGUI extends JFrame {
         }
 
         private int resolveDefaultGuestCount(RoomOption option) {
-            int fallback = option != null && option.sucChuaToiDa > 0 ? Math.min(2, option.sucChuaToiDa) : 2;
-            return Math.max(1, fallback);
+            return 1;
         }
 
         private void removeDetailRowAt(int rowIndex) {
@@ -2651,6 +3193,12 @@ public class DatPhongGUI extends JFrame {
                 reevaluateDetailValidationState(true);
                 return "Phiếu đặt phòng phải có ít nhất 1 phòng.";
             }
+            for (BookingDetailRecord detail : detailRows) {
+                String guestError = validateGuestCount(detail, detail.soNguoi);
+                if (guestError != null) {
+                    return guestError;
+                }
+            }
             reevaluateDetailValidationState(true);
             if (highlightedConflictRow != null) {
                 if (highlightedConflictRow.duplicateInBooking) {
@@ -2696,9 +3244,10 @@ public class DatPhongGUI extends JFrame {
             removeDetailRowAt(row);
         }
 
-        private void submit(String mode) {
+        private void submitLegacy(String mode) {
             stopDetailTableEditing();
-            if (txtHoTen.getText().trim().isEmpty() || txtSdt.getText().trim().isEmpty()) {
+            CustomerLookup selectedCustomer = (CustomerLookup) cboKhachHangDialog.getSelectedItem();
+            if (selectedCustomer == null || selectedCustomer.maKhachHang <= 0) {
                 showError("Booking phải có họ tên và số điện thoại khách hàng.");
                 return;
             }
@@ -2859,6 +3408,161 @@ public class DatPhongGUI extends JFrame {
                 showError("Không thể lưu booking: " + e.getMessage());
             } finally {
                 try { con.setAutoCommit(true); } catch (Exception ignore) {}
+            }
+        }
+
+        private void submit(String mode) {
+            stopDetailTableEditing();
+
+            CustomerLookup selectedCustomer = (CustomerLookup) cboKhachHangDialog.getSelectedItem();
+            if (selectedCustomer == null || selectedCustomer.maKhachHang <= 0) {
+                showError("Vui lòng chọn khách hàng cho booking.");
+                return;
+            }
+
+            LocalDate ngayDat = normalizeDateFieldValue(txtNgayDatDialog, "Ngày đặt không hợp lệ.");
+            if (ngayDat == null) {
+                return;
+            }
+            if (detailRows.isEmpty()) {
+                showError("Booking bắt buộc phải có ít nhất 1 dòng chi tiết phòng.");
+                return;
+            }
+            for (BookingDetailRecord detail : detailRows) {
+                if (detail.maPhongId <= 0) {
+                    showError("Mỗi dòng chi tiết phải chọn một phòng cụ thể.");
+                    return;
+                }
+            }
+
+            String detailValidationMessage = validateDetailRowsBeforeSave();
+            if (detailValidationMessage != null) {
+                showError(detailValidationMessage);
+                return;
+            }
+            int maLoaiPhong = detailRows.get(0).maLoaiPhong;
+
+            Connection con = ConnectDB.getConnection();
+            if (con == null) {
+                showError("Không thể kết nối cơ sở dữ liệu.");
+                return;
+            }
+
+            datPhongDAO.ensureDetailScheduleSchema(con);
+            try {
+                con.setAutoCommit(false);
+
+                int maNhanVien = findEmployeeIdByUsername(con);
+                Integer maKhachHang = Integer.valueOf(selectedCustomer.maKhachHang);
+
+                Integer openBookingId = findOpenBookingIdByCustomer(
+                        con,
+                        maKhachHang.intValue(),
+                        editing ? Integer.valueOf(editingBooking.maDatPhong) : null
+                );
+                if (openBookingId != null) {
+                    con.rollback();
+                    showError("Khách hàng này đang có booking DP" + openBookingId + " ở trạng thái đã đặt/chờ check-in. Vui lòng cập nhật booking hiện có, không tạo thêm booking mới.");
+                    return;
+                }
+
+                Integer maBangGia = findBangGiaByLoaiPhongId(con, maLoaiPhong);
+                if (maBangGia == null) {
+                    con.rollback();
+                    showError("Không tìm thấy bảng giá đang áp dụng cho loại phòng đã chọn.");
+                    return;
+                }
+
+                int maDatPhong;
+                if (editing) {
+                    if (bookingHasStay(con, editingBooking.maDatPhong)) {
+                        con.rollback();
+                        showError("Booking đã check-in thì không cập nhật ở màn này. Vui lòng sang màn Check-in/Check-out.");
+                        return;
+                    }
+                    maDatPhong = editingBooking.maDatPhong;
+                    List<Integer> oldRoomIds = getAssignedRoomIdsForBooking(con, maDatPhong);
+                    try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET maKhachHang = ?, maNhanVien = ?, maBangGia = ?, ngayDat = ?, ngayNhanPhong = ?, ngayTraPhong = ?, soLuongPhong = ?, soNguoi = ?, tienCoc = ?, trangThai = ?, ghiChu = ? WHERE maDatPhong = ?")) {
+                        ps.setInt(1, maKhachHang.intValue());
+                        ps.setInt(2, maNhanVien);
+                        ps.setInt(3, maBangGia.intValue());
+                        ps.setDate(4, Date.valueOf(ngayDat));
+                        ps.setDate(5, Date.valueOf(findMinCheckIn(detailRows)));
+                        ps.setDate(6, Date.valueOf(findMaxCheckOut(detailRows)));
+                        ps.setInt(7, detailRows.size());
+                        ps.setInt(8, totalGuests(detailRows));
+                        ps.setDouble(9, totalDeposit(detailRows));
+                        ps.setString(10, "Đã đặt");
+                        ps.setString(11, txtGhiChuDialog.getText().trim());
+                        ps.setInt(12, maDatPhong);
+                        ps.executeUpdate();
+                    }
+                    try (PreparedStatement ps = con.prepareStatement("DELETE FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
+                        ps.setInt(1, maDatPhong);
+                        ps.executeUpdate();
+                    }
+                    refreshRoomStatuses(con, oldRoomIds);
+                } else {
+                    try (PreparedStatement ps = con.prepareStatement("INSERT INTO DatPhong(maKhachHang, maNhanVien, maBangGia, ngayDat, ngayNhanPhong, ngayTraPhong, soLuongPhong, soNguoi, tienCoc, trangThai, ghiChu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
+                        ps.setInt(1, maKhachHang.intValue());
+                        ps.setInt(2, maNhanVien);
+                        ps.setInt(3, maBangGia.intValue());
+                        ps.setDate(4, Date.valueOf(ngayDat));
+                        ps.setDate(5, Date.valueOf(findMinCheckIn(detailRows)));
+                        ps.setDate(6, Date.valueOf(findMaxCheckOut(detailRows)));
+                        ps.setInt(7, detailRows.size());
+                        ps.setInt(8, totalGuests(detailRows));
+                        ps.setDouble(9, totalDeposit(detailRows));
+                        ps.setString(10, "Đã đặt");
+                        ps.setString(11, txtGhiChuDialog.getText().trim());
+                        ps.executeUpdate();
+                        try (ResultSet rs = ps.getGeneratedKeys()) {
+                            rs.next();
+                            maDatPhong = rs.getInt(1);
+                        }
+                    }
+                }
+
+                try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                    for (BookingDetailRecord detail : detailRows) {
+                        refreshResolvedRate(con, detail);
+                        ps.setInt(1, maDatPhong);
+                        ps.setInt(2, detail.maPhongId);
+                        ps.setInt(3, detail.soNguoi);
+                        ps.setDouble(4, detail.giaApDung);
+                        ps.setDouble(5, detail.computeThanhTien());
+                        ps.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
+                        ps.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
+                        ps.addBatch();
+                    }
+                    ps.executeBatch();
+                }
+
+                refreshRoomStatuses(con, collectRoomIds(detailRows));
+
+                con.commit();
+                reloadSampleData(false);
+                refreshAllOpenInstances();
+                refreshKhachHangViewsSafely();
+
+                if ("update".equals(mode)) {
+                    showSuccess("Cập nhật booking thành công.");
+                } else {
+                    showSuccess("Lưu booking thành công. Có thể đặt nhiều phòng khác loại trong cùng booking, và các phòng đã chuyển sang trạng thái Đã đặt.");
+                }
+                dispose();
+            } catch (Exception e) {
+                try {
+                    con.rollback();
+                } catch (Exception ignore) {
+                }
+                e.printStackTrace();
+                showError("Không thể lưu booking: " + e.getMessage());
+            } finally {
+                try {
+                    con.setAutoCommit(true);
+                } catch (Exception ignore) {
+                }
             }
         }
 
@@ -3218,7 +3922,7 @@ public class DatPhongGUI extends JFrame {
                 return "T\u1ed5ng ph\u1ee5 thu: " + formatMoney(surcharge);
             }
 
-            private void reevaluateCurrentSelectionState() {
+            private void reevaluateCurrentSelectionStateLegacy() {
                 RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
                 LocalDateTime checkIn = resolveSelectedCheckIn();
                 LocalDateTime checkOut = resolveSelectedCheckOut();
@@ -3246,6 +3950,59 @@ public class DatPhongGUI extends JFrame {
                     warningMessage = "Phòng " + option.soPhong + " chỉ nhận tối đa " + option.sucChuaToiDa + " khách.";
                     hasIssue = true;
                 } else if (!hasIssue && option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                    DatPhongConflictInfo conflictInfo = datPhongDAO.findRoomConflict(
+                            option.maPhongId,
+                            checkIn,
+                            checkOut,
+                            editing ? Integer.valueOf(editingBooking.maDatPhong) : null
+                    );
+                    if (conflictInfo != null) {
+                        warningMessage = buildConflictMessage(conflictInfo);
+                        hasIssue = true;
+                    }
+                }
+
+                applyInlineWarningState(warningMessage, hasIssue);
+            }
+
+            private void reevaluateCurrentSelectionState() {
+                RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
+                LocalDateTime checkIn = resolveSelectedCheckIn();
+                LocalDateTime checkOut = resolveSelectedCheckOut();
+                int soNguoi = parsePositiveIntOrZero(txtSoNguoiDialog.getText().trim());
+
+                String warningMessage = null;
+                boolean hasIssue = false;
+                if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
+                    warningMessage = "Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.";
+                    hasIssue = true;
+                }
+                if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0 && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                    warningMessage = "Không còn phòng trống phù hợp trong khoảng thời gian đã chọn.";
+                    hasIssue = true;
+                } else if (!hasIssue && option == null) {
+                    warningMessage = "Vui lòng chọn phòng trước khi lưu.";
+                    hasIssue = true;
+                } else if (!hasIssue && isDuplicateRoomSelection(option.maPhongId)) {
+                    warningMessage = "Phòng " + option.soPhong + " đã được chọn trong phiếu đặt phòng này.";
+                    hasIssue = true;
+                } else if (!hasIssue) {
+                    warningMessage = validateGuestCount(option, soNguoi);
+                    hasIssue = warningMessage != null;
+                } else if (!hasIssue && option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                    DatPhongConflictInfo conflictInfo = datPhongDAO.findRoomConflict(
+                            option.maPhongId,
+                            checkIn,
+                            checkOut,
+                            editing ? Integer.valueOf(editingBooking.maDatPhong) : null
+                    );
+                    if (conflictInfo != null) {
+                        warningMessage = buildConflictMessage(conflictInfo);
+                        hasIssue = true;
+                    }
+                }
+
+                if (!hasIssue && option != null && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
                     DatPhongConflictInfo conflictInfo = datPhongDAO.findRoomConflict(
                             option.maPhongId,
                             checkIn,
@@ -3302,7 +4059,7 @@ public class DatPhongGUI extends JFrame {
                 return false;
             }
 
-            private void submit() {
+            private void submitLegacy() {
                 RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
                 if (option == null) {
                     showError("Vui lòng chọn phòng.");
@@ -3338,6 +4095,95 @@ public class DatPhongGUI extends JFrame {
                     showError("Số người phải lớn hơn 0.");
                     return;
                 }
+                double tienCoc = parseMoney(txtDatCocDialog.getText().trim());
+                if (tienCoc < 0) {
+                    showError("Thu tiền cọc phải hợp lệ.");
+                    return;
+                }
+
+                BookingDetailRecord target = editingDetail == null ? new BookingDetailRecord() : editingDetail;
+                target.loaiPhong = option.tenLoaiPhong;
+                target.maLoaiPhong = option.maLoaiPhong;
+                target.maPhongId = option.maPhongId;
+                target.maPhong = option.soPhong;
+                target.checkInDuKien = checkIn;
+                target.checkOutDuKien = checkOut;
+                target.soNguoi = soNguoi;
+                target.sucChuaToiDa = option.sucChuaToiDa;
+                target.giaApDung = option.giaMacDinh > 0 ? option.giaMacDinh : (editingDetail == null ? 0d : editingDetail.giaApDung);
+                try {
+                    Connection con = ConnectDB.getConnection();
+                    if (con != null) {
+                        refreshResolvedRate(con, target);
+                    }
+                } catch (Exception ex) {
+                    target.loaiNgayApDung = "-";
+                    target.loaiGiaApDung = "-";
+                    target.giaNenApDung = 0d;
+                    target.phuThuApDung = 0d;
+                    target.tongPhuThuApDung = 0d;
+                    target.thanhTien = 0d;
+                }
+                target.tienDatCocChiTiet = tienCoc;
+                target.duplicateInBooking = isDuplicateRoomSelection(option.maPhongId);
+                target.capacityExceeded = option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa;
+                target.conflictInfo = datPhongDAO.findRoomConflict(
+                        option.maPhongId,
+                        checkIn,
+                        checkOut,
+                        editing ? Integer.valueOf(editingBooking.maDatPhong) : null
+                );
+                target.trangThaiChiTiet = target.conflictInfo != null ? "Xung dot lich" : "Đã đặt";
+                target.ghiChu = txtGhiChuChiTietDialog.getText().trim();
+                if (editingDetail == null) {
+                    detailRows.add(target);
+                }
+                refillBookingDetailDialogTable();
+                dispose();
+            }
+
+            private void submit() {
+                RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
+                if (option == null) {
+                    showError("Vui lòng chọn phòng.");
+                    return;
+                }
+                for (BookingDetailRecord row : detailRows) {
+                    if (row != editingDetail && row.maPhongId == option.maPhongId) {
+                        showError("Phòng này đã được chọn trong booking.");
+                        return;
+                    }
+                }
+
+                LocalDate checkInDate = normalizeDateFieldValue(txtCheckInDialog, "Check-in dự kiến không hợp lệ.");
+                LocalTime checkInTime = normalizeTimeFieldValue(txtCheckInTimeDialog, "Giờ vào dự kiến không hợp lệ.");
+                LocalDate checkOutDate = normalizeDateFieldValue(txtCheckOutDialog, "Check-out dự kiến không hợp lệ.");
+                LocalTime checkOutTime = normalizeTimeFieldValue(txtCheckOutTimeDialog, "Giờ ra dự kiến không hợp lệ.");
+                if (checkInDate == null || checkInTime == null || checkOutDate == null || checkOutTime == null) {
+                    return;
+                }
+
+                LocalDateTime checkIn = combineDateTime(checkInDate, checkInTime);
+                LocalDateTime checkOut = combineDateTime(checkOutDate, checkOutTime);
+                if (!checkOut.isAfter(checkIn)) {
+                    showError("Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.");
+                    return;
+                }
+
+                int soNguoi;
+                try {
+                    soNguoi = Integer.parseInt(txtSoNguoiDialog.getText().trim());
+                } catch (NumberFormatException ex) {
+                    showError("Số người ở phải là số nguyên hợp lệ.");
+                    return;
+                }
+
+                String guestError = validateGuestCount(option, soNguoi);
+                if (guestError != null) {
+                    showError(guestError);
+                    return;
+                }
+
                 double tienCoc = parseMoney(txtDatCocDialog.getText().trim());
                 if (tienCoc < 0) {
                     showError("Thu tiền cọc phải hợp lệ.");
@@ -3781,6 +4627,34 @@ public class DatPhongGUI extends JFrame {
         }
     }
 
+    private static final class DigitsOnlyDocumentFilter extends DocumentFilter {
+        @Override
+        public void insertString(FilterBypass fb, int offset, String string, AttributeSet attr) throws BadLocationException {
+            if (isDigitsOnly(string)) {
+                super.insertString(fb, offset, string, attr);
+            }
+        }
+
+        @Override
+        public void replace(FilterBypass fb, int offset, int length, String text, AttributeSet attrs) throws BadLocationException {
+            if (isDigitsOnly(text)) {
+                super.replace(fb, offset, length, text, attrs);
+            }
+        }
+
+        private boolean isDigitsOnly(String text) {
+            if (text == null || text.isEmpty()) {
+                return true;
+            }
+            for (int i = 0; i < text.length(); i++) {
+                if (!Character.isDigit(text.charAt(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
     private static final class CustomerLookup {
         private int maKhachHang;
         private String hoTen;
@@ -3789,6 +4663,12 @@ public class DatPhongGUI extends JFrame {
         private LocalDate ngaySinh;
         private String email;
         private String diaChi;
+        private String displayText;
+
+        @Override
+        public String toString() {
+            return displayText == null ? "" : displayText;
+        }
     }
 
     private static final class RoomOption {

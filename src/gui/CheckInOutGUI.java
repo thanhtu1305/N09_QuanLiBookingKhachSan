@@ -43,6 +43,7 @@ import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -101,12 +102,17 @@ public class CheckInOutGUI extends JFrame {
     private static final Color STATUS_WAIT_PAYMENT_FG = new Color(154, 52, 18);
     private static final Color STATUS_CLEANING_FG = new Color(30, 64, 175);
     private static final Color STATUS_MAINTENANCE_FG = new Color(153, 27, 27);
+    private static final Color FUTURE_BADGE_BG = new Color(249, 115, 22);
+    private static final Color FUTURE_BADGE_BORDER = new Color(194, 65, 12);
+    private static final Color FUTURE_BADGE_FG = Color.WHITE;
     private static final String STATUS_READY = "Sẵn sàng";
     private static final String STATUS_PENDING_CHECKIN = "Chờ check-in";
     private static final String STATUS_OCCUPIED = "Đang ở";
     private static final String STATUS_WAIT_PAYMENT = "Chờ thanh toán";
     private static final String STATUS_CLEANING = "Dọn phòng";
     private static final String STATUS_MAINTENANCE = "Bảo trì";
+
+    private static final String FUTURE_TIMELINE_COLUMN = "K\u1ebf";
 
     private static final List<CheckInOutGUI> OPEN_INSTANCES = new ArrayList<CheckInOutGUI>();
     private static Integer pendingFocusedBookingId;
@@ -125,6 +131,8 @@ public class CheckInOutGUI extends JFrame {
     private final List<RoomTimelineRow> filteredTimelineRows = new ArrayList<RoomTimelineRow>();
     private final List<LocalDate> ganttDates = new ArrayList<LocalDate>();
     private final Map<String, JButton> floorButtons = new LinkedHashMap<String, JButton>();
+    private final Map<String, JLabel> floorBadgeLabels = new LinkedHashMap<String, JLabel>();
+    private final Map<String, FloorFutureBadgeInfo> floorFutureBadgeInfos = new LinkedHashMap<String, FloorFutureBadgeInfo>();
     private LocalDate ganttStartDate = LocalDate.now();
     private String selectedFloor = "Tầng 1";
     private GanttTimelineBlock selectedBlock;
@@ -257,14 +265,7 @@ public class CheckInOutGUI extends JFrame {
         left.setOpaque(false);
         for (int floor = 1; floor <= 5; floor++) {
             String floorLabel = "T\u1ea7ng " + floor;
-            JButton button = createOutlineButton(floorLabel, new Color(37, 99, 235), e -> {
-                selectedFloor = floorLabel;
-                updateFloorButtonStyles();
-                applyTimelineFilters(false);
-            });
-            button.setPreferredSize(new Dimension(96, 34));
-            floorButtons.put(floorLabel, button);
-            left.add(button);
+            left.add(createFloorButtonItem(floorLabel));
         }
 
         JPanel center = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 0));
@@ -380,7 +381,7 @@ public class CheckInOutGUI extends JFrame {
         titleRow.add(lblTitle, BorderLayout.WEST);
         titleRow.add(lblSub, BorderLayout.EAST);
 
-        timelineTableModel = new DefaultTableModel(new Object[]{"Ph\u00f2ng", "K\u1ebf"}, 0) {
+        timelineTableModel = new DefaultTableModel(new Object[]{"Ph\u00f2ng", FUTURE_TIMELINE_COLUMN}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -394,9 +395,15 @@ public class CheckInOutGUI extends JFrame {
                 if (row < 0 || row >= filteredTimelineRows.size()) {
                     return null;
                 }
-                if (column == 0 || column == 1) {
-                    RoomTimelineRow timelineRow = filteredTimelineRows.get(row);
-                    return timelineRow == null ? null : timelineRow.buildTooltip();
+                RoomTimelineRow timelineRow = filteredTimelineRows.get(row);
+                if (timelineRow == null) {
+                    return null;
+                }
+                if (column == 0) {
+                    return timelineRow.buildTooltip();
+                }
+                if (column == getTimelineFutureBadgeColumnIndex()) {
+                    return timelineRow.futureBlockCount <= 0 ? null : timelineRow.buildFutureBadgeTooltip();
                 }
                 Object value = getValueAt(row, column);
                 if (value instanceof GanttTimelineCell) {
@@ -429,15 +436,15 @@ public class CheckInOutGUI extends JFrame {
                 if (timelineRow == null) {
                     return;
                 }
-                if (column == 1) {
-                    jumpToFutureBooking(timelineRow);
+                if (column == getTimelineFutureBadgeColumnIndex()) {
+                    jumpToRoomFutureBlock(timelineRow);
                     return;
                 }
-                if (column <= 0) {
+                if (column == 0) {
                     selectStandaloneRoom(timelineRow);
                     return;
                 }
-                int cellIndex = column - 2;
+                int cellIndex = column - 1;
                 if (cellIndex < 0 || cellIndex >= timelineRow.cells.size()) {
                     return;
                 }
@@ -474,15 +481,70 @@ public class CheckInOutGUI extends JFrame {
         return legend;
     }
 
+    private JPanel createFloorButtonItem(String floorLabel) {
+        JPanel wrapper = new JPanel(null);
+        wrapper.setOpaque(false);
+        wrapper.setPreferredSize(new Dimension(114, 42));
+
+        JButton button = createOutlineButton(floorLabel, new Color(37, 99, 235), e -> {
+            selectedFloor = floorLabel;
+            updateFloorButtonStyles();
+            applyTimelineFilters(false);
+        });
+        button.setBounds(0, 8, 96, 34);
+
+        JLabel badgeLabel = createFutureBadgeLabel();
+        badgeLabel.setBounds(74, 0, 34, 20);
+        badgeLabel.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                jumpToFloorFutureBlock(floorLabel);
+            }
+        });
+
+        wrapper.add(button);
+        wrapper.add(badgeLabel);
+        floorButtons.put(floorLabel, button);
+        floorBadgeLabels.put(floorLabel, badgeLabel);
+        return wrapper;
+    }
+
+    private JLabel createFutureBadgeLabel() {
+        JLabel label = new JLabel("", SwingConstants.CENTER);
+        label.setFont(AppFonts.ui(Font.BOLD, 11));
+        label.setOpaque(true);
+        label.setVisible(false);
+        label.setForeground(FUTURE_BADGE_FG);
+        label.setBackground(FUTURE_BADGE_BG);
+        label.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(FUTURE_BADGE_BORDER, 1, true),
+                new EmptyBorder(2, 7, 2, 7)
+        ));
+        label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return label;
+    }
+
     private void updateFloorButtonStyles() {
         for (Map.Entry<String, JButton> entry : floorButtons.entrySet()) {
+            String floorName = entry.getKey();
             JButton button = entry.getValue();
-            boolean selected = entry.getKey().equalsIgnoreCase(selectedFloor);
+            boolean selected = floorName.equalsIgnoreCase(selectedFloor);
             button.setOpaque(true);
             button.setContentAreaFilled(true);
             button.setBackground(selected ? new Color(37, 99, 235) : Color.WHITE);
             button.setForeground(selected ? Color.WHITE : TEXT_PRIMARY);
             button.setBorder(BorderFactory.createLineBorder(selected ? new Color(37, 99, 235) : BORDER_SOFT, 1, true));
+
+            JLabel badgeLabel = floorBadgeLabels.get(floorName);
+            if (badgeLabel == null) {
+                continue;
+            }
+            FloorFutureBadgeInfo info = floorFutureBadgeInfos.get(floorName);
+            boolean hasFutureBlocks = info != null && info.futureBlockCount > 0;
+            badgeLabel.setVisible(hasFutureBlocks);
+            badgeLabel.setText(hasFutureBlocks ? formatFutureBadgeCount(info.futureBlockCount) : "");
+            badgeLabel.setToolTipText(hasFutureBlocks ? buildFloorFutureBadgeTooltip(info) : null);
+            badgeLabel.repaint();
         }
     }
 
@@ -519,6 +581,7 @@ public class CheckInOutGUI extends JFrame {
             filteredTimelineRows.add(row);
         }
         refillTimelineTable();
+        updateFloorButtonStyles();
         if (showMessage) {
             showInfo("\u0110\u00e3 hi\u1ec3n th\u1ecb " + filteredTimelineRows.size() + " ph\u00f2ng ph\u00f9 h\u1ee3p tr\u00ean Gantt.");
         }
@@ -550,12 +613,16 @@ public class CheckInOutGUI extends JFrame {
         }
         Object[] columns = new Object[2 + ganttDates.size()];
         columns[0] = "Ph\u00f2ng";
-        columns[1] = "\u2022";
         for (int i = 0; i < ganttDates.size(); i++) {
-            columns[i + 2] = ganttDates.get(i).format(GANTT_DATE_FORMAT);
+            columns[i + 1] = ganttDates.get(i).format(GANTT_DATE_FORMAT);
         }
+        columns[getTimelineFutureBadgeColumnIndex()] = FUTURE_TIMELINE_COLUMN;
         timelineTableModel.setColumnIdentifiers(columns);
         configureTimelineColumns();
+    }
+
+    private int getTimelineFutureBadgeColumnIndex() {
+        return ganttDates.size() + 1;
     }
 
     private void configureTimelineColumns() {
@@ -564,12 +631,13 @@ public class CheckInOutGUI extends JFrame {
         }
         tblTimeline.getColumnModel().getColumn(0).setMinWidth(130);
         tblTimeline.getColumnModel().getColumn(0).setPreferredWidth(150);
-        tblTimeline.getColumnModel().getColumn(1).setMinWidth(52);
-        tblTimeline.getColumnModel().getColumn(1).setPreferredWidth(56);
-        for (int i = 2; i < tblTimeline.getColumnModel().getColumnCount(); i++) {
+        for (int i = 1; i < getTimelineFutureBadgeColumnIndex(); i++) {
             tblTimeline.getColumnModel().getColumn(i).setMinWidth(126);
             tblTimeline.getColumnModel().getColumn(i).setPreferredWidth(142);
         }
+        tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setMinWidth(84);
+        tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setPreferredWidth(88);
+        tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setCellRenderer(new FutureBadgeCellRenderer());
         tblTimeline.revalidate();
     }
 
@@ -582,10 +650,10 @@ public class CheckInOutGUI extends JFrame {
         for (RoomTimelineRow row : filteredTimelineRows) {
             Object[] data = new Object[2 + ganttDates.size()];
             data[0] = row;
-            data[1] = row;
             for (int i = 0; i < row.cells.size() && i < ganttDates.size(); i++) {
-                data[i + 2] = row.cells.get(i);
+                data[i + 1] = row.cells.get(i);
             }
+            data[getTimelineFutureBadgeColumnIndex()] = row;
             timelineTableModel.addRow(data);
         }
         restoreTimelineSelection();
@@ -604,7 +672,7 @@ public class CheckInOutGUI extends JFrame {
                 for (int cellIndex = 0; cellIndex < row.cells.size(); cellIndex++) {
                     GanttTimelineCell cell = row.cells.get(cellIndex);
                     if (cell != null && cell.block != null && cell.block.maDatPhong == pendingFocusedBookingId.intValue()) {
-                        tblTimeline.changeSelection(rowIndex, cellIndex + 2, false, false);
+                        tblTimeline.changeSelection(rowIndex, cellIndex + 1, false, false);
                         selectTimelineCell(row, cell);
                         clearPendingFocusedBookingIfMatched(cell.block.maDatPhong);
                         return;
@@ -618,7 +686,7 @@ public class CheckInOutGUI extends JFrame {
                 for (int cellIndex = 0; cellIndex < row.cells.size(); cellIndex++) {
                     GanttTimelineCell cell = row.cells.get(cellIndex);
                     if (cell != null && cell.block != null && cell.block.isSameIdentity(selectedBlock)) {
-                        tblTimeline.changeSelection(rowIndex, cellIndex + 2, false, false);
+                        tblTimeline.changeSelection(rowIndex, cellIndex + 1, false, false);
                         selectTimelineCell(row, cell);
                         return;
                     }
@@ -668,15 +736,28 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
-    private void jumpToFutureBooking(RoomTimelineRow row) {
-        if (row == null || row.futureBookingCount <= 0 || row.nextFutureBookingDate == null) {
+    private void jumpToRoomFutureBlock(RoomTimelineRow row) {
+        if (row == null || row.futureBlockCount <= 0 || row.nextFutureBlockDate == null) {
             return;
         }
         selectedFloor = safeValue(row.floorName, selectedFloor);
         selectedRoomCode = row.roomCode;
         selectedBlock = null;
         updateFloorButtonStyles();
-        ganttStartDate = row.nextFutureBookingDate;
+        ganttStartDate = row.nextFutureBlockDate;
+        reloadSampleData(false);
+    }
+
+    private void jumpToFloorFutureBlock(String floorName) {
+        FloorFutureBadgeInfo info = floorFutureBadgeInfos.get(floorName);
+        if (info == null || info.futureBlockCount <= 0 || info.nextFutureBlockDate == null) {
+            return;
+        }
+        selectedFloor = safeValue(floorName, selectedFloor);
+        selectedRoomCode = null;
+        selectedBlock = null;
+        updateFloorButtonStyles();
+        ganttStartDate = info.nextFutureBlockDate;
         reloadSampleData(false);
     }
 
@@ -829,7 +910,7 @@ public class CheckInOutGUI extends JFrame {
         addDetailRow(body, "Tr\u1ea1ng th\u00e1i block", lblTrangThaiPhong);
         addDetailRow(body, "Ti\u1ec1n c\u1ecdc", lblTienCoc);
         addDetailRow(body, "D\u1ecbch v\u1ee5 ph\u00e1t sinh", lblDichVuPhatSinh);
-        addDetailRow(body, "Booking t\u01b0\u01a1ng lai", lblFutureBookingValue);
+        addDetailRow(body, "Block t\u01b0\u01a1ng lai", lblFutureBookingValue);
 
         JPanel relatedRoomSection = new JPanel(new BorderLayout(0, 6));
         relatedRoomSection.setOpaque(false);
@@ -2008,11 +2089,13 @@ public class CheckInOutGUI extends JFrame {
         loadActiveTimelineBlocks(con, rowsById);
         loadPostCheckoutTimelineBlocks(con, rowsById);
         loadMaintenanceTimelineBlocks(rowsById);
-        loadFutureBookingIndicators(con, rowsById);
+        rebuildFutureBlockIndicators(rowsById);
         allTimelineRows.addAll(rowsById.values());
+        rebuildFloorFutureBadgeInfos();
         if (selectedFloor == null || selectedFloor.trim().isEmpty()) {
             selectedFloor = allTimelineRows.isEmpty() ? "T\u1ea7ng 1" : safeValue(allTimelineRows.get(0).floorName, "T\u1ea7ng 1");
         }
+        updateFloorButtonStyles();
     }
 
     private void ensureRepresentativeGuestSchema(Connection con) {
@@ -2213,13 +2296,17 @@ public class CheckInOutGUI extends JFrame {
                 if (STATUS_CLEANING.equals(status) && paymentTs != null) {
                     blockStart = paymentTs.toLocalDateTime().toLocalDate();
                 }
+                LocalDate blockEnd = LocalDate.now();
+                if (blockEnd.isBefore(blockStart)) {
+                    blockEnd = blockStart;
+                }
                 GanttTimelineBlock block = new GanttTimelineBlock(
                         roomId,
                         safeValue(rs.getString("soPhong"), "-"),
                         safeValue(rs.getString("tang"), "-"),
                         safeValue(rs.getString("tenLoaiPhong"), "-"),
                         blockStart,
-                        visibleEnd,
+                        blockEnd,
                         rs.getInt("maDatPhong"),
                         rs.getInt("maLuuTru"),
                         rs.getInt("maChiTietDatPhong"),
@@ -2260,33 +2347,57 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
-    private void loadFutureBookingIndicators(Connection con, Map<Integer, RoomTimelineRow> rowsById) {
-        String detailCheckInExpr = "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour()
-                + ", CAST(dp.ngayNhanPhong AS DATETIME2)))";
-        String sql = "SELECT ctdp.maPhong, COUNT(1) AS soLuong, MIN(CAST(" + detailCheckInExpr + " AS DATE)) AS ngayGanNhat " +
-                "FROM ChiTietDatPhong ctdp " +
-                "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                "WHERE ctdp.maPhong IS NOT NULL " +
-                "AND ISNULL(dp.trangThai, N'') IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang \u1edf', N'Check-out m\u1ed9t ph\u1ea7n', N'\u0110\u00e3 check-in') " +
-                "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) " +
-                "AND CAST(" + detailCheckInExpr + " AS DATE) > ? " +
-                "GROUP BY ctdp.maPhong";
-        try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setDate(1, Date.valueOf(ganttStartDate.plusDays(GANTT_DAY_COUNT - 1L)));
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    RoomTimelineRow row = rowsById.get(Integer.valueOf(rs.getInt("maPhong")));
-                    if (row == null) {
-                        continue;
-                    }
-                    row.futureBookingCount = rs.getInt("soLuong");
-                    Date nextDate = rs.getDate("ngayGanNhat");
-                    row.nextFutureBookingDate = nextDate == null ? null : nextDate.toLocalDate();
-                }
+    private void rebuildFutureBlockIndicators(Map<Integer, RoomTimelineRow> rowsById) {
+        LocalDate visibleEnd = ganttStartDate.plusDays(GANTT_DAY_COUNT - 1L);
+        for (RoomTimelineRow row : rowsById.values()) {
+            if (row == null) {
+                continue;
             }
-        } catch (Exception e) {
-            e.printStackTrace();
+            row.resetFutureBlocks();
+            for (GanttTimelineBlock block : row.blocks) {
+                LocalDate futureDate = resolveFutureBlockDate(block, visibleEnd);
+                if (futureDate == null) {
+                    continue;
+                }
+                row.registerFutureBlock(block.status, futureDate);
+            }
         }
+    }
+
+    private void rebuildFloorFutureBadgeInfos() {
+        floorFutureBadgeInfos.clear();
+        for (RoomTimelineRow row : allTimelineRows) {
+            if (row == null) {
+                continue;
+            }
+            String floorName = safeValue(row.floorName, "");
+            if (floorName.isEmpty()) {
+                continue;
+            }
+            FloorFutureBadgeInfo info = floorFutureBadgeInfos.get(floorName);
+            if (info == null) {
+                info = new FloorFutureBadgeInfo(floorName);
+                floorFutureBadgeInfos.put(floorName, info);
+            }
+            info.include(row);
+        }
+    }
+
+    private LocalDate resolveFutureBlockDate(GanttTimelineBlock block, LocalDate visibleEnd) {
+        if (block == null || block.startDate == null || block.endDate == null) {
+            return null;
+        }
+        if (!isFutureBadgeStatus(block.status) || !block.endDate.isAfter(visibleEnd)) {
+            return null;
+        }
+        return block.startDate.isAfter(visibleEnd) ? block.startDate : visibleEnd.plusDays(1L);
+    }
+
+    private boolean isFutureBadgeStatus(String status) {
+        return STATUS_PENDING_CHECKIN.equalsIgnoreCase(status)
+                || STATUS_OCCUPIED.equalsIgnoreCase(status)
+                || STATUS_WAIT_PAYMENT.equalsIgnoreCase(status)
+                || STATUS_CLEANING.equalsIgnoreCase(status);
     }
 
     private void applyTimelineBlock(RoomTimelineRow row, GanttTimelineBlock block) {
@@ -2367,9 +2478,7 @@ public class CheckInOutGUI extends JFrame {
         lblTrangThaiPhong.setText(normalizeRoomOperationalStatus(row.roomStatus));
         lblTienCoc.setText(selectedRecord == null ? "-" : safeValue(selectedRecord.tienCoc, "-"));
         lblDichVuPhatSinh.setText(selectedRecord == null ? "-" : safeValue(selectedRecord.dichVuPhatSinh, "-"));
-        lblFutureBookingValue.setText(row.futureBookingCount <= 0
-                ? "Kh\u00f4ng c\u00f3"
-                : row.futureBookingCount + " booking sau " + ganttStartDate.plusDays(GANTT_DAY_COUNT - 1L).format(GANTT_DATE_FORMAT));
+        lblFutureBookingValue.setText(buildFutureBlockSummaryText(row));
         txtGhiChu.setText(buildTimelineRowNote(row));
         txtGhiChu.setCaretPosition(0);
         rebuildRelatedRoomsPanel(selectedRecord, row.roomCode);
@@ -2393,9 +2502,7 @@ public class CheckInOutGUI extends JFrame {
         lblTrangThaiPhong.setText(block.status);
         lblTienCoc.setText(record == null ? "-" : safeValue(record.tienCoc, "-"));
         lblDichVuPhatSinh.setText(record == null ? "-" : safeValue(record.dichVuPhatSinh, "-"));
-        lblFutureBookingValue.setText(row.futureBookingCount <= 0
-                ? "Kh\u00f4ng c\u00f3"
-                : row.futureBookingCount + " booking ngo\u00e0i c\u1eeda s\u1ed5 7 ng\u00e0y");
+        lblFutureBookingValue.setText(buildFutureBlockSummaryText(row));
         txtGhiChu.setText(buildTimelineBlockNote(row, block));
         txtGhiChu.setCaretPosition(0);
         rebuildRelatedRoomsPanel(record, block.roomCode);
@@ -2420,12 +2527,110 @@ public class CheckInOutGUI extends JFrame {
                 .append(", lo\u1ea1i ").append(safeValue(row.roomType, "-"))
                 .append(". Tr\u1ea1ng th\u00e1i hi\u1ec7n t\u1ea1i: ")
                 .append(normalizeRoomOperationalStatus(row.roomStatus)).append(".");
-        if (row.futureBookingCount > 0 && row.nextFutureBookingDate != null) {
-            note.append("\nBooking g\u1ea7n nh\u1ea5t ngo\u00e0i c\u1eeda s\u1ed5: ")
-                    .append(row.nextFutureBookingDate.format(GANTT_RANGE_FORMAT))
-                    .append(" (").append(row.futureBookingCount).append(" booking).");
+        if (row.futureBlockCount > 0 && row.nextFutureBlockDate != null) {
+            note.append("\nBlock ngo\u00e0i c\u1eeda s\u1ed5 7 ng\u00e0y: ")
+                    .append(row.futureBlockCount)
+                    .append(" (")
+                    .append(buildFutureBreakdownText(
+                            row.futurePendingCount,
+                            row.futureOccupiedCount,
+                            row.futureWaitPaymentCount,
+                            row.futureCleaningCount
+                    ))
+                    .append("). G\u1ea7n nh\u1ea5t: ")
+                    .append(row.nextFutureBlockDate.format(GANTT_RANGE_FORMAT))
+                    .append(".");
         }
         return note.toString();
+    }
+
+    private String buildFutureBlockSummaryText(RoomTimelineRow row) {
+        if (row == null || row.futureBlockCount <= 0) {
+            return "Kh\u00f4ng c\u00f3";
+        }
+        StringBuilder summary = new StringBuilder();
+        summary.append(row.futureBlockCount).append(" block ngo\u00e0i c\u1eeda s\u1ed5 7 ng\u00e0y");
+        if (row.nextFutureBlockDate != null) {
+            summary.append(", g\u1ea7n nh\u1ea5t ").append(row.nextFutureBlockDate.format(GANTT_RANGE_FORMAT));
+        }
+        String breakdown = buildFutureBreakdownText(
+                row.futurePendingCount,
+                row.futureOccupiedCount,
+                row.futureWaitPaymentCount,
+                row.futureCleaningCount
+        );
+        if (!breakdown.isEmpty()) {
+            summary.append(" (").append(breakdown).append(")");
+        }
+        return summary.toString();
+    }
+
+    private String buildFutureBreakdownText(int pendingCount,
+                                            int occupiedCount,
+                                            int waitPaymentCount,
+                                            int cleaningCount) {
+        List<String> parts = new ArrayList<String>();
+        if (pendingCount > 0) {
+            parts.add(pendingCount + " ch\u1edd check-in");
+        }
+        if (waitPaymentCount > 0) {
+            parts.add(waitPaymentCount + " ch\u1edd thanh to\u00e1n");
+        }
+        if (cleaningCount > 0) {
+            parts.add(cleaningCount + " d\u1ecdn ph\u00f2ng");
+        }
+        if (occupiedCount > 0) {
+            parts.add(occupiedCount + " \u0111ang \u1edf");
+        }
+        if (parts.isEmpty()) {
+            return "";
+        }
+        return String.join(", ", parts);
+    }
+
+    private String buildFutureBadgeTooltip(String scopeLabel,
+                                           int totalCount,
+                                           int pendingCount,
+                                           int occupiedCount,
+                                           int waitPaymentCount,
+                                           int cleaningCount,
+                                           LocalDate nextFutureDate) {
+        if (totalCount <= 0) {
+            return null;
+        }
+        StringBuilder tooltip = new StringBuilder("<html>");
+        tooltip.append(scopeLabel).append(": ").append(totalCount).append(" block ngo\u00e0i tu\u1ea7n hi\u1ec7n t\u1ea1i");
+        String breakdown = buildFutureBreakdownText(pendingCount, occupiedCount, waitPaymentCount, cleaningCount);
+        if (!breakdown.isEmpty()) {
+            tooltip.append("<br>").append(breakdown);
+        }
+        if (nextFutureDate != null) {
+            tooltip.append("<br>G\u1ea7n nh\u1ea5t: ").append(nextFutureDate.format(GANTT_RANGE_FORMAT));
+        }
+        tooltip.append("</html>");
+        return tooltip.toString();
+    }
+
+    private String buildFloorFutureBadgeTooltip(FloorFutureBadgeInfo info) {
+        if (info == null) {
+            return null;
+        }
+        return buildFutureBadgeTooltip(
+                safeValue(info.floorName, "T\u1ea7ng"),
+                info.futureBlockCount,
+                info.futurePendingCount,
+                info.futureOccupiedCount,
+                info.futureWaitPaymentCount,
+                info.futureCleaningCount,
+                info.nextFutureBlockDate
+        );
+    }
+
+    private String formatFutureBadgeCount(int count) {
+        if (count <= 0) {
+            return "";
+        }
+        return count > 99 ? "99+" : String.valueOf(count);
     }
 
     private String buildTimelineBlockNote(RoomTimelineRow row, GanttTimelineBlock block) {
@@ -5312,9 +5517,9 @@ public class CheckInOutGUI extends JFrame {
                     }
                     return this;
                 }
-                setText(timelineRow.futureBookingCount <= 0 ? "" : String.valueOf(timelineRow.futureBookingCount));
-                setBackground(timelineRow.futureBookingCount <= 0 ? Color.WHITE : new Color(219, 234, 254));
-                setForeground(timelineRow.futureBookingCount <= 0 ? TEXT_MUTED : new Color(30, 64, 175));
+                setText("");
+                setBackground(Color.WHITE);
+                setForeground(TEXT_PRIMARY);
                 return this;
             }
 
@@ -5338,6 +5543,36 @@ public class CheckInOutGUI extends JFrame {
             setText("");
             setBackground(Color.WHITE);
             setForeground(TEXT_PRIMARY);
+            return this;
+        }
+    }
+
+    private final class FutureBadgeCellRenderer extends JPanel implements TableCellRenderer {
+        private final JLabel badgeLabel = createFutureBadgeLabel();
+
+        private FutureBadgeCellRenderer() {
+            setLayout(new FlowLayout(FlowLayout.RIGHT, 10, 15));
+            setOpaque(true);
+            add(badgeLabel);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+            setBackground(Color.WHITE);
+            setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1));
+            badgeLabel.setVisible(false);
+            badgeLabel.setText("");
+            if (value instanceof RoomTimelineRow) {
+                RoomTimelineRow timelineRow = (RoomTimelineRow) value;
+                if (timelineRow.futureBlockCount > 0) {
+                    badgeLabel.setVisible(true);
+                    badgeLabel.setText("+" + formatFutureBadgeCount(timelineRow.futureBlockCount));
+                }
+                boolean selectedRoom = selectedRoomCode != null && selectedRoomCode.equalsIgnoreCase(timelineRow.roomCode);
+                if (selectedRoom) {
+                    setBorder(BorderFactory.createLineBorder(new Color(37, 99, 235), 2, true));
+                }
+            }
             return this;
         }
     }
@@ -5377,9 +5612,14 @@ public class CheckInOutGUI extends JFrame {
         private final String roomType;
         private final String roomStatus;
         private final List<GanttTimelineCell> cells = new ArrayList<GanttTimelineCell>();
+        private final List<GanttTimelineBlock> blocks = new ArrayList<GanttTimelineBlock>();
         private final StringBuilder searchIndex = new StringBuilder();
-        private int futureBookingCount;
-        private LocalDate nextFutureBookingDate;
+        private int futureBlockCount;
+        private int futurePendingCount;
+        private int futureOccupiedCount;
+        private int futureWaitPaymentCount;
+        private int futureCleaningCount;
+        private LocalDate nextFutureBlockDate;
 
         private RoomTimelineRow(int roomId,
                                 String roomCode,
@@ -5405,11 +5645,43 @@ public class CheckInOutGUI extends JFrame {
             if (block == null) {
                 return;
             }
+            blocks.add(block);
             appendSearchToken(block.roomCode);
             appendSearchToken(block.getDisplayGuest());
             if (block.maDatPhong > 0) {
                 appendSearchToken("dp" + block.maDatPhong);
                 appendSearchToken(String.valueOf(block.maDatPhong));
+            }
+        }
+
+        private void resetFutureBlocks() {
+            futureBlockCount = 0;
+            futurePendingCount = 0;
+            futureOccupiedCount = 0;
+            futureWaitPaymentCount = 0;
+            futureCleaningCount = 0;
+            nextFutureBlockDate = null;
+        }
+
+        private void registerFutureBlock(String status, LocalDate futureDate) {
+            futureBlockCount++;
+            if (futureDate != null && (nextFutureBlockDate == null || futureDate.isBefore(nextFutureBlockDate))) {
+                nextFutureBlockDate = futureDate;
+            }
+            if (STATUS_PENDING_CHECKIN.equalsIgnoreCase(status)) {
+                futurePendingCount++;
+                return;
+            }
+            if (STATUS_OCCUPIED.equalsIgnoreCase(status)) {
+                futureOccupiedCount++;
+                return;
+            }
+            if (STATUS_WAIT_PAYMENT.equalsIgnoreCase(status)) {
+                futureWaitPaymentCount++;
+                return;
+            }
+            if (STATUS_CLEANING.equalsIgnoreCase(status)) {
+                futureCleaningCount++;
             }
         }
 
@@ -5434,12 +5706,35 @@ public class CheckInOutGUI extends JFrame {
             builder.append("<br>Tầng: ").append(safeValue(floorName, "-"));
             builder.append("<br>Loại phòng: ").append(safeValue(roomType, "-"));
             builder.append("<br>Trạng thái vận hành: ").append(safeValue(roomStatus, STATUS_READY));
-            if (futureBookingCount > 0 && nextFutureBookingDate != null) {
-                builder.append("<br>Booking tương lai: ").append(futureBookingCount)
-                        .append(" (gần nhất ").append(nextFutureBookingDate.format(GANTT_RANGE_FORMAT)).append(")");
+            if (futureBlockCount > 0) {
+                builder.append("<br>Block tương lai: ").append(futureBlockCount);
+                String breakdown = CheckInOutGUI.this.buildFutureBreakdownText(
+                        futurePendingCount,
+                        futureOccupiedCount,
+                        futureWaitPaymentCount,
+                        futureCleaningCount
+                );
+                if (!breakdown.isEmpty()) {
+                    builder.append(" (").append(breakdown).append(")");
+                }
+                if (nextFutureBlockDate != null) {
+                    builder.append("<br>Gần nhất: ").append(nextFutureBlockDate.format(GANTT_RANGE_FORMAT));
+                }
             }
             builder.append("</html>");
             return builder.toString();
+        }
+
+        private String buildFutureBadgeTooltip() {
+            return CheckInOutGUI.this.buildFutureBadgeTooltip(
+                    "Phòng " + safeValue(roomCode, "-"),
+                    futureBlockCount,
+                    futurePendingCount,
+                    futureOccupiedCount,
+                    futureWaitPaymentCount,
+                    futureCleaningCount,
+                    nextFutureBlockDate
+            );
         }
     }
 
@@ -5538,6 +5833,35 @@ public class CheckInOutGUI extends JFrame {
                     && endDate != null
                     && other.endDate != null
                     && endDate.equals(other.endDate);
+        }
+    }
+
+    private static final class FloorFutureBadgeInfo {
+        private final String floorName;
+        private int futureBlockCount;
+        private int futurePendingCount;
+        private int futureOccupiedCount;
+        private int futureWaitPaymentCount;
+        private int futureCleaningCount;
+        private LocalDate nextFutureBlockDate;
+
+        private FloorFutureBadgeInfo(String floorName) {
+            this.floorName = floorName;
+        }
+
+        private void include(RoomTimelineRow row) {
+            if (row == null || row.futureBlockCount <= 0) {
+                return;
+            }
+            futureBlockCount += row.futureBlockCount;
+            futurePendingCount += row.futurePendingCount;
+            futureOccupiedCount += row.futureOccupiedCount;
+            futureWaitPaymentCount += row.futureWaitPaymentCount;
+            futureCleaningCount += row.futureCleaningCount;
+            if (row.nextFutureBlockDate != null
+                    && (nextFutureBlockDate == null || row.nextFutureBlockDate.isBefore(nextFutureBlockDate))) {
+                nextFutureBlockDate = row.nextFutureBlockDate;
+            }
         }
     }
 

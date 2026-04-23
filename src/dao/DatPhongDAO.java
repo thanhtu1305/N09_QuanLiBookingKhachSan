@@ -907,8 +907,14 @@ public class DatPhongDAO {
         if (hasBookedAssignmentForRoom(con, maPhong)) {
             return "Đã đặt";
         }
+        if ("Chờ thanh toán".equalsIgnoreCase(currentStatus)) {
+            return "Chờ thanh toán";
+        }
         if ("Dọn dẹp".equalsIgnoreCase(currentStatus)) {
             return "Dọn dẹp";
+        }
+        if ("Sẵn sàng".equalsIgnoreCase(currentStatus)) {
+            return "Sẵn sàng";
         }
         return "Hoạt động";
     }

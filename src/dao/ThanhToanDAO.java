@@ -2138,6 +2138,7 @@ public class ThanhToanDAO {
                     return;
                 }
                 if (scope.isRoomScoped()) {
+                    markPaidRoomsCleaning(con, scope.maDatPhong, scope.maChiTietDatPhong);
                     if (isBookingPaidByRoomInvoices(con, scope.maDatPhong)) {
                         try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'ÄÃ£ thanh toÃ¡n' WHERE maDatPhong = ?")) {
                             ps.setInt(1, scope.maDatPhong);
@@ -2164,12 +2165,54 @@ public class ThanhToanDAO {
                 return;
             }
 
+            markPaidRoomsCleaning(con, maDatPhong, 0);
             try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET trangThai = N'Đã thanh toán' WHERE maDatPhong = ?")) {
                 ps.setInt(1, maDatPhong);
                 ps.executeUpdate();
             }
             synchronizeOperationalStatuses(con);
         } catch (Exception ignored) {
+        }
+    }
+
+    private void markPaidRoomsCleaning(Connection con, int maDatPhong, int maChiTietDatPhong) throws Exception {
+        if (con == null || maDatPhong <= 0) {
+            return;
+        }
+        List<Integer> roomIds = new ArrayList<Integer>();
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT DISTINCT lt.maPhong ")
+                .append("FROM LuuTru lt ")
+                .append("WHERE lt.maDatPhong = ? ")
+                .append("AND lt.checkOut IS NOT NULL ")
+                .append("AND lt.maPhong IS NOT NULL ");
+        if (maChiTietDatPhong > 0) {
+            sql.append("AND lt.maChiTietDatPhong = ? ");
+        }
+        sql.append("AND NOT EXISTS (SELECT 1 FROM LuuTru ltActive WHERE ltActive.maPhong = lt.maPhong AND ltActive.checkOut IS NULL)");
+        try (PreparedStatement ps = con.prepareStatement(sql.toString())) {
+            ps.setInt(1, maDatPhong);
+            if (maChiTietDatPhong > 0) {
+                ps.setInt(2, maChiTietDatPhong);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    roomIds.add(Integer.valueOf(rs.getInt("maPhong")));
+                }
+            }
+        }
+        if (roomIds.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement update = con.prepareStatement(
+                "UPDATE Phong SET trangThai = N'Dọn dẹp' WHERE maPhong = ? AND ISNULL(trangThai, N'') <> N'Bảo trì'")) {
+            for (Integer roomId : roomIds) {
+                if (roomId == null || roomId.intValue() <= 0) {
+                    continue;
+                }
+                update.setInt(1, roomId.intValue());
+                update.executeUpdate();
+            }
         }
     }
 

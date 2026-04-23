@@ -133,6 +133,8 @@ public class CheckInOutGUI extends JFrame {
     private final Map<String, JButton> floorButtons = new LinkedHashMap<String, JButton>();
     private final Map<String, JLabel> floorBadgeLabels = new LinkedHashMap<String, JLabel>();
     private final Map<String, FloorFutureBadgeInfo> floorFutureBadgeInfos = new LinkedHashMap<String, FloorFutureBadgeInfo>();
+    private OperationalAlertInfo waitPaymentAlertInfo;
+    private OperationalAlertInfo cleaningAlertInfo;
     private LocalDate ganttStartDate = LocalDate.now();
     private String selectedFloor = "Tầng 1";
     private GanttTimelineBlock selectedBlock;
@@ -162,6 +164,8 @@ public class CheckInOutGUI extends JFrame {
     private JPanel detailActionPanel;
     private JPanel relatedRoomsPanel;
     private JLabel lblWeekRange;
+    private JButton btnWaitPaymentAlert;
+    private JButton btnCleaningAlert;
     private JTable tblTimeline;
     private DefaultTableModel timelineTableModel;
     private JScrollPane timelineScrollPane;
@@ -294,11 +298,21 @@ public class CheckInOutGUI extends JFrame {
         txtTuKhoa.setPreferredSize(new Dimension(300, 34));
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyTimelineFilters(false));
         right.add(txtTuKhoa);
+        right.add(Box.createVerticalStrut(8));
+
+        JPanel alertRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        alertRow.setOpaque(false);
+        btnWaitPaymentAlert = createOperationalAlertButton("Ch\u1edd thanh to\u00e1n", new Color(249, 115, 22), e -> jumpToOperationalAlert(waitPaymentAlertInfo));
+        btnCleaningAlert = createOperationalAlertButton("D\u1ecdn ph\u00f2ng", new Color(14, 116, 144), e -> jumpToOperationalAlert(cleaningAlertInfo));
+        alertRow.add(btnWaitPaymentAlert);
+        alertRow.add(btnCleaningAlert);
+        right.add(alertRow);
 
         card.add(left, BorderLayout.WEST);
         card.add(center, BorderLayout.CENTER);
         card.add(right, BorderLayout.EAST);
         updateFloorButtonStyles();
+        updateOperationalAlertButtons();
         updateWeekRangeLabel();
         return card;
     }
@@ -459,13 +473,22 @@ public class CheckInOutGUI extends JFrame {
 
         timelineScrollPane = new JScrollPane(tblTimeline);
         timelineScrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
+        timelineScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        timelineScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
         timelineScrollPane.getHorizontalScrollBar().setUnitIncrement(28);
         timelineScrollPane.getVerticalScrollBar().setUnitIncrement(tblTimeline.getRowHeight());
+        timelineScrollPane.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                fitTimelineToViewport();
+            }
+        });
 
         card.add(titleRow, BorderLayout.NORTH);
         card.add(timelineScrollPane, BorderLayout.CENTER);
         card.add(buildTimelineLegendPanel(), BorderLayout.SOUTH);
         rebuildTimelineColumns();
+        javax.swing.SwingUtilities.invokeLater(() -> fitTimelineToViewport());
         return card;
     }
 
@@ -522,6 +545,63 @@ public class CheckInOutGUI extends JFrame {
         ));
         label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         return label;
+    }
+
+    private JButton createOperationalAlertButton(String labelText,
+                                                 Color activeBackground,
+                                                 java.awt.event.ActionListener listener) {
+        JButton button = new JButton(labelText + " [0]");
+        button.setFont(AppFonts.ui(Font.BOLD, 12));
+        button.setFocusPainted(false);
+        button.setOpaque(true);
+        button.setContentAreaFilled(true);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.putClientProperty("alertLabel", labelText);
+        button.putClientProperty("alertBackground", activeBackground);
+        button.addActionListener(listener);
+        return button;
+    }
+
+    private void updateOperationalAlertButtons() {
+        updateOperationalAlertButton(btnWaitPaymentAlert, waitPaymentAlertInfo);
+        updateOperationalAlertButton(btnCleaningAlert, cleaningAlertInfo);
+    }
+
+    private void updateOperationalAlertButton(JButton button, OperationalAlertInfo info) {
+        if (button == null) {
+            return;
+        }
+        String labelText = safeValue((String) button.getClientProperty("alertLabel"), "C\u1ea3nh b\u00e1o");
+        Color activeBackground = (Color) button.getClientProperty("alertBackground");
+        if (activeBackground == null) {
+            activeBackground = new Color(37, 99, 235);
+        }
+        boolean hasAlert = info != null && info.roomCount > 0;
+        button.setText(labelText + " [" + (info == null ? 0 : info.roomCount) + "]");
+        button.setForeground(hasAlert ? Color.WHITE : TEXT_MUTED);
+        button.setBackground(hasAlert ? activeBackground : PANEL_SOFT);
+        button.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(hasAlert ? activeBackground.darker() : BORDER_SOFT, 1, true),
+                new EmptyBorder(7, 10, 7, 10)
+        ));
+        button.setToolTipText(buildOperationalAlertTooltip(info));
+    }
+
+    private String buildOperationalAlertTooltip(OperationalAlertInfo info) {
+        if (info == null || info.roomCount <= 0) {
+            return "Kh\u00f4ng c\u00f3 ph\u00f2ng c\u1ea7n x\u1eed l\u00fd.";
+        }
+        StringBuilder tooltip = new StringBuilder("<html>");
+        tooltip.append(info.label).append(": ").append(info.roomCount).append(" ph\u00f2ng");
+        if (info.targetBlock != null) {
+            tooltip.append("<br>Ph\u00f2ng \u0111\u1ea7u ti\u00ean: ")
+                    .append(safeValue(info.targetRoomCode, "-"))
+                    .append(" / ")
+                    .append(safeValue(info.targetFloor, "-"));
+        }
+        tooltip.append("<br>Nh\u1ea5n \u0111\u1ec3 nh\u1ea3y t\u1edbi block c\u1ea7n x\u1eed l\u00fd.");
+        tooltip.append("</html>");
+        return tooltip.toString();
     }
 
     private void updateFloorButtonStyles() {
@@ -625,6 +705,59 @@ public class CheckInOutGUI extends JFrame {
         return ganttDates.size() + 1;
     }
 
+    private void fitTimelineToViewport() {
+        if (tblTimeline == null || timelineScrollPane == null || tblTimeline.getColumnModel().getColumnCount() == 0) {
+            return;
+        }
+
+        int viewportWidth = timelineScrollPane.getViewport().getWidth();
+        if (viewportWidth <= 0) {
+            viewportWidth = timelineScrollPane.getWidth() - 2;
+        }
+        if (viewportWidth > 0) {
+            int roomWidth = Math.max(96, (int) Math.round(viewportWidth * 0.17d));
+            int futureWidth = Math.max(64, (int) Math.round(viewportWidth * 0.09d));
+            int remainingWidth = Math.max(0, viewportWidth - roomWidth - futureWidth);
+            int dayWidth = ganttDates.isEmpty()
+                    ? 0
+                    : Math.max(48, remainingWidth / Math.max(ganttDates.size(), 1));
+
+            if (!ganttDates.isEmpty()) {
+                int overflow = (roomWidth + futureWidth + (dayWidth * ganttDates.size())) - viewportWidth;
+                if (overflow > 0) {
+                    int shrinkPerDay = (int) Math.ceil((double) overflow / ganttDates.size());
+                    dayWidth = Math.max(40, dayWidth - shrinkPerDay);
+                    roomWidth = Math.max(84, viewportWidth - futureWidth - (dayWidth * ganttDates.size()));
+                }
+            }
+
+            tblTimeline.getColumnModel().getColumn(0).setPreferredWidth(roomWidth);
+            tblTimeline.getColumnModel().getColumn(0).setMinWidth(roomWidth);
+            for (int i = 1; i < getTimelineFutureBadgeColumnIndex(); i++) {
+                tblTimeline.getColumnModel().getColumn(i).setPreferredWidth(dayWidth);
+                tblTimeline.getColumnModel().getColumn(i).setMinWidth(dayWidth);
+            }
+            int usedWidth = roomWidth + futureWidth + (dayWidth * ganttDates.size());
+            int correctedFutureWidth = futureWidth + Math.max(0, viewportWidth - usedWidth);
+            tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setPreferredWidth(correctedFutureWidth);
+            tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setMinWidth(correctedFutureWidth);
+            tblTimeline.setPreferredSize(new Dimension(roomWidth + correctedFutureWidth + (dayWidth * ganttDates.size()), tblTimeline.getPreferredSize().height));
+        }
+
+        int viewportHeight = timelineScrollPane.getViewport().getHeight();
+        if (viewportHeight <= 0) {
+            viewportHeight = timelineScrollPane.getHeight() - tblTimeline.getTableHeader().getPreferredSize().height - 2;
+        }
+        int rowCount = Math.max(filteredTimelineRows.isEmpty() ? 6 : filteredTimelineRows.size(), 1);
+        int rowHeight = Math.max(34, Math.min(64, viewportHeight <= 0 ? 52 : viewportHeight / rowCount));
+        tblTimeline.setRowHeight(rowHeight);
+        int preferredHeight = rowHeight * Math.max(filteredTimelineRows.size(), 1);
+        Dimension preferredSize = tblTimeline.getPreferredSize();
+        tblTimeline.setPreferredSize(new Dimension(preferredSize.width, preferredHeight));
+        tblTimeline.revalidate();
+        timelineScrollPane.revalidate();
+    }
+
     private void configureTimelineColumns() {
         if (tblTimeline == null || tblTimeline.getColumnModel().getColumnCount() == 0) {
             return;
@@ -638,6 +771,7 @@ public class CheckInOutGUI extends JFrame {
         tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setMinWidth(84);
         tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setPreferredWidth(88);
         tblTimeline.getColumnModel().getColumn(getTimelineFutureBadgeColumnIndex()).setCellRenderer(new FutureBadgeCellRenderer());
+        fitTimelineToViewport();
         tblTimeline.revalidate();
     }
 
@@ -660,6 +794,7 @@ public class CheckInOutGUI extends JFrame {
         if (filteredTimelineRows.isEmpty()) {
             clearDetailPanel();
         }
+        javax.swing.SwingUtilities.invokeLater(() -> fitTimelineToViewport());
     }
 
     private void restoreTimelineSelection() {
@@ -758,6 +893,21 @@ public class CheckInOutGUI extends JFrame {
         selectedBlock = null;
         updateFloorButtonStyles();
         ganttStartDate = info.nextFutureBlockDate;
+        reloadSampleData(false);
+    }
+
+    private void jumpToOperationalAlert(OperationalAlertInfo info) {
+        if (info == null || info.roomCount <= 0 || info.targetBlock == null) {
+            return;
+        }
+        selectedFloor = safeValue(info.targetFloor, selectedFloor);
+        selectedRoomCode = info.targetRoomCode;
+        selectedBlock = info.targetBlock;
+        LocalDate targetDate = info.targetDate == null ? info.targetBlock.startDate : info.targetDate;
+        if (targetDate != null) {
+            ganttStartDate = targetDate;
+        }
+        updateFloorButtonStyles();
         reloadSampleData(false);
     }
 
@@ -2092,10 +2242,12 @@ public class CheckInOutGUI extends JFrame {
         rebuildFutureBlockIndicators(rowsById);
         allTimelineRows.addAll(rowsById.values());
         rebuildFloorFutureBadgeInfos();
+        rebuildOperationalAlertInfos();
         if (selectedFloor == null || selectedFloor.trim().isEmpty()) {
             selectedFloor = allTimelineRows.isEmpty() ? "T\u1ea7ng 1" : safeValue(allTimelineRows.get(0).floorName, "T\u1ea7ng 1");
         }
         updateFloorButtonStyles();
+        updateOperationalAlertButtons();
     }
 
     private void ensureRepresentativeGuestSchema(Connection con) {
@@ -2381,6 +2533,48 @@ public class CheckInOutGUI extends JFrame {
             }
             info.include(row);
         }
+    }
+
+    private void rebuildOperationalAlertInfos() {
+        waitPaymentAlertInfo = buildOperationalAlertInfo(STATUS_WAIT_PAYMENT, "Ch\u1edd thanh to\u00e1n");
+        cleaningAlertInfo = buildOperationalAlertInfo(STATUS_CLEANING, "D\u1ecdn ph\u00f2ng");
+    }
+
+    private OperationalAlertInfo buildOperationalAlertInfo(String status, String label) {
+        OperationalAlertInfo info = new OperationalAlertInfo(status, label);
+        for (RoomTimelineRow row : allTimelineRows) {
+            if (row == null) {
+                continue;
+            }
+            GanttTimelineBlock block = row.findFirstBlockByStatus(status);
+            if (block == null) {
+                continue;
+            }
+            info.roomCount++;
+            if (info.targetBlock == null) {
+                info.targetBlock = block;
+                info.targetFloor = row.floorName;
+                info.targetRoomCode = row.roomCode;
+                info.targetDate = resolveOperationalAlertDate(block);
+            }
+        }
+        return info;
+    }
+
+    private LocalDate resolveOperationalAlertDate(GanttTimelineBlock block) {
+        if (block == null) {
+            return null;
+        }
+        LocalDate today = LocalDate.now();
+        if (block.startDate != null && block.endDate != null
+                && !today.isBefore(block.startDate)
+                && !today.isAfter(block.endDate)) {
+            return today;
+        }
+        if (block.endDate != null && today.isAfter(block.endDate)) {
+            return block.endDate;
+        }
+        return block.startDate == null ? block.endDate : block.startDate;
     }
 
     private LocalDate resolveFutureBlockDate(GanttTimelineBlock block, LocalDate visibleEnd) {
@@ -5551,7 +5745,7 @@ public class CheckInOutGUI extends JFrame {
         private final JLabel badgeLabel = createFutureBadgeLabel();
 
         private FutureBadgeCellRenderer() {
-            setLayout(new FlowLayout(FlowLayout.RIGHT, 10, 15));
+            setLayout(new FlowLayout(FlowLayout.RIGHT, 8, 6));
             setOpaque(true);
             add(badgeLabel);
         }
@@ -5683,6 +5877,15 @@ public class CheckInOutGUI extends JFrame {
             if (STATUS_CLEANING.equalsIgnoreCase(status)) {
                 futureCleaningCount++;
             }
+        }
+
+        private GanttTimelineBlock findFirstBlockByStatus(String expectedStatus) {
+            for (GanttTimelineBlock block : blocks) {
+                if (block != null && expectedStatus.equalsIgnoreCase(safeValue(block.status, ""))) {
+                    return block;
+                }
+            }
+            return null;
         }
 
         private void appendSearchToken(String value) {
@@ -5862,6 +6065,21 @@ public class CheckInOutGUI extends JFrame {
                     && (nextFutureBlockDate == null || row.nextFutureBlockDate.isBefore(nextFutureBlockDate))) {
                 nextFutureBlockDate = row.nextFutureBlockDate;
             }
+        }
+    }
+
+    private static final class OperationalAlertInfo {
+        private final String status;
+        private final String label;
+        private int roomCount;
+        private String targetFloor;
+        private String targetRoomCode;
+        private LocalDate targetDate;
+        private GanttTimelineBlock targetBlock;
+
+        private OperationalAlertInfo(String status, String label) {
+            this.status = status;
+            this.label = label;
         }
     }
 

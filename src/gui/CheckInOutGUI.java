@@ -42,6 +42,7 @@ import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -51,8 +52,16 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.awt.LayoutManager;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.Container;
+import java.lang.reflect.Method;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -85,6 +94,14 @@ public class CheckInOutGUI extends JFrame {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
+    private static final int ROOM_GRID_COLUMNS = 6;
+    private static final int ROOM_CARD_PREFERRED_WIDTH = 142;
+    private static final int ROOM_CARD_PREFERRED_HEIGHT = 126;
+    private static final int GANTT_DAY_COUNT = 7;
+    private static final int GANTT_ROOM_INFO_WIDTH = 300;
+    private static final int GANTT_ROW_MIN_HEIGHT = 86;
+    private static final int GANTT_LANE_HEIGHT = 26;
+    private static final int GANTT_ROW_GAP = 10;
 
     private static final List<CheckInOutGUI> OPEN_INSTANCES = new ArrayList<CheckInOutGUI>();
     private static Integer pendingFocusedBookingId;
@@ -107,6 +124,34 @@ public class CheckInOutGUI extends JFrame {
     private JComboBox<String> cboLoaiPhong;
     private JComboBox<String> cboCaLam;
     private JTextField txtTuKhoa;
+    private final Map<Integer, StayRecord> recordsByBookingId = new LinkedHashMap<Integer, StayRecord>();
+    private final Map<String, RoomBlockState> roomBlocksByCode = new LinkedHashMap<String, RoomBlockState>();
+    private final Map<String, JPanel> roomBlockCards = new LinkedHashMap<String, JPanel>();
+    private final Map<String, JButton> floorButtons = new LinkedHashMap<String, JButton>();
+    private final Set<String> highlightedRoomCodes = new LinkedHashSet<String>();
+    private final List<String> availableFloors = new ArrayList<String>();
+    private JPanel roomGridPanel;
+    private JPanel roomLegendPanel;
+    private JPanel roomTimelineHeaderPanel;
+    private JPanel detailRelatedRoomsPanel;
+    private JPanel detailActionPanel;
+    private JLabel lblRoomMapTitle;
+    private JLabel lblRoomMapMeta;
+    private JLabel lblGanttRange;
+    private JLabel lblDetailBookingCode;
+    private JLabel lblDetailStayCode;
+    private JLabel lblDetailGuestName;
+    private JLabel lblDetailRoomCode;
+    private JLabel lblDetailRoomType;
+    private JLabel lblDetailFloor;
+    private JLabel lblDetailStatus;
+    private JLabel lblDetailGuestCount;
+    private JLabel lblDetailCheckIn;
+    private JLabel lblDetailCheckOut;
+    private JLabel lblDetailNextBooking;
+    private JTextArea txtDetailNotes;
+    private RoomBlockState selectedRoomBlock;
+    private LocalDate ganttStartDate = LocalDate.now();
 
     private JLabel lblMaHoSo;
     private JLabel lblMaDatPhong;
@@ -172,9 +217,7 @@ public class CheckInOutGUI extends JFrame {
         top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
         top.add(buildHeader());
         top.add(Box.createVerticalStrut(10));
-        top.add(buildActionBar());
-        top.add(Box.createVerticalStrut(10));
-        top.add(buildFilterBar());
+        top.add(buildRoomControlBar());
 
         main.add(top, BorderLayout.NORTH);
         main.add(buildCenterContent(), BorderLayout.CENTER);
@@ -209,6 +252,210 @@ public class CheckInOutGUI extends JFrame {
 
         card.add(left, BorderLayout.WEST);
         card.add(ScreenUIHelper.createWindowControlPanel(this, TEXT_PRIMARY, BORDER_SOFT, "m\u00e0n h\u00ecnh Check-in / Check-out"), BorderLayout.EAST);
+        return card;
+    }
+
+    private JPanel buildRoomControlBar() {
+        JPanel card = createCardPanel(new BorderLayout(12, 10));
+
+        JPanel left = new JPanel();
+        left.setOpaque(false);
+        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
+
+        JLabel lblTitle = new JLabel("S\u01a1 \u0111\u1ed3 ph\u00f2ng Check-in / Check-out");
+        lblTitle.setFont(SECTION_FONT);
+        lblTitle.setForeground(TEXT_PRIMARY);
+
+        JLabel lblSubtitle = new JLabel("Hi\u1ec3n th\u1ecb ph\u00f2ng theo t\u1eebng t\u1ea7ng, badge v\u1eadn h\u00e0nh tr\u1ef1c quan v\u00e0 highlight to\u00e0n booking khi c\u1ea7n thao t\u00e1c nhanh.");
+        lblSubtitle.setFont(BODY_FONT);
+        lblSubtitle.setForeground(TEXT_MUTED);
+
+        left.add(lblTitle);
+        left.add(Box.createVerticalStrut(4));
+        left.add(lblSubtitle);
+
+        JPanel right = new JPanel();
+        right.setOpaque(false);
+        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
+
+        JLabel lblHint = new JLabel("Double click ph\u00f2ng \u0111\u1ec3 m\u1edf popup \u0111\u00fang theo tr\u1ea1ng th\u00e1i.");
+        lblHint.setFont(AppFonts.body(12));
+        lblHint.setForeground(TEXT_MUTED);
+
+        JLabel lblSearch = new JLabel("T\u00ecm nhanh");
+        lblSearch.setFont(LABEL_FONT);
+        lblSearch.setForeground(TEXT_MUTED);
+        txtTuKhoa = createInputField("");
+        txtTuKhoa.setPreferredSize(new Dimension(260, 34));
+        txtTuKhoa.setToolTipText("S\u1ed1 ph\u00f2ng / m\u00e3 booking / t\u00ean ng\u01b0\u1eddi \u0111\u1ea1i di\u1ec7n");
+        ScreenUIHelper.installLiveSearch(txtTuKhoa, this::refreshRoomGrid);
+
+        right.add(lblHint);
+        right.add(Box.createVerticalStrut(8));
+        right.add(lblSearch);
+        right.add(Box.createVerticalStrut(4));
+        right.add(txtTuKhoa);
+
+        card.add(left, BorderLayout.CENTER);
+        card.add(right, BorderLayout.EAST);
+        return card;
+    }
+
+    private JPanel buildRoomMapCard() {
+        JPanel card = createCardPanel(new BorderLayout(0, 12));
+
+        JPanel header = new JPanel();
+        header.setOpaque(false);
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+
+        lblRoomMapTitle = new JLabel("To\u00e0n b\u1ed9 ph\u00f2ng theo t\u1ea7ng");
+        lblRoomMapTitle.setFont(SECTION_FONT);
+        lblRoomMapTitle.setForeground(TEXT_PRIMARY);
+
+        lblRoomMapMeta = new JLabel("M\u1ed7i t\u1ea7ng hi\u1ec3n th\u1ecb theo d\u00e3y 101 102 103..., cu\u1ed9n d\u1ecdc khi nhi\u1ec1u ph\u00f2ng v\u00e0 thao t\u00e1c ngay t\u1eeb block ph\u00f2ng.");
+        lblRoomMapMeta.setFont(BODY_FONT);
+        lblRoomMapMeta.setForeground(TEXT_MUTED);
+
+        roomLegendPanel = buildRoomLegendPanel();
+        header.add(lblRoomMapTitle);
+        header.add(Box.createVerticalStrut(4));
+        header.add(lblRoomMapMeta);
+        header.add(Box.createVerticalStrut(10));
+        header.add(roomLegendPanel);
+
+        roomGridPanel = new JPanel();
+        roomGridPanel.setLayout(new BoxLayout(roomGridPanel, BoxLayout.Y_AXIS));
+        roomGridPanel.setOpaque(false);
+        roomGridPanel.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+        JScrollPane scrollPane = new JScrollPane(roomGridPanel);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        scrollPane.getViewport().setOpaque(false);
+        scrollPane.setOpaque(false);
+
+        card.add(header, BorderLayout.NORTH);
+        card.add(scrollPane, BorderLayout.CENTER);
+        return card;
+    }
+
+    private JPanel buildRoomLegendPanel() {
+        JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        legend.setOpaque(false);
+        legend.add(createLegendChip("S\u1eb5n s\u00e0ng", resolveBlockAccent(RoomStatusKey.AVAILABLE)));
+        legend.add(createLegendChip("\u0110\u00e3 \u0111\u1eb7t", resolveBlockAccent(RoomStatusKey.BOOKED)));
+        legend.add(createLegendChip("\u0110ang \u1edf", resolveBlockAccent(RoomStatusKey.OCCUPIED)));
+        legend.add(createLegendChip("TT: Ch\u1edd thanh to\u00e1n", resolveBlockAccent(RoomStatusKey.WAIT_PAYMENT)));
+        legend.add(createLegendChip("DN: \u0110ang d\u1ecdn", resolveBlockAccent(RoomStatusKey.CLEANING)));
+        legend.add(createLegendChip("\u2022: S\u1eafp c\u00f3 kh\u00e1ch", new Color(17, 24, 39)));
+        legend.add(createLegendChip("B\u1ea3o tr\u00ec", resolveBlockAccent(RoomStatusKey.MAINTENANCE)));
+        return legend;
+    }
+
+    private JPanel createLegendChip(String text, Color color) {
+        JPanel chip = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        chip.setOpaque(false);
+
+        JPanel dot = new JPanel();
+        dot.setBackground(color);
+        dot.setPreferredSize(new Dimension(12, 12));
+        dot.setBorder(BorderFactory.createLineBorder(color.darker(), 1, true));
+
+        JLabel lbl = new JLabel(text);
+        lbl.setFont(AppFonts.body(12));
+        lbl.setForeground(TEXT_PRIMARY);
+
+        chip.add(dot);
+        chip.add(lbl);
+        return chip;
+    }
+
+    private JPanel buildRoomDetailColumn() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.add(buildOperationDetailCard(), BorderLayout.CENTER);
+        return wrapper;
+    }
+
+    private JPanel buildOperationDetailCard() {
+        JPanel card = createCardPanel(new BorderLayout(0, 12));
+
+        JLabel lblTitle = new JLabel("Chi ti\u1ebft ph\u00f2ng / booking");
+        lblTitle.setFont(SECTION_FONT);
+        lblTitle.setForeground(TEXT_PRIMARY);
+        card.add(lblTitle, BorderLayout.NORTH);
+
+        JPanel content = new JPanel();
+        content.setOpaque(false);
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
+        lblDetailBookingCode = createValueLabel();
+        lblDetailStayCode = createValueLabel();
+        lblDetailGuestName = createValueLabel();
+        lblDetailRoomCode = createValueLabel();
+        lblDetailRoomType = createValueLabel();
+        lblDetailFloor = createValueLabel();
+        lblDetailStatus = createValueLabel();
+        lblDetailGuestCount = createValueLabel();
+        lblDetailCheckIn = createValueLabel();
+        lblDetailCheckOut = createValueLabel();
+        lblDetailNextBooking = createValueLabel();
+
+        addDetailRow(content, "M\u00e3 booking", lblDetailBookingCode);
+        addDetailRow(content, "M\u00e3 l\u01b0u tr\u00fa", lblDetailStayCode);
+        addDetailRow(content, "Ng\u01b0\u1eddi \u0111\u1ea1i di\u1ec7n", lblDetailGuestName);
+        addDetailRow(content, "Ph\u00f2ng", lblDetailRoomCode);
+        addDetailRow(content, "Lo\u1ea1i ph\u00f2ng", lblDetailRoomType);
+        addDetailRow(content, "T\u1ea7ng", lblDetailFloor);
+        addDetailRow(content, "Tr\u1ea1ng th\u00e1i", lblDetailStatus);
+        addDetailRow(content, "S\u1ed1 ng\u01b0\u1eddi", lblDetailGuestCount);
+        addDetailRow(content, "Gi\u1edd v\u00e0o", lblDetailCheckIn);
+        addDetailRow(content, "Gi\u1edd ra d\u1ef1 ki\u1ebfn", lblDetailCheckOut);
+        addDetailRow(content, "Booking g\u1ea7n nh\u1ea5t ti\u1ebfp theo", lblDetailNextBooking);
+
+        JLabel lblRelatedRooms = new JLabel("Ph\u00f2ng c\u00f9ng booking");
+        lblRelatedRooms.setFont(LABEL_FONT);
+        lblRelatedRooms.setForeground(TEXT_MUTED);
+        lblRelatedRooms.setBorder(new EmptyBorder(4, 0, 4, 0));
+        detailRelatedRoomsPanel = new JPanel();
+        detailRelatedRoomsPanel.setOpaque(false);
+        detailRelatedRoomsPanel.setLayout(new BoxLayout(detailRelatedRoomsPanel, BoxLayout.Y_AXIS));
+
+        JLabel lblNotes = new JLabel("Ghi ch\u00fa v\u1eadn h\u00e0nh");
+        lblNotes.setFont(LABEL_FONT);
+        lblNotes.setForeground(TEXT_MUTED);
+        lblNotes.setBorder(new EmptyBorder(6, 0, 4, 0));
+
+        txtDetailNotes = new JTextArea(5, 20);
+        txtDetailNotes.setEditable(false);
+        txtDetailNotes.setLineWrap(true);
+        txtDetailNotes.setWrapStyleWord(true);
+        txtDetailNotes.setFont(BODY_FONT);
+        txtDetailNotes.setForeground(TEXT_PRIMARY);
+        txtDetailNotes.setBackground(PANEL_SOFT);
+        txtDetailNotes.setRows(4);
+        txtDetailNotes.setBorder(new EmptyBorder(8, 10, 8, 10));
+
+        JLabel lblActions = new JLabel("Thao t\u00e1c nhanh");
+        lblActions.setFont(LABEL_FONT);
+        lblActions.setForeground(TEXT_MUTED);
+        lblActions.setBorder(new EmptyBorder(6, 0, 4, 0));
+
+        detailActionPanel = new JPanel();
+        detailActionPanel.setOpaque(false);
+        detailActionPanel.setLayout(new BoxLayout(detailActionPanel, BoxLayout.Y_AXIS));
+
+        content.add(lblRelatedRooms);
+        content.add(detailRelatedRoomsPanel);
+        content.add(lblNotes);
+        content.add(txtDetailNotes);
+        content.add(lblActions);
+        content.add(detailActionPanel);
+
+        card.add(content, BorderLayout.CENTER);
+        clearOperationDetailPanel();
         return card;
     }
 
@@ -264,13 +511,10 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JSplitPane buildCenterContent() {
-        JPanel left = buildTableCard();
-        JPanel right = buildRightColumn();
-
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildRoomMapCard(), buildRoomDetailColumn());
         splitPane.setOpaque(false);
         splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.6);
+        splitPane.setResizeWeight(0.76);
         splitPane.setDividerSize(8);
         splitPane.setContinuousLayout(true);
         return splitPane;
@@ -281,12 +525,10 @@ public class CheckInOutGUI extends JFrame {
                 CARD_BG,
                 BORDER_SOFT,
                 TEXT_MUTED,
-                "F1 Check-in",
-                "F2 Th\u00eam d\u1ecbch v\u1ee5",
-                "F3 \u0110\u1ed5i ph\u00f2ng",
-                "F4 Gia h\u1ea1n",
-                "F5 Check-out",
-                "Enter Xem chi ti\u1ebft"
+                "Click Ch\u1ecdn ph\u00f2ng",
+                "Double click Thao t\u00e1c theo tr\u1ea1ng th\u00e1i",
+                "Panel ph\u1ea3i Xem booking c\u00f9ng \u0111\u01a1n",
+                "Badge G\u1ee3i \u00fd ph\u00f2ng s\u1eafp c\u00f3 kh\u00e1ch"
         );
     }
 
@@ -659,23 +901,20 @@ public class CheckInOutGUI extends JFrame {
 
     private void reloadSampleData(boolean showMessage) {
         loadStayData();
-        cboTrangThai.setSelectedIndex(0);
-        cboTang.setSelectedIndex(0);
-        cboLoaiPhong.setSelectedIndex(0);
-        cboCaLam.setSelectedIndex(0);
-        txtTuKhoa.setText("");
-        applyFilters(false);
-        refreshRealtimeMap();
+        rebuildBookingIndex();
+        loadRoomBlockStates();
+        refreshRoomGrid();
         if (showMessage) {
             showInfo("\u0110\u00e3 l\u00e0m m\u1edbi d\u1eef li\u1ec7u check-in / check-out.");
         }
     }
 
-        private void loadStayData() {
+    private void loadStayData() {
         allRecords.clear();
         Map<Integer, StayRecord> grouped = new LinkedHashMap<Integer, StayRecord>();
         loadPendingBookings(grouped);
         loadActiveStays(grouped);
+        loadCompletedBookings(grouped);
         for (StayRecord record : grouped.values()) {
             record.refreshAggregateState();
         }
@@ -936,6 +1175,327 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
+    private void rebuildBookingIndex() {
+        recordsByBookingId.clear();
+        filteredRecords.clear();
+        for (StayRecord record : allRecords) {
+            if (record == null) {
+                continue;
+            }
+            recordsByBookingId.put(Integer.valueOf(record.maDatPhong), record);
+            filteredRecords.add(record);
+        }
+    }
+
+    private void loadRoomBlockStates() {
+        roomBlocksByCode.clear();
+        availableFloors.clear();
+        loadBaseRoomBlocks();
+        loadOccupiedRoomBlocks();
+        loadPendingPaymentRoomBlocks();
+        loadBookedRoomBlocks();
+        loadFutureRoomHints();
+    }
+
+    private void loadBaseRoomBlocks() {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+        String sql = "SELECT p.maPhong, ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(p.tang, N'T\u1ea7ng kh\u00e1c') AS tang, "
+                + "ISNULL(lp.tenLoaiPhong, N'-') AS tenLoaiPhong, ISNULL(p.trangThai, N'Ho\u1ea1t \u0111\u1ed9ng') AS trangThai "
+                + "FROM Phong p "
+                + "LEFT JOIN LoaiPhong lp ON lp.maLoaiPhong = p.maLoaiPhong "
+                + "ORDER BY TRY_CAST(REPLACE(ISNULL(p.tang, N''), N'T\u1ea7ng ', N'') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String floorName = normalizeFloorName(rs.getString("tang"));
+                RoomBlockState state = new RoomBlockState(
+                        rs.getInt("maPhong"),
+                        safeValue(rs.getString("soPhong"), "-"),
+                        floorName,
+                        safeValue(rs.getString("tenLoaiPhong"), "-"),
+                        safeValue(rs.getString("trangThai"), "Ho\u1ea1t \u0111\u1ed9ng")
+                );
+                applyBaseRoomStatus(state);
+                roomBlocksByCode.put(state.roomCode, state);
+                registerAvailableFloor(floorName);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadOccupiedRoomBlocks() {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+        datPhongDAO.ensureDetailScheduleSchema(con);
+        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
+                + "ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(dp.trangThai, N'\u0110ang \u1edf') AS trangThaiDatPhong, "
+                + "ISNULL(lt.soNguoi, ctdp.soNguoi) AS soNguoi "
+                + "FROM LuuTru lt "
+                + "JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
+                + "JOIN ChiTietDatPhong ctdp ON ctdp.maChiTietDatPhong = lt.maChiTietDatPhong "
+                + "JOIN Phong p ON p.maPhong = lt.maPhong "
+                + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "WHERE lt.checkOut IS NULL";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                RoomBlockState state = roomBlocksByCode.get(safeValue(rs.getString("soPhong"), "-"));
+                if (state == null || RoomStatusKey.MAINTENANCE.equals(state.statusKey)) {
+                    continue;
+                }
+                state.statusKey = RoomStatusKey.OCCUPIED;
+                state.statusText = "\u0110ang \u1edf";
+                state.bookingId = Integer.valueOf(rs.getInt("maDatPhong"));
+                state.stayId = Integer.valueOf(rs.getInt("maLuuTru"));
+                state.detailId = Integer.valueOf(rs.getInt("maChiTietDatPhong"));
+                state.bookingCode = "DP" + rs.getInt("maDatPhong");
+                state.representativeName = safeValue(rs.getString("hoTen"), "-");
+                state.guestCount = Math.max(0, rs.getInt("soNguoi"));
+                state.checkInTime = rs.getTimestamp("checkIn") == null ? null : rs.getTimestamp("checkIn").toLocalDateTime();
+                state.expectedCheckOut = rs.getTimestamp("checkOutDuKien") == null ? null : rs.getTimestamp("checkOutDuKien").toLocalDateTime();
+                state.note = "Ph\u00f2ng \u0111ang c\u00f3 kh\u00e1ch l\u01b0u tr\u00fa. Double click \u0111\u1ec3 m\u1edf popup v\u1eadn h\u00e0nh.";
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadPendingPaymentRoomBlocks() {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+        String sql = "WITH latestClosedStay AS ("
+                + "    SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.checkOut, lt.soNguoi, "
+                + "           ROW_NUMBER() OVER (PARTITION BY lt.maPhong ORDER BY lt.checkOut DESC, lt.maLuuTru DESC) AS rn "
+                + "    FROM LuuTru lt "
+                + "    WHERE lt.checkOut IS NOT NULL"
+                + ") "
+                + "SELECT lcs.maLuuTru, lcs.maChiTietDatPhong, lcs.maDatPhong, lcs.checkIn, lcs.checkOut, "
+                + "       ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(lcs.soNguoi, 0) AS soNguoi, "
+                + "       ISNULL(roomInv.maHoaDon, bookingInv.maHoaDon) AS maHoaDon "
+                + "FROM latestClosedStay lcs "
+                + "JOIN Phong p ON p.maPhong = lcs.maPhong "
+                + "JOIN DatPhong dp ON dp.maDatPhong = lcs.maDatPhong "
+                + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong ORDER BY hd.maHoaDon DESC) roomInv "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd WHERE hd.maDatPhong = lcs.maDatPhong AND hd.maChiTietDatPhong IS NULL ORDER BY hd.maHoaDon DESC) bookingInv "
+                + "WHERE lcs.rn = 1 AND ISNULL(p.trangThai, N'') = N'Ch\u1edd thanh to\u00e1n'";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                RoomBlockState state = roomBlocksByCode.get(safeValue(rs.getString("soPhong"), "-"));
+                if (state == null || RoomStatusKey.MAINTENANCE.equals(state.statusKey) || RoomStatusKey.OCCUPIED.equals(state.statusKey)) {
+                    continue;
+                }
+                state.statusKey = RoomStatusKey.WAIT_PAYMENT;
+                state.statusText = "Ch\u1edd thanh to\u00e1n";
+                state.bookingId = Integer.valueOf(rs.getInt("maDatPhong"));
+                state.stayId = Integer.valueOf(rs.getInt("maLuuTru"));
+                state.detailId = Integer.valueOf(rs.getInt("maChiTietDatPhong"));
+                state.invoiceId = rs.getObject("maHoaDon") == null ? null : Integer.valueOf(rs.getInt("maHoaDon"));
+                state.bookingCode = "DP" + rs.getInt("maDatPhong");
+                state.representativeName = safeValue(rs.getString("hoTen"), "-");
+                state.guestCount = Math.max(0, rs.getInt("soNguoi"));
+                state.checkInTime = rs.getTimestamp("checkIn") == null ? null : rs.getTimestamp("checkIn").toLocalDateTime();
+                state.actualCheckOut = rs.getTimestamp("checkOut") == null ? null : rs.getTimestamp("checkOut").toLocalDateTime();
+                state.note = "Ph\u00f2ng \u0111\u00e3 check-out, \u0111ang ch\u1edd thanh to\u00e1n. Double click \u0111\u1ec3 m\u1edf popup thanh to\u00e1n.";
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadBookedRoomBlocks() {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+        datPhongDAO.ensureDetailScheduleSchema(con);
+        String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, dp.maDatPhong, "
+                + "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
+                + "ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(ctdp.soNguoi, 0) AS soNguoi "
+                + "FROM DatPhong dp "
+                + "JOIN ChiTietDatPhong ctdp ON ctdp.maDatPhong = dp.maDatPhong "
+                + "JOIN Phong p ON p.maPhong = ctdp.maPhong "
+                + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "WHERE ISNULL(dp.trangThai, N'') IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in') "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NULL)";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                RoomBlockState state = roomBlocksByCode.get(safeValue(rs.getString("soPhong"), "-"));
+                if (state == null || RoomStatusKey.MAINTENANCE.equals(state.statusKey) || RoomStatusKey.OCCUPIED.equals(state.statusKey)
+                        || RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey) || RoomStatusKey.CLEANING.equals(state.statusKey)) {
+                    continue;
+                }
+                state.statusKey = RoomStatusKey.BOOKED;
+                state.statusText = "\u0110\u00e3 \u0111\u1eb7t";
+                state.bookingId = Integer.valueOf(rs.getInt("maDatPhong"));
+                state.detailId = Integer.valueOf(rs.getInt("maChiTietDatPhong"));
+                state.bookingCode = "DP" + rs.getInt("maDatPhong");
+                state.representativeName = safeValue(rs.getString("hoTen"), "-");
+                state.guestCount = Math.max(0, rs.getInt("soNguoi"));
+                state.expectedCheckIn = rs.getTimestamp("checkInDuKien") == null ? null : rs.getTimestamp("checkInDuKien").toLocalDateTime();
+                state.expectedCheckOut = rs.getTimestamp("checkOutDuKien") == null ? null : rs.getTimestamp("checkOutDuKien").toLocalDateTime();
+                state.note = "Ph\u00f2ng \u0111ang ch\u1edd check-in. Double click \u0111\u1ec3 m\u1edf popup check-in t\u1ed1i gi\u1ea3n.";
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadFutureRoomHints() {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+        datPhongDAO.ensureDetailScheduleSchema(con);
+        Map<Integer, List<RoomFutureHint>> hintsByRoomId = new LinkedHashMap<Integer, List<RoomFutureHint>>();
+        String sql = "SELECT ctdp.maPhong, ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, "
+                + "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien "
+                + "FROM DatPhong dp "
+                + "JOIN ChiTietDatPhong ctdp ON ctdp.maDatPhong = dp.maDatPhong "
+                + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "WHERE ctdp.maPhong IS NOT NULL "
+                + "AND ISNULL(dp.trangThai, N'') NOT IN (N'\u0110\u00e3 h\u1ee7y', N'H\u1ee7y booking', N'\u0110\u00e3 thanh to\u00e1n') "
+                + "ORDER BY ctdp.maPhong, COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))), dp.maDatPhong";
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                Integer roomId = Integer.valueOf(rs.getInt("maPhong"));
+                if (!hintsByRoomId.containsKey(roomId)) {
+                    hintsByRoomId.put(roomId, new ArrayList<RoomFutureHint>());
+                }
+                hintsByRoomId.get(roomId).add(new RoomFutureHint(
+                        rs.getInt("maDatPhong"),
+                        rs.getInt("maChiTietDatPhong"),
+                        rs.getTimestamp("checkInDuKien") == null ? null : rs.getTimestamp("checkInDuKien").toLocalDateTime(),
+                        rs.getTimestamp("checkOutDuKien") == null ? null : rs.getTimestamp("checkOutDuKien").toLocalDateTime(),
+                        safeValue(rs.getString("hoTen"), "-")
+                ));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        for (RoomBlockState state : roomBlocksByCode.values()) {
+            List<RoomFutureHint> candidates = hintsByRoomId.get(Integer.valueOf(state.roomId));
+            if (candidates == null || candidates.isEmpty()) {
+                continue;
+            }
+            List<RoomFutureHint> relevant = new ArrayList<RoomFutureHint>();
+            for (RoomFutureHint hint : candidates) {
+                if (hint == null || hint.expectedCheckIn == null) {
+                    continue;
+                }
+                if (state.detailId != null && hint.detailId == state.detailId.intValue()) {
+                    continue;
+                }
+                if (RoomStatusKey.OCCUPIED.equals(state.statusKey)) {
+                    LocalDateTime boundary = state.expectedCheckOut == null ? now : state.expectedCheckOut.minusMinutes(1L);
+                    if (!hint.expectedCheckIn.isBefore(boundary)) {
+                        relevant.add(hint);
+                    }
+                    continue;
+                }
+                if (RoomStatusKey.BOOKED.equals(state.statusKey)) {
+                    LocalDateTime boundary = state.expectedCheckIn == null ? now : state.expectedCheckIn;
+                    if (!hint.expectedCheckIn.isBefore(boundary)) {
+                        relevant.add(hint);
+                    }
+                    continue;
+                }
+                if (!hint.expectedCheckIn.isBefore(now)) {
+                    relevant.add(hint);
+                }
+            }
+            if (!relevant.isEmpty()) {
+                state.futureHintCount = relevant.size();
+                state.nextFutureHint = relevant.get(0);
+            }
+        }
+    }
+
+    private void ensureSelectedFloorAvailable() {
+    }
+
+    private void registerAvailableFloor(String floorName) {
+        if (!availableFloors.contains(floorName)) {
+            availableFloors.add(floorName);
+        }
+    }
+
+    private String normalizeFloorName(String floorName) {
+        String value = safeValue(floorName, "T\u1ea7ng kh\u00e1c");
+        if (value.matches("\\d+")) {
+            return "T\u1ea7ng " + value;
+        }
+        return value;
+    }
+
+    private void applyBaseRoomStatus(RoomBlockState state) {
+        if (state == null) {
+            return;
+        }
+        String rawStatus = safeValue(state.rawRoomStatus, "Ho\u1ea1t \u0111\u1ed9ng");
+        if ("B\u1ea3o tr\u00ec".equalsIgnoreCase(rawStatus) || "Kh\u00f4ng ho\u1ea1t \u0111\u1ed9ng".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.MAINTENANCE;
+            state.statusText = "B\u1ea3o tr\u00ec";
+            state.note = "Ph\u00f2ng \u0111ang \u1edf tr\u1ea1ng th\u00e1i b\u1ea3o tr\u00ec.";
+            return;
+        }
+        if ("D\u1ecdn d\u1eb9p".equalsIgnoreCase(rawStatus) || "D\u1ecdn ph\u00f2ng".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.CLEANING;
+            state.statusText = "D\u1ecdn ph\u00f2ng";
+            state.note = "Ph\u00f2ng \u0111\u00e3 thanh to\u00e1n xong v\u00e0 \u0111ang ch\u1edd x\u00e1c nh\u1eadn d\u1ecdn.";
+            return;
+        }
+        if ("Ch\u1edd thanh to\u00e1n".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.WAIT_PAYMENT;
+            state.statusText = "Ch\u1edd thanh to\u00e1n";
+            state.note = "Ph\u00f2ng \u0111\u00e3 check-out v\u00e0 \u0111ang ch\u1edd thanh to\u00e1n.";
+            return;
+        }
+        if ("\u0110ang \u1edf".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.OCCUPIED;
+            state.statusText = "\u0110ang \u1edf";
+            state.note = "Ph\u00f2ng \u0111ang c\u00f3 kh\u00e1ch l\u01b0u tr\u00fa.";
+            return;
+        }
+        if ("\u0110\u00e3 \u0111\u1eb7t".equalsIgnoreCase(rawStatus) || "Ch\u1edd check-in".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.BOOKED;
+            state.statusText = "\u0110\u00e3 \u0111\u1eb7t";
+            state.note = "Ph\u00f2ng \u0111ang ch\u1edd check-in.";
+            return;
+        }
+        if ("Tr\u1ed1ng".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.AVAILABLE;
+            state.statusText = "Tr\u1ed1ng";
+            state.note = "Ph\u00f2ng tr\u1ed1ng v\u00e0 c\u00f3 th\u1ec3 ph\u1ee5c v\u1ee5 ngay.";
+            return;
+        }
+        if ("S\u1eb5n s\u00e0ng".equalsIgnoreCase(rawStatus)) {
+            state.statusKey = RoomStatusKey.AVAILABLE;
+            state.statusText = "S\u1eb5n s\u00e0ng";
+            state.note = "Ph\u00f2ng \u0111\u00e3 s\u1eb5n s\u00e0ng \u0111\u1ec3 khai th\u00e1c.";
+            return;
+        }
+        state.statusKey = RoomStatusKey.AVAILABLE;
+        state.statusText = "S\u1eb5n s\u00e0ng";
+        state.note = "Ph\u00f2ng kh\u00f4ng c\u00f3 l\u01b0u tr\u00fa hi\u1ec7n t\u1ea1i.";
+    }
+
     private void applyFilters(boolean showMessage) {
         filteredRecords.clear();
 
@@ -1167,17 +1727,982 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
-    private StayRecord getSelectedRecord() {
-        int row = tblLuuTru.getSelectedRow();
-        if (row < 0 || row >= filteredRecords.size()) {
-            showInfo("Vui l\u00f2ng ch\u1ecdn m\u1ed9t h\u1ed3 s\u01a1 trong b\u1ea3ng.");
-            return null;
+    private void refreshRoomGrid() {
+        if (roomGridPanel == null) {
+            return;
         }
-        return filteredRecords.get(row);
+        roomGridPanel.removeAll();
+        roomBlockCards.clear();
+
+        String keyword = txtTuKhoa == null ? "" : txtTuKhoa.getText().trim().toLowerCase(Locale.ROOT);
+        List<RoomBlockState> visibleRooms = new ArrayList<RoomBlockState>();
+        for (RoomBlockState state : roomBlocksByCode.values()) {
+            if (state == null) {
+                continue;
+            }
+            if (!matchesRoomSearch(state, keyword)) {
+                continue;
+            }
+            visibleRooms.add(state);
+        }
+
+        Map<String, List<RoomBlockState>> roomsByFloor = groupVisibleRoomsByFloor(visibleRooms);
+        for (Map.Entry<String, List<RoomBlockState>> entry : roomsByFloor.entrySet()) {
+            roomGridPanel.add(createFloorSectionPanel(entry.getKey(), entry.getValue()));
+            roomGridPanel.add(Box.createVerticalStrut(12));
+        }
+
+        if (lblRoomMapTitle != null) {
+            lblRoomMapTitle.setText("To\u00e0n b\u1ed9 ph\u00f2ng theo t\u1ea7ng");
+        }
+        if (lblRoomMapMeta != null) {
+            lblRoomMapMeta.setText(visibleRooms.isEmpty()
+                    ? "Kh\u00f4ng c\u00f3 ph\u00f2ng ph\u00f9 h\u1ee3p b\u1ed9 l\u1ecdc hi\u1ec7n t\u1ea1i."
+                    : "Hi\u1ec3n th\u1ecb " + visibleRooms.size() + " ph\u00f2ng, s\u1eafp theo t\u1eebng t\u1ea7ng v\u00e0 t\u1ed1i \u0111a " + ROOM_GRID_COLUMNS + " ph\u00f2ng m\u1ed7i h\u00e0ng.");
+        }
+
+        if (visibleRooms.isEmpty()) {
+            JPanel emptyState = new JPanel(new BorderLayout());
+            emptyState.setOpaque(false);
+            JLabel lblEmpty = new JLabel("Kh\u00f4ng c\u00f3 ph\u00f2ng n\u00e0o ph\u00f9 h\u1ee3p b\u1ed9 l\u1ecdc hi\u1ec7n t\u1ea1i.", SwingConstants.CENTER);
+            lblEmpty.setFont(BODY_FONT);
+            lblEmpty.setForeground(TEXT_MUTED);
+            emptyState.add(lblEmpty, BorderLayout.CENTER);
+            roomGridPanel.add(emptyState);
+        } else {
+            roomGridPanel.add(Box.createVerticalGlue());
+        }
+
+        roomGridPanel.revalidate();
+        roomGridPanel.repaint();
+        restoreRoomSelection(visibleRooms);
     }
 
-        private void openCheckInDialog() {
-        StayRecord record = getSelectedRecord();
+    private boolean matchesRoomSearch(RoomBlockState state, String keyword) {
+        if (state == null || keyword == null || keyword.trim().isEmpty()) {
+            return true;
+        }
+        String source = (safeValue(state.roomCode, "")
+                + " " + safeValue(state.bookingCode, "")
+                + " " + safeValue(state.representativeName, "")
+                + " " + state.guestCount
+                + " " + safeValue(state.floorName, "")
+                + " " + safeValue(state.statusText, "")).toLowerCase(Locale.ROOT);
+        return source.contains(keyword);
+    }
+
+    private void restoreRoomSelection(List<RoomBlockState> visibleRooms) {
+        RoomBlockState preferred = null;
+        if (pendingFocusedBookingId != null) {
+            preferred = findFirstRoomForBooking(pendingFocusedBookingId.intValue());
+        }
+        if (preferred == null && selectedRoomBlock != null) {
+            preferred = roomBlocksByCode.get(selectedRoomBlock.roomCode);
+        }
+        if (preferred != null && visibleRooms.contains(preferred)) {
+            handleRoomBlockSelection(preferred, false);
+            clearPendingFocusedBookingIfMatched(preferred.bookingId == null ? -1 : preferred.bookingId.intValue());
+            return;
+        }
+        if (!visibleRooms.isEmpty()) {
+            handleRoomBlockSelection(visibleRooms.get(0), false);
+            return;
+        }
+        selectedRoomBlock = null;
+        highlightedRoomCodes.clear();
+        refreshRoomBlockStyles();
+        clearOperationDetailPanel();
+    }
+
+    private RoomBlockState findFirstRoomForBooking(int bookingId) {
+        for (RoomBlockState state : roomBlocksByCode.values()) {
+            if (state != null && state.bookingId != null && state.bookingId.intValue() == bookingId) {
+                return state;
+            }
+        }
+        return null;
+    }
+
+    private JPanel createRoomBlockCard(RoomBlockState state) {
+        JPanel card = new JPanel(new BorderLayout(0, 8));
+        card.setOpaque(true);
+        card.setBackground(resolveBlockBackground(state.statusKey));
+        card.setBorder(createRoomBlockBorder(state, false));
+        card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        card.setPreferredSize(new Dimension(ROOM_CARD_PREFERRED_WIDTH, ROOM_CARD_PREFERRED_HEIGHT));
+        card.setMinimumSize(new Dimension(124, 112));
+
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
+
+        JLabel lblRoom = new JLabel(state.roomCode);
+        lblRoom.setFont(AppFonts.title(18));
+        lblRoom.setForeground(TEXT_PRIMARY);
+
+        JLabel lblBadge = createRoomBadgeLabel(state);
+        top.add(lblRoom, BorderLayout.WEST);
+        top.add(lblBadge, BorderLayout.EAST);
+
+        JPanel body = new JPanel();
+        body.setOpaque(false);
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+
+        JLabel lblStatus = new JLabel(safeValue(state.statusText, "-"));
+        lblStatus.setFont(AppFonts.ui(Font.BOLD, 12));
+        lblStatus.setForeground(resolveBlockAccent(state.statusKey));
+        lblStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(lblStatus);
+        body.add(Box.createVerticalStrut(4));
+
+        JLabel lblRoomType = new JLabel(safeValue(state.roomType, "-"));
+        lblRoomType.setFont(AppFonts.body(12));
+        lblRoomType.setForeground(TEXT_MUTED);
+        lblRoomType.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(lblRoomType);
+        body.add(Box.createVerticalStrut(4));
+
+        JLabel lblGuest = new JLabel(resolveRoomGuestDisplay(state));
+        lblGuest.setFont(AppFonts.ui(Font.BOLD, 13));
+        lblGuest.setForeground(TEXT_PRIMARY);
+        lblGuest.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(lblGuest);
+        body.add(Box.createVerticalStrut(4));
+
+        JLabel lblMeta = new JLabel(resolveRoomPeopleDisplay(state) + " | " + resolveRoomSecondaryLine(state));
+        lblMeta.setFont(AppFonts.body(12));
+        lblMeta.setForeground(TEXT_MUTED);
+        lblMeta.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(lblMeta);
+        body.add(Box.createVerticalStrut(4));
+
+        JLabel lblFuture = new JLabel(resolveRoomCardHint(state));
+        lblFuture.setFont(AppFonts.body(11));
+        lblFuture.setForeground(TEXT_MUTED);
+        lblFuture.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(lblFuture);
+
+        card.setToolTipText(buildRoomBlockTooltip(state));
+        bindRoomBlockClick(card, state);
+        bindRoomBlockClick(top, state);
+        bindRoomBlockClick(body, state);
+        bindRoomBlockClick(lblRoom, state);
+        bindRoomBlockClick(lblStatus, state);
+        bindRoomBlockClick(lblBadge, state);
+        bindRoomBlockClick(lblRoomType, state);
+        bindRoomBlockClick(lblGuest, state);
+        bindRoomBlockClick(lblMeta, state);
+        bindRoomBlockClick(lblFuture, state);
+
+        card.add(top, BorderLayout.NORTH);
+        card.add(body, BorderLayout.CENTER);
+        roomBlockCards.put(state.roomCode, card);
+        return card;
+    }
+
+    private void bindRoomBlockClick(Component component, RoomBlockState state) {
+        if (component == null || state == null) {
+            return;
+        }
+        component.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() >= 2) {
+                    handleRoomBlockSelection(state, true);
+                    return;
+                }
+                handleRoomBlockSelection(state, false);
+            }
+        });
+    }
+
+    private JLabel createStatusChipLabel(String text, String statusKey) {
+        JLabel lbl = new JLabel(" " + safeValue(text, "-") + " ");
+        lbl.setOpaque(true);
+        lbl.setBackground(resolveBlockAccent(statusKey));
+        lbl.setForeground(RoomStatusKey.MAINTENANCE.equals(statusKey) ? TEXT_PRIMARY : Color.WHITE);
+        lbl.setFont(AppFonts.ui(Font.BOLD, 12));
+        lbl.setBorder(new EmptyBorder(5, 10, 5, 10));
+        return lbl;
+    }
+
+    private JLabel createRoomBadgeLabel(RoomBlockState state) {
+        RoomBadgeConfig badge = resolveRoomBadgeConfig(state);
+        if (badge == null) {
+            JLabel spacer = new JLabel(" ");
+            spacer.setPreferredSize(new Dimension(26, 22));
+            return spacer;
+        }
+        JLabel lbl = new JLabel(badge.text, SwingConstants.CENTER);
+        lbl.setOpaque(true);
+        lbl.setBackground(badge.background);
+        lbl.setForeground(badge.foreground);
+        lbl.setFont(AppFonts.ui(Font.BOLD, 11));
+        lbl.setPreferredSize(new Dimension(26, 22));
+        lbl.setBorder(BorderFactory.createLineBorder(Color.WHITE, 1, true));
+        lbl.setToolTipText(badge.tooltip);
+        return lbl;
+    }
+
+    private RoomBadgeConfig resolveRoomBadgeConfig(RoomBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+            return new RoomBadgeConfig("TT", new Color(220, 38, 38), Color.WHITE, buildRoomBadgeTooltip(state));
+        }
+        if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
+            return new RoomBadgeConfig("DN", new Color(13, 148, 136), Color.WHITE, buildRoomBadgeTooltip(state));
+        }
+        if (state.futureHintCount > 0 && state.nextFutureHint != null) {
+            String text = state.futureHintCount > 1 ? String.valueOf(state.futureHintCount) : "\u2022";
+            return new RoomBadgeConfig(text, new Color(17, 24, 39), Color.WHITE, buildRoomBadgeTooltip(state));
+        }
+        return null;
+    }
+
+    private String buildRoomBadgeTooltip(RoomBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        StringBuilder html = new StringBuilder("<html>");
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+            html.append("Ph\u00f2ng ").append(safeValue(state.roomCode, "-")).append(" \u0111ang ch\u1edd thanh to\u00e1n");
+            if (state.actualCheckOut != null) {
+                html.append("<br>Check-out l\u00fac: ").append(formatDateTime(state.actualCheckOut));
+            }
+            if (state.bookingCode != null) {
+                html.append("<br>Booking: ").append(state.bookingCode);
+            }
+        } else if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
+            html.append("Ph\u00f2ng ").append(safeValue(state.roomCode, "-")).append(" \u0111ang \u1edf tr\u1ea1ng th\u00e1i d\u1ecdn ph\u00f2ng");
+        } else if (state.nextFutureHint != null) {
+            html.append("S\u1eafp c\u00f3 kh\u00e1ch");
+            html.append("<br>Booking g\u1ea7n nh\u1ea5t: DP").append(state.nextFutureHint.bookingId);
+            html.append("<br>D\u1ef1 ki\u1ebfn nh\u1eadn: ").append(formatDateTime(state.nextFutureHint.expectedCheckIn));
+            html.append("<br>Ng\u01b0\u1eddi \u0111\u1ea1i di\u1ec7n: ").append(safeValue(state.nextFutureHint.representativeName, "-"));
+            if (state.futureHintCount > 1) {
+                html.append("<br>C\u00f2n ").append(state.futureHintCount - 1).append(" l\u01b0\u1ee3t k\u1ebf ti\u1ebfp.");
+            }
+        } else {
+            return null;
+        }
+        if (state.nextFutureHint != null
+                && (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey) || RoomStatusKey.CLEANING.equals(state.statusKey))) {
+            html.append("<br><br>S\u1eafp t\u1edbi: DP").append(state.nextFutureHint.bookingId)
+                    .append(" - ").append(formatDateTime(state.nextFutureHint.expectedCheckIn))
+                    .append(" - ").append(safeValue(state.nextFutureHint.representativeName, "-"));
+        }
+        html.append("</html>");
+        return html.toString();
+    }
+
+    private String buildRoomBlockTooltip(RoomBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        StringBuilder html = new StringBuilder("<html>");
+        html.append("Ph\u00f2ng: ").append(safeValue(state.roomCode, "-"));
+        html.append("<br>Tr\u1ea1ng th\u00e1i: ").append(safeValue(state.statusText, "-"));
+        html.append("<br>Lo\u1ea1i ph\u00f2ng: ").append(safeValue(state.roomType, "-"));
+        html.append("<br>S\u1ed1 ng\u01b0\u1eddi: ").append(state.guestCount <= 0 ? 0 : state.guestCount);
+        if (state.bookingCode != null) {
+            html.append("<br>Booking: ").append(state.bookingCode);
+        }
+        if (state.representativeName != null) {
+            html.append("<br>Kh\u00e1ch/đ\u1ea1i di\u1ec7n: ").append(state.representativeName);
+        }
+        if (state.nextFutureHint != null) {
+            html.append("<br>S\u1eafp t\u1edbi: DP").append(state.nextFutureHint.bookingId)
+                    .append(" - ").append(formatDateTime(state.nextFutureHint.expectedCheckIn));
+        }
+        html.append("</html>");
+        return html.toString();
+    }
+
+    private String resolveRoomCardHint(RoomBlockState state) {
+        if (state == null) {
+            return "-";
+        }
+        if (RoomStatusKey.BOOKED.equals(state.statusKey)) {
+            return "Ch\u1edd check-in";
+        }
+        if (RoomStatusKey.OCCUPIED.equals(state.statusKey)) {
+            return "Kh\u00e1ch \u0111ang l\u01b0u tr\u00fa";
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+            return "\u0110\u00e3 check-out, c\u1ea7n thanh to\u00e1n";
+        }
+        if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
+            return "Ch\u1edd x\u00e1c nh\u1eadn d\u1ecdn";
+        }
+        if (RoomStatusKey.MAINTENANCE.equals(state.statusKey)) {
+            return "Kh\u00f4ng tham gia v\u1eadn h\u00e0nh";
+        }
+        if (RoomStatusKey.AVAILABLE.equals(state.statusKey) && state.nextFutureHint != null) {
+            return "S\u1eafp c\u00f3 kh\u00e1ch";
+        }
+        if (RoomStatusKey.AVAILABLE.equals(state.statusKey)) {
+            return "S\u1eb5n s\u00e0ng \u0111\u00f3n kh\u00e1ch";
+        }
+        return "Kh\u00f4ng c\u00f3 thao t\u00e1c ngay";
+    }
+
+    private Map<String, List<RoomBlockState>> groupVisibleRoomsByFloor(List<RoomBlockState> visibleRooms) {
+        Map<String, List<RoomBlockState>> roomsByFloor = new LinkedHashMap<String, List<RoomBlockState>>();
+        for (String floorName : availableFloors) {
+            roomsByFloor.put(floorName, new ArrayList<RoomBlockState>());
+        }
+        for (RoomBlockState state : visibleRooms) {
+            if (state == null) {
+                continue;
+            }
+            if (!roomsByFloor.containsKey(state.floorName)) {
+                roomsByFloor.put(state.floorName, new ArrayList<RoomBlockState>());
+            }
+            roomsByFloor.get(state.floorName).add(state);
+        }
+        Map<String, List<RoomBlockState>> orderedFloors = new LinkedHashMap<String, List<RoomBlockState>>();
+        for (Map.Entry<String, List<RoomBlockState>> entry : roomsByFloor.entrySet()) {
+            List<RoomBlockState> floorRooms = entry.getValue();
+            if (floorRooms.isEmpty()) {
+                continue;
+            }
+            floorRooms.sort((left, right) -> compareRoomCodes(left == null ? null : left.roomCode, right == null ? null : right.roomCode));
+            orderedFloors.put(entry.getKey(), floorRooms);
+        }
+        return orderedFloors;
+    }
+
+    private JPanel createFloorSectionPanel(String floorName, List<RoomBlockState> floorRooms) {
+        JPanel section = new JPanel(new BorderLayout(0, 8));
+        section.setOpaque(false);
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel titleRow = new JPanel(new BorderLayout(8, 0));
+        titleRow.setOpaque(false);
+
+        JLabel lblFloor = new JLabel(safeValue(floorName, "T\u1ea7ng"));
+        lblFloor.setFont(AppFonts.ui(Font.BOLD, 13));
+        lblFloor.setForeground(TEXT_PRIMARY);
+        titleRow.add(lblFloor, BorderLayout.WEST);
+
+        JLabel lblCount = new JLabel((floorRooms == null ? 0 : floorRooms.size()) + " ph\u00f2ng");
+        lblCount.setFont(AppFonts.body(12));
+        lblCount.setForeground(TEXT_MUTED);
+        titleRow.add(lblCount, BorderLayout.EAST);
+        section.add(titleRow, BorderLayout.NORTH);
+
+        JPanel row = new JPanel(new java.awt.GridLayout(0, ROOM_GRID_COLUMNS, 12, 12));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        if (floorRooms != null) {
+            for (RoomBlockState state : floorRooms) {
+                row.add(createRoomBlockCard(state));
+            }
+        }
+        section.add(row, BorderLayout.CENTER);
+        return section;
+    }
+
+    private int compareRoomCodes(String left, String right) {
+        int leftNumeric = extractRoomCodeNumber(left);
+        int rightNumeric = extractRoomCodeNumber(right);
+        if (leftNumeric != rightNumeric) {
+            return Integer.compare(leftNumeric, rightNumeric);
+        }
+        return safeValue(left, "").compareToIgnoreCase(safeValue(right, ""));
+    }
+
+    private int extractRoomCodeNumber(String roomCode) {
+        if (roomCode == null) {
+            return Integer.MAX_VALUE;
+        }
+        String digits = roomCode.replaceAll("\\D+", "");
+        if (digits.isEmpty()) {
+            return Integer.MAX_VALUE;
+        }
+        try {
+            return Integer.parseInt(digits);
+        } catch (NumberFormatException ex) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    private String resolveRoomGuestDisplay(RoomBlockState state) {
+        if (state == null) {
+            return "Kh\u00f4ng c\u00f3 th\u00f4ng tin kh\u00e1ch";
+        }
+        if (state.representativeName != null && !state.representativeName.trim().isEmpty() && !"-".equals(state.representativeName.trim())) {
+            return state.representativeName;
+        }
+        if (RoomStatusKey.AVAILABLE.equals(state.statusKey)) {
+            return "Ch\u01b0a c\u00f3 kh\u00e1ch";
+        }
+        if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
+            return "Kh\u00f4ng c\u00f2n kh\u00e1ch l\u01b0u tr\u00fa";
+        }
+        return "Ch\u01b0a c\u00f3 t\u00ean kh\u00e1ch";
+    }
+
+    private String resolveRoomPeopleDisplay(RoomBlockState state) {
+        if (state == null) {
+            return "0 ng\u01b0\u1eddi";
+        }
+        int guestCount = Math.max(0, state.guestCount);
+        if (guestCount <= 0) {
+            return RoomStatusKey.AVAILABLE.equals(state.statusKey) ? "0 ng\u01b0\u1eddi" : "Ch\u01b0a ghi nh\u1eadn s\u1ed1 ng\u01b0\u1eddi";
+        }
+        return guestCount + " ng\u01b0\u1eddi";
+    }
+
+    private String resolveRoomSecondaryLine(RoomBlockState state) {
+        if (state == null) {
+            return "-";
+        }
+        if (state.bookingCode != null) {
+            return state.bookingCode + " | " + safeValue(state.floorName, "-");
+        }
+        return safeValue(state.roomType, "-") + " | " + safeValue(state.floorName, "-");
+    }
+
+    private void handleRoomBlockSelection(RoomBlockState state, boolean openAction) {
+        if (state == null) {
+            selectedRoomBlock = null;
+            highlightedRoomCodes.clear();
+            refreshRoomBlockStyles();
+            clearOperationDetailPanel();
+            return;
+        }
+        selectedRoomBlock = state;
+        highlightBookingRooms(state);
+        refreshRoomBlockStyles();
+        updateOperationDetailPanel(state);
+        if (openAction) {
+            openRoomActionForState(state);
+        }
+    }
+
+    private void highlightBookingRooms(RoomBlockState state) {
+        highlightedRoomCodes.clear();
+        if (state == null) {
+            return;
+        }
+        StayRecord record = state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
+        if (record != null) {
+            for (RoomBlockState related : record.resolveRoomStates(roomBlocksByCode)) {
+                if (related != null) {
+                    highlightedRoomCodes.add(related.roomCode);
+                }
+            }
+        }
+        if (highlightedRoomCodes.isEmpty()) {
+            highlightedRoomCodes.add(state.roomCode);
+        }
+    }
+
+    private void refreshRoomBlockStyles() {
+        for (Map.Entry<String, JPanel> entry : roomBlockCards.entrySet()) {
+            RoomBlockState state = roomBlocksByCode.get(entry.getKey());
+            JPanel card = entry.getValue();
+            if (card == null || state == null) {
+                continue;
+            }
+            boolean selected = selectedRoomBlock != null && state.roomCode.equalsIgnoreCase(selectedRoomBlock.roomCode);
+            card.setBorder(createRoomBlockBorder(state, selected));
+            card.repaint();
+        }
+    }
+
+    private javax.swing.border.Border createRoomBlockBorder(RoomBlockState state, boolean selected) {
+        boolean related = state != null && highlightedRoomCodes.contains(state.roomCode);
+        Color accent = selected ? new Color(37, 99, 235) : related ? new Color(59, 130, 246) : BORDER_SOFT;
+        int thickness = selected ? 3 : related ? 2 : 1;
+        return BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(accent, thickness, true),
+                new EmptyBorder(12, 12, 12, 12)
+        );
+    }
+
+    private void updateOperationDetailPanel(RoomBlockState state) {
+        if (state == null) {
+            clearOperationDetailPanel();
+            return;
+        }
+        StayRecord record = state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
+        lblDetailBookingCode.setText(state.bookingCode == null ? "-" : state.bookingCode);
+        lblDetailStayCode.setText(state.getStayCodeDisplay());
+        lblDetailGuestName.setText(safeValue(state.representativeName, record == null ? "-" : record.khachHang));
+        lblDetailRoomCode.setText(state.roomCode);
+        lblDetailRoomType.setText(safeValue(state.roomType, "-"));
+        lblDetailFloor.setText(safeValue(state.floorName, "-"));
+        lblDetailStatus.setText(safeValue(state.statusText, "-"));
+        lblDetailGuestCount.setText(resolveRoomPeopleDisplay(state));
+        lblDetailCheckIn.setText(formatDateTime(state.checkInTime == null && record != null ? parseDateTimeOrNull(record.gioVao) : state.checkInTime));
+        lblDetailCheckOut.setText(formatDateTime(state.expectedCheckOut == null && record != null ? parseDateTimeOrNull(record.gioRaDuKien) : state.expectedCheckOut));
+        lblDetailNextBooking.setText(buildNextBookingSummary(state));
+        txtDetailNotes.setText(buildOperationNote(state, record));
+        txtDetailNotes.setCaretPosition(0);
+        rebuildRelatedRoomPanel(state, record);
+        rebuildDetailActionPanel(state, record);
+    }
+
+    private void clearOperationDetailPanel() {
+        if (lblDetailBookingCode == null) {
+            return;
+        }
+        lblDetailBookingCode.setText("-");
+        lblDetailStayCode.setText("-");
+        lblDetailGuestName.setText("-");
+        lblDetailRoomCode.setText("-");
+        lblDetailRoomType.setText("-");
+        lblDetailFloor.setText("-");
+        lblDetailStatus.setText("-");
+        lblDetailGuestCount.setText("-");
+        lblDetailCheckIn.setText("-");
+        lblDetailCheckOut.setText("-");
+        lblDetailNextBooking.setText("-");
+        if (txtDetailNotes != null) {
+            txtDetailNotes.setText("Ch\u1ecdn m\u1ed9t block ph\u00f2ng \u0111\u1ec3 xem chi ti\u1ebft v\u00e0 thao t\u00e1c.");
+        }
+        if (detailRelatedRoomsPanel != null) {
+            detailRelatedRoomsPanel.removeAll();
+            JLabel lbl = new JLabel("Ch\u01b0a c\u00f3 booking \u0111\u01b0\u1ee3c ch\u1ecdn.");
+            lbl.setFont(BODY_FONT);
+            lbl.setForeground(TEXT_MUTED);
+            detailRelatedRoomsPanel.add(lbl);
+            detailRelatedRoomsPanel.revalidate();
+            detailRelatedRoomsPanel.repaint();
+        }
+        if (detailActionPanel != null) {
+            detailActionPanel.removeAll();
+            JLabel lbl = new JLabel("Double click block ph\u00f2ng \u0111\u1ec3 m\u1edf thao t\u00e1c.");
+            lbl.setFont(BODY_FONT);
+            lbl.setForeground(TEXT_MUTED);
+            detailActionPanel.add(lbl);
+            detailActionPanel.revalidate();
+            detailActionPanel.repaint();
+        }
+    }
+
+    private String buildNextBookingSummary(RoomBlockState state) {
+        if (state == null || state.nextFutureHint == null) {
+            return "-";
+        }
+        return "DP" + state.nextFutureHint.bookingId + " | " + formatDateTime(state.nextFutureHint.expectedCheckIn);
+    }
+
+    private String buildOperationNote(RoomBlockState state, StayRecord record) {
+        if (state == null) {
+            return "Ch\u01b0a c\u00f3 d\u1eef li\u1ec7u.";
+        }
+        StringBuilder note = new StringBuilder();
+        note.append(safeValue(state.note, "Kh\u00f4ng c\u00f3 ghi ch\u00fa v\u1eadn h\u00e0nh."));
+        note.append("\nKh\u00e1ch hi\u1ec7n t\u1ea1i: ").append(resolveRoomGuestDisplay(state));
+        note.append("\nS\u1ed1 ng\u01b0\u1eddi: ").append(resolveRoomPeopleDisplay(state));
+        if (record != null) {
+            note.append("\n\nBooking c\u00f3 ").append(record.soLuongPhong).append(" ph\u00f2ng.");
+            int pendingCount = record.countRoomsByStatus(roomBlocksByCode, RoomStatusKey.BOOKED);
+            int occupiedCount = record.countRoomsByStatus(roomBlocksByCode, RoomStatusKey.OCCUPIED);
+            int waitPaymentCount = record.countRoomsByStatus(roomBlocksByCode, RoomStatusKey.WAIT_PAYMENT);
+            int cleaningCount = record.countRoomsByStatus(roomBlocksByCode, RoomStatusKey.CLEANING);
+            if (pendingCount > 0) {
+                note.append("\n- ").append(pendingCount).append(" ph\u00f2ng c\u00f2n ch\u1edd check-in.");
+            }
+            if (occupiedCount > 0) {
+                note.append("\n- ").append(occupiedCount).append(" ph\u00f2ng \u0111ang \u1edf.");
+            }
+            if (waitPaymentCount > 0) {
+                note.append("\n- ").append(waitPaymentCount).append(" ph\u00f2ng \u0111ang ch\u1edd thanh to\u00e1n.");
+            }
+            if (cleaningCount > 0) {
+                note.append("\n- ").append(cleaningCount).append(" ph\u00f2ng \u0111ang d\u1ecdn.");
+            }
+        }
+        if (state.nextFutureHint != null) {
+            note.append("\n\nS\u1eafp t\u1edbi: ").append("DP").append(state.nextFutureHint.bookingId)
+                    .append(" - ").append(formatDateTime(state.nextFutureHint.expectedCheckIn))
+                    .append(" - ").append(safeValue(state.nextFutureHint.representativeName, "-"));
+        }
+        return note.toString();
+    }
+
+    private void rebuildRelatedRoomPanel(RoomBlockState state, StayRecord record) {
+        detailRelatedRoomsPanel.removeAll();
+        if (record == null || state.bookingId == null) {
+            detailRelatedRoomsPanel.add(createRelatedRoomCard(state, true));
+            detailRelatedRoomsPanel.revalidate();
+            detailRelatedRoomsPanel.repaint();
+            return;
+        }
+        for (String roomCode : record.getRoomCodes()) {
+            RoomBlockState related = roomBlocksByCode.get(roomCode);
+            detailRelatedRoomsPanel.add(createRelatedRoomCard(related,
+                    selectedRoomBlock != null && related != null && roomCode.equalsIgnoreCase(selectedRoomBlock.roomCode)));
+            detailRelatedRoomsPanel.add(Box.createVerticalStrut(6));
+        }
+        detailRelatedRoomsPanel.revalidate();
+        detailRelatedRoomsPanel.repaint();
+    }
+
+    private JPanel createRelatedRoomCard(RoomBlockState roomState, boolean selected) {
+        JPanel card = new JPanel(new BorderLayout(10, 0));
+        card.setOpaque(true);
+        card.setBackground(selected ? new Color(239, 246, 255) : PANEL_SOFT);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(selected ? new Color(59, 130, 246) : BORDER_SOFT, selected ? 2 : 1, true),
+                new EmptyBorder(8, 10, 8, 10)
+        ));
+
+        if (roomState == null) {
+            JLabel lbl = new JLabel("Ph\u00f2ng trong \u0111\u01a1n kh\u00f4ng c\u00f2n d\u1eef li\u1ec7u tr\u1ea1ng th\u00e1i.");
+            lbl.setFont(BODY_FONT);
+            lbl.setForeground(TEXT_MUTED);
+            card.add(lbl, BorderLayout.CENTER);
+            return card;
+        }
+
+        JPanel info = new JPanel();
+        info.setOpaque(false);
+        info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+
+        JPanel top = new JPanel(new BorderLayout(8, 0));
+        top.setOpaque(false);
+        JLabel lblRoom = new JLabel(roomState.roomCode);
+        lblRoom.setFont(AppFonts.ui(Font.BOLD, 13));
+        lblRoom.setForeground(TEXT_PRIMARY);
+        top.add(lblRoom, BorderLayout.WEST);
+        top.add(createStatusChipLabel(roomState.statusText, roomState.statusKey), BorderLayout.EAST);
+
+        JLabel lblGuest = new JLabel(resolveRoomGuestDisplay(roomState));
+        lblGuest.setFont(BODY_FONT);
+        lblGuest.setForeground(TEXT_PRIMARY);
+
+        JLabel lblPeople = new JLabel(resolveRoomPeopleDisplay(roomState) + " | " + safeValue(roomState.roomType, "-"));
+        lblPeople.setFont(AppFonts.body(12));
+        lblPeople.setForeground(TEXT_MUTED);
+
+        info.add(top);
+        info.add(Box.createVerticalStrut(4));
+        info.add(lblGuest);
+        info.add(Box.createVerticalStrut(2));
+        info.add(lblPeople);
+
+        JButton btnAction = createRelatedRoomActionButton(roomState);
+        card.add(info, BorderLayout.CENTER);
+        if (btnAction != null) {
+            card.add(btnAction, BorderLayout.EAST);
+        }
+        bindRoomBlockClick(card, roomState);
+        bindRoomBlockClick(info, roomState);
+        bindRoomBlockClick(top, roomState);
+        bindRoomBlockClick(lblRoom, roomState);
+        bindRoomBlockClick(lblGuest, roomState);
+        bindRoomBlockClick(lblPeople, roomState);
+        return card;
+    }
+
+    private JButton createRelatedRoomActionButton(RoomBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        String label = resolveQuickActionLabel(state);
+        if (label == null) {
+            return null;
+        }
+        JButton button = createOutlineButton(label, resolveBlockAccent(state.statusKey), e -> {
+            handleRoomBlockSelection(state, false);
+            openRoomActionForState(state);
+        });
+        button.setFont(AppFonts.ui(Font.BOLD, 12));
+        button.setMargin(new Insets(6, 10, 6, 10));
+        return button;
+    }
+
+    private String resolveQuickActionLabel(RoomBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        if (RoomStatusKey.BOOKED.equals(state.statusKey)) {
+            return "Check-in";
+        }
+        if (RoomStatusKey.OCCUPIED.equals(state.statusKey)) {
+            return "Chi ti\u1ebft";
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+            return "Thanh to\u00e1n";
+        }
+        if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
+            return "D\u1ecdn xong";
+        }
+        return null;
+    }
+
+    private void rebuildDetailActionPanel(RoomBlockState state, StayRecord record) {
+        detailActionPanel.removeAll();
+        if (state == null) {
+            detailActionPanel.revalidate();
+            detailActionPanel.repaint();
+            return;
+        }
+
+        JLabel lblSelectedRoom = new JLabel("Ph\u00f2ng \u0111ang ch\u1ecdn");
+        lblSelectedRoom.setFont(LABEL_FONT);
+        lblSelectedRoom.setForeground(TEXT_MUTED);
+        detailActionPanel.add(lblSelectedRoom);
+        detailActionPanel.add(Box.createVerticalStrut(8));
+
+        switch (state.statusKey) {
+            case RoomStatusKey.BOOKED:
+                addDetailActionButton(createPrimaryButton("Check-in ph\u00f2ng \u0111ang ch\u1ecdn", new Color(22, 163, 74), Color.WHITE,
+                        e -> openCheckInDialog(record, state.detailId, record != null && record.hasMultipleRooms())));
+                break;
+            case RoomStatusKey.OCCUPIED:
+                addDetailActionButton(createPrimaryButton("M\u1edf popup \u0111ang \u1edf", new Color(37, 99, 235), Color.WHITE, e -> openRoomActionForState(state)));
+                addDetailActionButton(createOutlineButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), e -> {
+                    handleRoomBlockSelection(state, false);
+                    openAddServiceDialog();
+                }));
+                addDetailActionButton(createOutlineButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), e -> openChangeRoomDialog(record, state.stayId)));
+                addDetailActionButton(createOutlineButton("Gia h\u1ea1n", new Color(59, 130, 246), e -> {
+                    handleRoomBlockSelection(state, false);
+                    openExtendDialog();
+                }));
+                addDetailActionButton(createOutlineButton("Check-out ph\u00f2ng n\u00e0y", new Color(220, 38, 38), e -> openCheckOutDialog(record, state.stayId, false)));
+                break;
+            case RoomStatusKey.WAIT_PAYMENT:
+                addDetailActionButton(createPrimaryButton("M\u1edf thanh to\u00e1n", new Color(220, 38, 38), Color.WHITE, e -> openRoomActionForState(state)));
+                break;
+            case RoomStatusKey.CLEANING:
+                addDetailActionButton(createPrimaryButton("X\u00e1c nh\u1eadn d\u1ecdn xong", new Color(13, 148, 136), Color.WHITE, e -> confirmCleaningForState(state)));
+                break;
+            default:
+                JLabel lbl = new JLabel("Kh\u00f4ng c\u00f3 thao t\u00e1c tr\u1ef1c ti\u1ebfp cho tr\u1ea1ng th\u00e1i n\u00e0y.");
+                lbl.setFont(BODY_FONT);
+                lbl.setForeground(TEXT_MUTED);
+                detailActionPanel.add(lbl);
+                break;
+        }
+
+        if (record != null && record.hasMultipleRooms()) {
+            int bookableCount = countBookingRoomsByStatus(record.maDatPhong, RoomStatusKey.BOOKED);
+            int occupiedCount = countBookingRoomsByStatus(record.maDatPhong, RoomStatusKey.OCCUPIED);
+            if (bookableCount > 0 || occupiedCount > 0) {
+                detailActionPanel.add(Box.createVerticalStrut(4));
+                JLabel lblBulk = new JLabel("To\u00e0n b\u1ed9 \u0111\u01a1n");
+                lblBulk.setFont(LABEL_FONT);
+                lblBulk.setForeground(TEXT_MUTED);
+                detailActionPanel.add(lblBulk);
+                detailActionPanel.add(Box.createVerticalStrut(8));
+            }
+            if (bookableCount > 0) {
+                addDetailActionButton(createOutlineButton("Check-in to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(22, 163, 74), e -> {
+                    handleRoomBlockSelection(state, false);
+                    openCheckInDialog(record, state.detailId, true);
+                }));
+            }
+            if (occupiedCount > 0) {
+                addDetailActionButton(createOutlineButton("Check-out to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(220, 38, 38), e -> {
+                    handleRoomBlockSelection(state, false);
+                    openCheckOutDialog(record, state.stayId, true);
+                }));
+            }
+        }
+
+        detailActionPanel.revalidate();
+        detailActionPanel.repaint();
+    }
+
+    private void addDetailActionButton(JButton button) {
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        detailActionPanel.add(button);
+        detailActionPanel.add(Box.createVerticalStrut(8));
+    }
+
+    private int countBookingRoomsByStatus(int bookingId, String statusKey) {
+        StayRecord record = findRecordByBookingId(Integer.valueOf(bookingId));
+        if (record != null) {
+            return record.countRoomsByStatus(roomBlocksByCode, statusKey);
+        }
+        int count = 0;
+        for (RoomBlockState state : roomBlocksByCode.values()) {
+            if (state.bookingId != null && state.bookingId.intValue() == bookingId && statusKey.equals(state.statusKey)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private StayRecord findRecordByBookingId(Integer bookingId) {
+        if (bookingId == null || bookingId.intValue() <= 0) {
+            return null;
+        }
+        return recordsByBookingId.get(bookingId);
+    }
+
+    private void openRoomActionForState(RoomBlockState state) {
+        if (state == null) {
+            return;
+        }
+        StayRecord record = state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
+        if (RoomStatusKey.BOOKED.equals(state.statusKey)) {
+            openCheckInDialog(record, state.detailId, record != null && record.hasMultipleRooms());
+            return;
+        }
+        if (RoomStatusKey.OCCUPIED.equals(state.statusKey)) {
+            if (record == null || state.stayId == null) {
+                showInfo("Kh\u00f4ng c\u00f2n d\u1eef li\u1ec7u l\u01b0u tr\u00fa \u0111\u1ec3 m\u1edf popup \u0111ang \u1edf.");
+                return;
+            }
+            new ActiveStayOperationDialog(this, state, record).setVisible(true);
+            return;
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+            openPaymentPopupForState(state);
+            return;
+        }
+        if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
+            confirmCleaningForState(state);
+            return;
+        }
+        showInfo("Tr\u1ea1ng th\u00e1i ph\u00f2ng n\u00e0y kh\u00f4ng c\u00f3 thao t\u00e1c nhanh.");
+    }
+
+    private void openPaymentPopupForState(RoomBlockState state) {
+        if (state == null || state.bookingId == null) {
+            showInfo("Kh\u00f4ng t\u00ecm th\u1ea5y booking ch\u1edd thanh to\u00e1n cho ph\u00f2ng n\u00e0y.");
+            return;
+        }
+        String invoiceId = resolveInvoiceIdForState(state);
+        if (invoiceId == null) {
+            showInfo("Ch\u01b0a t\u1ea1o \u0111\u01b0\u1ee3c h\u00f3a \u0111\u01a1n ch\u1edd thanh to\u00e1n cho ph\u00f2ng n\u00e0y.");
+            return;
+        }
+        ThanhToanGUI.requestInvoiceFocus(invoiceId);
+        ThanhToanGUI paymentGui = new ThanhToanGUI(username, role);
+        paymentGui.setVisible(true);
+        javax.swing.SwingUtilities.invokeLater(() -> {
+            try {
+                Method selectInvoice = ThanhToanGUI.class.getDeclaredMethod("selectInvoice", String.class);
+                selectInvoice.setAccessible(true);
+                selectInvoice.invoke(paymentGui, invoiceId);
+            } catch (Exception ignored) {
+            }
+            try {
+                Method openPaymentDialog = ThanhToanGUI.class.getDeclaredMethod("openPaymentDialog");
+                openPaymentDialog.setAccessible(true);
+                openPaymentDialog.invoke(paymentGui);
+            } catch (Exception reflectionError) {
+                NavigationUtil.navigate(CheckInOutGUI.this, ScreenKey.CHECK_IN_OUT, ScreenKey.THANH_TOAN, username, role);
+            }
+        });
+    }
+
+    private String resolveInvoiceIdForState(RoomBlockState state) {
+        if (state == null) {
+            return null;
+        }
+        if (state.invoiceId != null && state.invoiceId.intValue() > 0) {
+            return String.valueOf(state.invoiceId);
+        }
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return null;
+        }
+        String sql = "SELECT TOP 1 maHoaDon FROM HoaDon WHERE "
+                + "((maChiTietDatPhong = ? AND ? > 0) OR (maDatPhong = ? AND maChiTietDatPhong IS NULL)) "
+                + "ORDER BY maHoaDon DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, state.detailId == null ? 0 : state.detailId.intValue());
+            ps.setInt(2, state.detailId == null ? 0 : state.detailId.intValue());
+            ps.setInt(3, state.bookingId == null ? 0 : state.bookingId.intValue());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return String.valueOf(rs.getInt(1));
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private void confirmCleaningForState(RoomBlockState state) {
+        if (state == null) {
+            return;
+        }
+        int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "X\u00e1c nh\u1eadn ph\u00f2ng " + state.roomCode + " \u0111\u00e3 d\u1ecdn xong v\u00e0 chuy\u1ec3n sang S\u1eb5n s\u00e0ng?",
+                "X\u00e1c nh\u1eadn d\u1ecdn ph\u00f2ng",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE
+        );
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            showInfo("Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
+            return;
+        }
+        try {
+            try (PreparedStatement ps = con.prepareStatement("UPDATE Phong SET trangThai = N'S\u1eb5n s\u00e0ng' WHERE maPhong = ?")) {
+                ps.setInt(1, state.roomId);
+                ps.executeUpdate();
+            }
+            datPhongDAO.refreshRoomStatus(con, state.roomId);
+            PhongGUI.refreshAllOpenInstances();
+            DatPhongGUI.refreshAllOpenInstances();
+            CheckInOutGUI.refreshAllOpenInstances();
+            showInfo("Ph\u00f2ng " + state.roomCode + " \u0111\u00e3 chuy\u1ec3n sang S\u1eb5n s\u00e0ng.");
+        } catch (Exception e) {
+            e.printStackTrace();
+            showInfo("Kh\u00f4ng th\u1ec3 x\u00e1c nh\u1eadn d\u1ecdn ph\u00f2ng.");
+        }
+    }
+
+    private LocalDateTime parseDateTimeOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty() || "-".equals(trimmed) || "Kh\u00e1c nhau".equalsIgnoreCase(trimmed)) {
+            return null;
+        }
+        try {
+            return LocalDateTime.parse(trimmed, DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String formatDateTime(LocalDateTime value) {
+        if (value == null) {
+            return "-";
+        }
+        return DATE_FORMAT.format(value.toLocalDate()) + " " + TIME_FORMAT.format(value.toLocalTime());
+    }
+
+    private StayRecord getSelectedRecord() {
+        if (selectedRoomBlock != null && selectedRoomBlock.bookingId != null) {
+            StayRecord record = findRecordByBookingId(selectedRoomBlock.bookingId);
+            if (record != null) {
+                return record;
+            }
+        }
+        int row = tblLuuTru == null ? -1 : tblLuuTru.getSelectedRow();
+        if (row >= 0 && row < filteredRecords.size()) {
+            return filteredRecords.get(row);
+        }
+        showInfo("Vui l\u00f2ng ch\u1ecdn m\u1ed9t block ph\u00f2ng c\u00f3 booking.");
+        return null;
+    }
+
+    private void openCheckInDialog() {
+        openCheckInDialog(getSelectedRecord(), selectedRoomBlock == null ? null : selectedRoomBlock.detailId, false);
+    }
+
+    private void openCheckInDialog(StayRecord record, Integer preferredDetailId, boolean allowBulk) {
         if (record == null) {
             return;
         }
@@ -1185,7 +2710,7 @@ public class CheckInOutGUI extends JFrame {
             showInfo("\u0110\u01a1n n\u00e0y kh\u00f4ng c\u00f2n ph\u00f2ng n\u00e0o ch\u1edd check-in.");
             return;
         }
-        new CheckInDialog(this, record).setVisible(true);
+        new CheckInDialog(this, record, preferredDetailId, allowBulk).setVisible(true);
     }
 
     private void openAddServiceDialog() {
@@ -1202,7 +2727,10 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void openChangeRoomDialog() {
-        StayRecord record = getSelectedRecord();
+        openChangeRoomDialog(getSelectedRecord(), selectedRoomBlock == null ? null : selectedRoomBlock.stayId);
+    }
+
+    private void openChangeRoomDialog(StayRecord record, Integer preferredStayId) {
         if (record == null) {
             return;
         }
@@ -1210,7 +2738,7 @@ public class CheckInOutGUI extends JFrame {
             showInfo("Ch\u1ec9 booking c\u00f2n ph\u00f2ng \u0111ang \u1edf m\u1edbi \u0111\u1ed5i ph\u00f2ng.");
             return;
         }
-        new ChangeRoomDialog(this, record).setVisible(true);
+        new ChangeRoomDialog(this, record, preferredStayId).setVisible(true);
     }
 
     private void openExtendDialog() {
@@ -1226,7 +2754,10 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void openCheckOutDialog() {
-        StayRecord record = getSelectedRecord();
+        openCheckOutDialog(getSelectedRecord(), selectedRoomBlock == null ? null : selectedRoomBlock.stayId, false);
+    }
+
+    private void openCheckOutDialog(StayRecord record, Integer preferredStayId, boolean allowBulk) {
         if (record == null) {
             return;
         }
@@ -1234,7 +2765,7 @@ public class CheckInOutGUI extends JFrame {
             showInfo("Ch\u1ec9 booking c\u00f2n ph\u00f2ng \u0111ang \u1edf m\u1edbi check-out.");
             return;
         }
-        new CheckOutDialog(this, record).setVisible(true);
+        new CheckOutDialog(this, record, preferredStayId, allowBulk).setVisible(true);
     }
 
     private void refreshRealtimeMap() {
@@ -1784,12 +3315,19 @@ public class CheckInOutGUI extends JFrame {
         private final AppTimePickerField txtGioVao;
         private final AppDatePickerField txtNgayRa;
         private final AppTimePickerField txtGioRa;
+        private final JComboBox<String> cboCheckInBasis;
+        private final Integer preferredDetailId;
+        private final boolean allowBulkActions;
+        private final Map<Integer, LocalDateTime> scheduledCheckInByDetailId = new LinkedHashMap<Integer, LocalDateTime>();
+        private final Map<Integer, LocalDateTime> scheduledCheckOutByDetailId = new LinkedHashMap<Integer, LocalDateTime>();
         private boolean updatingCustomerCells;
         private boolean updatingScheduleFields;
 
-        private CheckInDialog(Frame owner, StayRecord record) {
+        private CheckInDialog(Frame owner, StayRecord record, Integer preferredDetailId, boolean allowBulkActions) {
             super(owner, "Check-in", 820, 540);
             this.record = record;
+            this.preferredDetailId = preferredDetailId;
+            this.allowBulkActions = allowBulkActions;
             bookingItems.addAll(checkInOutDAO.getBookingCheckInItems(String.valueOf(record.maDatPhong)));
             initializeBookingItemSchedules();
 
@@ -1799,12 +3337,21 @@ public class CheckInOutGUI extends JFrame {
             txtGioVao = new AppTimePickerField(initialCheckIn.toLocalTime().format(TIME_FORMAT), true);
             txtNgayRa = new AppDatePickerField(initialCheckOut.toLocalDate().format(DATE_FORMAT), true);
             txtGioRa = new AppTimePickerField(initialCheckOut.toLocalTime().format(TIME_FORMAT), true);
+            cboCheckInBasis = createComboBox(new String[]{
+                    "Gi\u1eef l\u1ecbch t\u1eebng ph\u00f2ng",
+                    "Check-in theo hi\u1ec7n t\u1ea1i",
+                    "Check-in theo gi\u1edd d\u1ef1 ki\u1ebfn"
+            });
+            cboCheckInBasis.setPreferredSize(new Dimension(240, 34));
+            cboCheckInBasis.setMaximumSize(new Dimension(280, 34));
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
             content.add(buildDialogHeader(
                     "CHECK-IN",
-                    "Ch\u1ecdn t\u1eebng ph\u00f2ng \u0111\u1ec3 check-in ri\u00eang ho\u1eb7c d\u00f9ng thao t\u00e1c check-in to\u00e0n b\u1ed9 \u0111\u01a1n cho c\u00e1c ph\u00f2ng \u0111ang ch\u1edd."
+                    allowBulkActions
+                            ? "Ch\u1ecdn t\u1eebng ph\u00f2ng \u0111\u1ec3 check-in ri\u00eang ho\u1eb7c d\u00f9ng thao t\u00e1c check-in to\u00e0n b\u1ed9 \u0111\u01a1n cho c\u00e1c ph\u00f2ng \u0111ang ch\u1edd."
+                            : "Gi\u1eef \u0111\u00fang nghi\u1ec7p v\u1ee5 check-in c\u0169, b\u1eaft bu\u1ed9c nh\u1eadp th\u00f4ng tin ng\u01b0\u1eddi \u1edf cho ph\u00f2ng \u0111ang \u0111\u01b0\u1ee3c ch\u1ecdn."
             ), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
@@ -1820,6 +3367,7 @@ public class CheckInOutGUI extends JFrame {
             addFormRow(form, gbc, 5, "Gi\u1edd v\u00e0o", txtGioVao);
             addFormRow(form, gbc, 6, "Ng\u00e0y ra d\u1ef1 ki\u1ebfn", txtNgayRa);
             addFormRow(form, gbc, 7, "Gi\u1edd ra d\u1ef1 ki\u1ebfn", txtGioRa);
+            addFormRow(form, gbc, 8, "C\u01a1 ch\u1ebf check-in", cboCheckInBasis);
 
             roomTableModel = new DefaultTableModel(
                     new Object[]{"Ph\u00f2ng", "Lo\u1ea1i ph\u00f2ng", "Tr\u1ea1ng th\u00e1i", "S\u1ed1 ng\u01b0\u1eddi",
@@ -1854,7 +3402,7 @@ public class CheckInOutGUI extends JFrame {
             roomHeader.setLayout(new BoxLayout(roomHeader, BoxLayout.Y_AXIS));
             roomHeader.add(lblRooms);
             roomHeader.add(Box.createVerticalStrut(4));
-            JLabel lblRoomHint = new JLabel("4 \u00f4 ng\u00e0y/gi\u1edd ph\u00eda tr\u00ean \u0111ang ch\u1ec9nh cho d\u00f2ng ph\u00f2ng \u0111ang ch\u1ecdn.");
+            JLabel lblRoomHint = new JLabel("Khung ng\u00e0y/gi\u1edd ph\u00eda tr\u00ean \u0111ang ch\u1ec9nh cho ph\u00f2ng \u0111ang ch\u1ecdn. Bulk action v\u1eabn t\u00f4n tr\u1ecdng ph\u00f2ng \u0111\u00e3 x\u1eed l\u00fd tr\u01b0\u1edbc.");
             lblRoomHint.setFont(AppFonts.body(12));
             lblRoomHint.setForeground(TEXT_MUTED);
             roomHeader.add(lblRoomHint);
@@ -1865,19 +3413,23 @@ public class CheckInOutGUI extends JFrame {
             content.add(card, BorderLayout.CENTER);
 
             JButton btnCheckInSelected = createPrimaryButton(
-                    "Check-in ph\u00f2ng \u0111\u00e3 ch\u1ecdn",
+                    allowBulkActions ? "Check-in ph\u00f2ng \u0111\u00e3 ch\u1ecdn" : "Check-in",
                     new Color(22, 163, 74),
                     Color.WHITE,
                     e -> submit(false)
             );
-            JButton btnCheckInAll = createPrimaryButton(
-                    "Check-in to\u00e0n b\u1ed9 \u0111\u01a1n",
-                    new Color(21, 128, 61),
-                    Color.WHITE,
-                    e -> submit(true)
-            );
             JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnCheckInSelected, btnCheckInAll), BorderLayout.SOUTH);
+            if (allowBulkActions) {
+                JButton btnCheckInAll = createPrimaryButton(
+                        "Check-in to\u00e0n b\u1ed9 \u0111\u01a1n",
+                        new Color(21, 128, 61),
+                        Color.WHITE,
+                        e -> submit(true)
+                );
+                content.add(buildDialogButtons(btnCancel, btnCheckInSelected, btnCheckInAll), BorderLayout.SOUTH);
+            } else {
+                content.add(buildDialogButtons(btnCancel, btnCheckInSelected), BorderLayout.SOUTH);
+            }
             add(content, BorderLayout.CENTER);
         }
 
@@ -1892,6 +3444,8 @@ public class CheckInOutGUI extends JFrame {
                 }
                 item.setExpectedCheckIn(checkIn);
                 item.setExpectedCheckOut(checkOut);
+                scheduledCheckInByDetailId.put(Integer.valueOf(item.getMaChiTietDatPhong()), checkIn);
+                scheduledCheckOutByDetailId.put(Integer.valueOf(item.getMaChiTietDatPhong()), checkOut);
             }
         }
 
@@ -1928,6 +3482,27 @@ public class CheckInOutGUI extends JFrame {
             txtGioVao.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
             txtNgayRa.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
             txtGioRa.addTextChangeListener(this::syncSelectedRoomScheduleFromEditor);
+            cboCheckInBasis.addActionListener(e -> applyCheckInBasisPreviewToSelection());
+        }
+
+        private void applyCheckInBasisPreviewToSelection() {
+            CheckInOutDAO.CheckInBookingItem selected = getSelectedBookingItem();
+            if (selected == null) {
+                return;
+            }
+            if (isManualCheckInBasis()) {
+                loadSelectedRoomScheduleIntoEditor();
+                return;
+            }
+            LocalDateTime previewCheckIn = resolveCheckInForBasis(selected, LocalDateTime.now().withSecond(0).withNano(0));
+            LocalDateTime previewCheckOut = ensureValidCheckOut(
+                    resolveCheckOutForBasis(selected, previewCheckIn),
+                    previewCheckIn
+            );
+            selected.setExpectedCheckIn(previewCheckIn);
+            selected.setExpectedCheckOut(previewCheckOut);
+            refreshScheduleCellsForItem(selected);
+            loadSelectedRoomScheduleIntoEditor();
         }
 
         private CheckInOutDAO.CheckInBookingItem getSelectedBookingItem() {
@@ -2102,6 +3677,14 @@ public class CheckInOutGUI extends JFrame {
         }
 
         private void selectFirstPendingRoom() {
+            if (preferredDetailId != null) {
+                for (int i = 0; i < bookingItems.size(); i++) {
+                    if (bookingItems.get(i).getMaChiTietDatPhong() == preferredDetailId.intValue()) {
+                        tblRooms.setRowSelectionInterval(i, i);
+                        return;
+                    }
+                }
+            }
             for (int i = 0; i < bookingItems.size(); i++) {
                 if (bookingItems.get(i).canCheckIn()) {
                     tblRooms.setRowSelectionInterval(i, i);
@@ -2199,6 +3782,73 @@ public class CheckInOutGUI extends JFrame {
             return true;
         }
 
+        private boolean isManualCheckInBasis() {
+            return cboCheckInBasis.getSelectedIndex() <= 0;
+        }
+
+        private boolean isCurrentCheckInBasis() {
+            return cboCheckInBasis.getSelectedIndex() == 1;
+        }
+
+        private LocalDateTime resolveScheduledCheckIn(CheckInOutDAO.CheckInBookingItem item) {
+            LocalDateTime scheduled = item == null ? null : scheduledCheckInByDetailId.get(Integer.valueOf(item.getMaChiTietDatPhong()));
+            return scheduled == null ? resolveDefaultCheckIn() : scheduled;
+        }
+
+        private LocalDateTime resolveScheduledCheckOut(CheckInOutDAO.CheckInBookingItem item) {
+            LocalDateTime scheduled = item == null ? null : scheduledCheckOutByDetailId.get(Integer.valueOf(item.getMaChiTietDatPhong()));
+            if (scheduled != null) {
+                return scheduled;
+            }
+            LocalDateTime fallbackCheckIn = resolveScheduledCheckIn(item);
+            return resolveDefaultCheckOut(fallbackCheckIn);
+        }
+
+        private LocalDateTime resolveCheckInForBasis(CheckInOutDAO.CheckInBookingItem item, LocalDateTime currentMoment) {
+            if (item == null) {
+                return currentMoment == null ? resolveDefaultCheckIn() : currentMoment;
+            }
+            if (isCurrentCheckInBasis()) {
+                return currentMoment == null ? LocalDateTime.now().withSecond(0).withNano(0) : currentMoment;
+            }
+            if (!isManualCheckInBasis()) {
+                return resolveScheduledCheckIn(item);
+            }
+            return item.getExpectedCheckIn() == null ? resolveDefaultCheckIn() : item.getExpectedCheckIn();
+        }
+
+        private LocalDateTime resolveCheckOutForBasis(CheckInOutDAO.CheckInBookingItem item, LocalDateTime checkIn) {
+            LocalDateTime checkOut = isManualCheckInBasis()
+                    ? item == null ? null : item.getExpectedCheckOut()
+                    : resolveScheduledCheckOut(item);
+            return ensureValidCheckOut(checkOut, checkIn);
+        }
+
+        private LocalDateTime ensureValidCheckOut(LocalDateTime checkOut, LocalDateTime checkIn) {
+            if (checkIn == null) {
+                return checkOut == null ? resolveDefaultCheckOut(resolveDefaultCheckIn()) : checkOut;
+            }
+            if (checkOut == null || !checkOut.isAfter(checkIn)) {
+                return checkIn.plusDays(1);
+            }
+            return checkOut;
+        }
+
+        private void applyCheckInBasisToTargets(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            if (targets == null || targets.isEmpty() || isManualCheckInBasis()) {
+                return;
+            }
+            LocalDateTime currentMoment = LocalDateTime.now().withSecond(0).withNano(0);
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                LocalDateTime checkIn = resolveCheckInForBasis(item, currentMoment);
+                LocalDateTime checkOut = resolveCheckOutForBasis(item, checkIn);
+                item.setExpectedCheckIn(checkIn);
+                item.setExpectedCheckOut(checkOut);
+                refreshScheduleCellsForItem(item);
+            }
+            loadSelectedRoomScheduleIntoEditor();
+        }
+
         private boolean validateTargetSchedules(List<CheckInOutDAO.CheckInBookingItem> targets) {
             for (CheckInOutDAO.CheckInBookingItem item : targets) {
                 LocalDateTime checkIn = item.getExpectedCheckIn();
@@ -2247,6 +3897,7 @@ public class CheckInOutGUI extends JFrame {
             if (!syncCurrentEditorToSelectedRoom(targets)) {
                 return;
             }
+            applyCheckInBasisToTargets(targets);
             if (!validateTargetSchedules(targets)) {
                 return;
             }
@@ -2593,6 +4244,280 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
+    private final class ActiveStayOperationDialog extends BaseStayDialog {
+        private final RoomBlockState roomState;
+        private final StayRecord record;
+        private final ActiveStaySnapshot snapshot;
+        private final JComboBox<DichVu> cboService;
+        private final JTextField txtSoLuong;
+        private final DefaultTableModel serviceModel;
+        private final JTable tblServices;
+        private final List<SuDungDichVu> serviceItems = new ArrayList<SuDungDichVu>();
+
+        private ActiveStayOperationDialog(Frame owner, RoomBlockState roomState, StayRecord record) {
+            super(owner, "\u0110ang \u1edf", 860, 640);
+            this.roomState = roomState;
+            this.record = record;
+            this.snapshot = roomState == null || roomState.stayId == null ? null : loadActiveStaySnapshot(roomState.stayId.intValue());
+            cboService = createServiceComboBox(dichVuDAO.getAll());
+            txtSoLuong = createInputField("1");
+            txtSoLuong.setMaximumSize(new Dimension(90, 34));
+
+            JPanel content = new JPanel(new BorderLayout(0, 12));
+            content.setOpaque(false);
+            content.add(buildDialogHeader(
+                    "PH\u00d2NG \u0110ANG \u1ede",
+                    "Popup trung t\u00e2m cho l\u01b0u tr\u00fa hi\u1ec7n t\u1ea1i. T\u1ea5t c\u1ea3 thao t\u00e1c nhanh \u0111i t\u1eeb \u0111\u00fang ph\u00f2ng \u0111ang \u0111\u01b0\u1ee3c ch\u1ecdn."
+            ), BorderLayout.NORTH);
+
+            JPanel center = new JPanel(new BorderLayout(0, 12));
+            center.setOpaque(false);
+            center.add(buildActiveStayInfoCard(), BorderLayout.NORTH);
+
+            serviceModel = new DefaultTableModel(new Object[]{"D\u1ecbch v\u1ee5", "SL", "\u0110\u01a1n gi\u00e1", "Th\u00e0nh ti\u1ec1n"}, 0) {
+                @Override
+                public boolean isCellEditable(int row, int column) {
+                    return false;
+                }
+            };
+            tblServices = new JTable(serviceModel);
+            tblServices.setRowHeight(28);
+            tblServices.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+            center.add(buildActiveStayServiceCard(), BorderLayout.CENTER);
+            content.add(center, BorderLayout.CENTER);
+
+            JButton btnChangeRoom = createOutlineButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), e -> {
+                openChangeRoomDialog(record, roomState == null ? null : roomState.stayId);
+                dispose();
+            });
+            JButton btnAddService = createOutlineButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), e -> addSelectedService());
+            JButton btnExtend = createOutlineButton("Gia h\u1ea1n", new Color(59, 130, 246), e -> {
+                openExtendDialog();
+                dispose();
+            });
+            JButton btnCheckOut = createPrimaryButton("Check-out", new Color(220, 38, 38), Color.WHITE, e -> {
+                openCheckOutDialog(record, roomState == null ? null : roomState.stayId, false);
+                dispose();
+            });
+            JButton btnClose = createOutlineButton("\u0110\u00f3ng", new Color(107, 114, 128), e -> dispose());
+            List<JButton> actionButtons = new ArrayList<JButton>();
+            actionButtons.add(btnClose);
+            actionButtons.add(btnChangeRoom);
+            actionButtons.add(btnAddService);
+            actionButtons.add(btnExtend);
+            actionButtons.add(btnCheckOut);
+            if (record != null && record.hasMultipleRooms()) {
+                if (record.countRoomsByStatus(roomBlocksByCode, RoomStatusKey.BOOKED) > 0) {
+                    actionButtons.add(createOutlineButton("Check-in to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(22, 163, 74), e -> {
+                        openCheckInDialog(record, roomState == null ? null : roomState.detailId, true);
+                        dispose();
+                    }));
+                }
+                if (record.countRoomsByStatus(roomBlocksByCode, RoomStatusKey.OCCUPIED) > 1) {
+                    actionButtons.add(createOutlineButton("Check-out to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(220, 38, 38), e -> {
+                        openCheckOutDialog(record, roomState == null ? null : roomState.stayId, true);
+                        dispose();
+                    }));
+                }
+            }
+            content.add(buildDialogButtons(actionButtons.toArray(new JButton[0])), BorderLayout.SOUTH);
+
+            add(content, BorderLayout.CENTER);
+            reloadServiceHistory();
+        }
+
+        private JPanel buildActiveStayInfoCard() {
+            JPanel card = createDialogCardPanel();
+            JPanel body = new JPanel();
+            body.setOpaque(false);
+            body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+
+            JLabel lblTitle = new JLabel("Th\u00f4ng tin l\u01b0u tr\u00fa hi\u1ec7n t\u1ea1i");
+            lblTitle.setFont(AppFonts.section(14));
+            lblTitle.setForeground(TEXT_PRIMARY);
+            body.add(lblTitle);
+            body.add(Box.createVerticalStrut(10));
+            body.add(createInfoLine("M\u00e3 booking", roomState == null ? "-" : safeValue(roomState.bookingCode, "-")));
+            body.add(createInfoLine("M\u00e3 l\u01b0u tr\u00fa", snapshot == null ? "-" : "LT" + snapshot.maLuuTru));
+            body.add(createInfoLine("Kh\u00e1ch \u0111\u1ea1i di\u1ec7n", roomState == null ? "-" : safeValue(roomState.representativeName, record == null ? "-" : record.khachHang)));
+            body.add(createInfoLine("Ph\u00f2ng", roomState == null ? "-" : roomState.roomCode));
+            body.add(createInfoLine("Lo\u1ea1i ph\u00f2ng", roomState == null ? "-" : safeValue(roomState.roomType, "-")));
+            body.add(createInfoLine("T\u1ea7ng", roomState == null ? "-" : safeValue(roomState.floorName, "-")));
+            body.add(createInfoLine("Tr\u1ea1ng th\u00e1i", roomState == null ? "-" : safeValue(roomState.statusText, "-")));
+            body.add(createInfoLine("S\u1ed1 ng\u01b0\u1eddi", roomState == null ? "-" : resolveRoomPeopleDisplay(roomState)));
+            body.add(createInfoLine("Gi\u1edd v\u00e0o", snapshot == null ? "-" : formatDateTime(snapshot.checkIn)));
+            body.add(createInfoLine("Gi\u1edd ra d\u1ef1 ki\u1ebfn", snapshot == null ? "-" : formatDateTime(snapshot.expectedCheckOut)));
+            body.add(createInfoLine("Booking ti\u1ebfp theo", buildNextBookingSummary(roomState)));
+            body.add(Box.createVerticalStrut(8));
+
+            JLabel lblRelated = new JLabel("Ph\u00f2ng c\u00f9ng booking");
+            lblRelated.setFont(LABEL_FONT);
+            lblRelated.setForeground(TEXT_MUTED);
+            body.add(lblRelated);
+            body.add(Box.createVerticalStrut(4));
+            body.add(buildRelatedRoomsSummaryPanel());
+            card.add(body, BorderLayout.CENTER);
+            return card;
+        }
+
+        private JPanel buildRelatedRoomsSummaryPanel() {
+            JPanel panel = new JPanel();
+            panel.setOpaque(false);
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            List<RoomBlockState> relatedRooms = record == null ? new ArrayList<RoomBlockState>() : record.resolveRoomStates(roomBlocksByCode);
+            if (relatedRooms.isEmpty()) {
+                JLabel lbl = new JLabel("Kh\u00f4ng c\u00f3 ph\u00f2ng kh\u00e1c trong booking.");
+                lbl.setFont(AppFonts.body(12));
+                lbl.setForeground(TEXT_MUTED);
+                panel.add(lbl);
+                return panel;
+            }
+            for (RoomBlockState related : relatedRooms) {
+                panel.add(createRelatedRoomSummaryRow(related));
+            }
+            return panel;
+        }
+
+        private JPanel createRelatedRoomSummaryRow(RoomBlockState related) {
+            JPanel row = new JPanel(new BorderLayout(8, 0));
+            row.setOpaque(false);
+            row.setBorder(new EmptyBorder(0, 0, 6, 0));
+
+            JLabel lblRoom = new JLabel(related == null ? "-" : safeValue(related.roomCode, "-"));
+            lblRoom.setFont(AppFonts.ui(Font.BOLD, 12));
+            lblRoom.setForeground(TEXT_PRIMARY);
+
+            JLabel lblMeta = new JLabel(related == null
+                    ? "-"
+                    : safeValue(related.statusText, "-") + " | " + safeValue(related.roomType, "-"));
+            lblMeta.setFont(AppFonts.body(12));
+            lblMeta.setForeground(TEXT_MUTED);
+
+            row.add(lblRoom, BorderLayout.WEST);
+            row.add(lblMeta, BorderLayout.CENTER);
+            return row;
+        }
+
+        private JPanel buildActiveStayServiceCard() {
+            JPanel card = createDialogCardPanel();
+            JPanel content = new JPanel(new BorderLayout(0, 10));
+            content.setOpaque(false);
+
+            JLabel lblTitle = new JLabel("D\u1ecbch v\u1ee5 nhanh cho ph\u00f2ng \u0111ang \u1edf");
+            lblTitle.setFont(AppFonts.section(14));
+            lblTitle.setForeground(TEXT_PRIMARY);
+            content.add(lblTitle, BorderLayout.NORTH);
+
+            JPanel quickRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            quickRow.setOpaque(false);
+            quickRow.add(cboService);
+            quickRow.add(new JLabel("SL"));
+            quickRow.add(txtSoLuong);
+            quickRow.add(createPrimaryButton("+", new Color(37, 99, 235), Color.WHITE, e -> addSelectedService()));
+            quickRow.add(createOutlineButton("-", new Color(220, 38, 38), e -> deleteSelectedService()));
+
+            JPanel center = new JPanel(new BorderLayout(0, 8));
+            center.setOpaque(false);
+            center.add(quickRow, BorderLayout.NORTH);
+            center.add(new JScrollPane(tblServices), BorderLayout.CENTER);
+
+            JLabel lblHint = new JLabel("Gi\u1eef tinh th\u1ea7n thao t\u00e1c nhanh: d\u1ea5u + \u0111\u1ec3 th\u00eam, d\u1ea5u - \u0111\u1ec3 x\u00f3a. Kh\u00f4ng d\u00f9ng S\u1eeda / L\u01b0u.");
+            lblHint.setFont(AppFonts.body(12));
+            lblHint.setForeground(TEXT_MUTED);
+            center.add(lblHint, BorderLayout.SOUTH);
+
+            content.add(center, BorderLayout.CENTER);
+            card.add(content, BorderLayout.CENTER);
+            return card;
+        }
+
+        private JPanel createInfoLine(String label, String value) {
+            JPanel line = new JPanel(new BorderLayout(8, 0));
+            line.setOpaque(false);
+            line.setBorder(new EmptyBorder(0, 0, 6, 0));
+
+            JLabel lblLabel = new JLabel(label);
+            lblLabel.setFont(LABEL_FONT);
+            lblLabel.setForeground(TEXT_MUTED);
+
+            JLabel lblValue = new JLabel(safeValue(value, "-"));
+            lblValue.setFont(AppFonts.ui(Font.BOLD, 13));
+            lblValue.setForeground(TEXT_PRIMARY);
+
+            line.add(lblLabel, BorderLayout.WEST);
+            line.add(lblValue, BorderLayout.CENTER);
+            return line;
+        }
+
+        private void reloadServiceHistory() {
+            serviceItems.clear();
+            serviceModel.setRowCount(0);
+            if (snapshot == null || snapshot.maLuuTru <= 0) {
+                return;
+            }
+            serviceItems.addAll(suDungDichVuDAO.getByMaLuuTru(snapshot.maLuuTru));
+            for (SuDungDichVu item : serviceItems) {
+                serviceModel.addRow(new Object[]{
+                        safeValue(item.getTenDichVu(), "-"),
+                        item.getSoLuong(),
+                        formatMoney(item.getDonGia()),
+                        formatMoney(item.getThanhTien())
+                });
+            }
+        }
+
+        private void addSelectedService() {
+            if (snapshot == null || snapshot.maLuuTru <= 0) {
+                showInfo("Kh\u00f4ng c\u00f2n l\u01b0u tr\u00fa h\u1ee3p l\u1ec7 \u0111\u1ec3 th\u00eam d\u1ecbch v\u1ee5.");
+                return;
+            }
+            if (!isStayCurrentlyActive(snapshot.maLuuTru)) {
+                showInfo("Ph\u00f2ng n\u00e0y kh\u00f4ng c\u00f2n \u1edf tr\u1ea1ng th\u00e1i \u0111ang \u1edf.");
+                return;
+            }
+            DichVu dichVu = getSelectedDichVu(cboService);
+            if (dichVu == null || dichVu.getMaDichVu() <= 0) {
+                showInfo("Vui l\u00f2ng ch\u1ecdn d\u1ecbch v\u1ee5 h\u1ee3p l\u1ec7.");
+                return;
+            }
+            int soLuong;
+            try {
+                soLuong = Integer.parseInt(txtSoLuong.getText().trim());
+            } catch (NumberFormatException ex) {
+                showInfo("S\u1ed1 l\u01b0\u1ee3ng kh\u00f4ng h\u1ee3p l\u1ec7.");
+                return;
+            }
+            if (soLuong <= 0) {
+                showInfo("S\u1ed1 l\u01b0\u1ee3ng ph\u1ea3i l\u1edbn h\u01a1n 0.");
+                return;
+            }
+            SuDungDichVu usage = new SuDungDichVu(snapshot.maLuuTru, dichVu.getMaDichVu(), soLuong, dichVu.getDonGia());
+            if (!suDungDichVuDAO.insertSuDungDichVu(usage)) {
+                showInfo("Kh\u00f4ng th\u1ec3 th\u00eam d\u1ecbch v\u1ee5 cho ph\u00f2ng n\u00e0y.");
+                return;
+            }
+            CheckInOutGUI.refreshAllOpenInstances();
+            reloadServiceHistory();
+            txtSoLuong.setText("1");
+        }
+
+        private void deleteSelectedService() {
+            int row = tblServices.getSelectedRow();
+            if (row < 0 || row >= serviceItems.size()) {
+                showInfo("Vui l\u00f2ng ch\u1ecdn d\u1ecbch v\u1ee5 c\u1ea7n x\u00f3a.");
+                return;
+            }
+            SuDungDichVu selected = serviceItems.get(row);
+            if (!suDungDichVuDAO.deleteSuDungDichVu(selected.getMaSuDung())) {
+                showInfo("Kh\u00f4ng th\u1ec3 x\u00f3a d\u1ecbch v\u1ee5 \u0111\u00e3 ch\u1ecdn.");
+                return;
+            }
+            CheckInOutGUI.refreshAllOpenInstances();
+            reloadServiceHistory();
+        }
+    }
+
     private final class ChangeRoomDialog extends BaseStayDialog {
         private final StayRecord record;
         private final List<ServiceStayOption> activeOptions;
@@ -2611,11 +4536,13 @@ public class CheckInOutGUI extends JFrame {
         private final JLabel lblNewRateValue;
         private final JLabel lblAvailabilityHint;
         private final JButton btnConfirm;
+        private final Integer preferredStayId;
         private ActiveStaySnapshot currentSnapshot;
 
-        private ChangeRoomDialog(Frame owner, StayRecord record) {
+        private ChangeRoomDialog(Frame owner, StayRecord record, Integer preferredStayId) {
             super(owner, "\u0110\u1ed5i ph\u00f2ng", 820, 640);
             this.record = record;
+            this.preferredStayId = preferredStayId;
             this.activeOptions = resolveActiveServiceOptions(record);
 
             cboCurrentStay = new JComboBox<ServiceStayOption>(this.activeOptions.toArray(new ServiceStayOption[0]));
@@ -2709,7 +4636,21 @@ public class CheckInOutGUI extends JFrame {
             txtNgayDoi.addTextChangeListener(this::refreshDialogState);
             txtGioDoi.addTextChangeListener(this::refreshDialogState);
 
+            selectPreferredStay();
             refreshDialogState();
+        }
+
+        private void selectPreferredStay() {
+            if (preferredStayId == null) {
+                return;
+            }
+            for (int i = 0; i < cboCurrentStay.getItemCount(); i++) {
+                ServiceStayOption option = cboCurrentStay.getItemAt(i);
+                if (option != null && option.maLuuTru == preferredStayId.intValue()) {
+                    cboCurrentStay.setSelectedIndex(i);
+                    return;
+                }
+            }
         }
 
         private JPanel buildChangeTimeRow() {
@@ -3153,11 +5094,15 @@ public class CheckInOutGUI extends JFrame {
         private final JLabel lblTraMuonValue;
         private final JLabel lblSoGioTreValue;
         private final JLabel lblPhuThuTreValue;
+        private final Integer preferredStayId;
+        private final boolean allowBulkActions;
         private boolean updatingCheckoutEditor;
 
-        private CheckOutDialog(Frame owner, StayRecord record) {
+        private CheckOutDialog(Frame owner, StayRecord record, Integer preferredStayId, boolean allowBulkActions) {
             super(owner, "Check-out", 820, 620);
             this.record = record;
+            this.preferredStayId = preferredStayId;
+            this.allowBulkActions = allowBulkActions;
             try {
                 stayItems.addAll(loadCheckoutStayItems(record.maDatPhong));
             } catch (Exception e) {
@@ -3168,7 +5113,12 @@ public class CheckInOutGUI extends JFrame {
 
             JPanel content = new JPanel(new BorderLayout(0, 12));
             content.setOpaque(false);
-            content.add(buildDialogHeader("CHECK-OUT", "Ch\u1ecdn t\u1eebng ph\u00f2ng \u0111\u1ec3 check-out ri\u00eang ho\u1eb7c d\u00f9ng thao t\u00e1c check-out to\u00e0n b\u1ed9 \u0111\u01a1n."), BorderLayout.NORTH);
+            content.add(buildDialogHeader(
+                    "CHECK-OUT",
+                    allowBulkActions
+                            ? "Ch\u1ecdn t\u1eebng ph\u00f2ng \u0111\u1ec3 check-out ri\u00eang ho\u1eb7c d\u00f9ng thao t\u00e1c check-out to\u00e0n b\u1ed9 \u0111\u01a1n."
+                            : "Check-out cho ph\u00f2ng \u0111ang \u0111\u01b0\u1ee3c ch\u1ecdn, gi\u1eef \u0111\u00fang flow thanh to\u00e1n v\u00e0 d\u1ecdn ph\u00f2ng."
+            ), BorderLayout.NORTH);
 
             JPanel form = createDialogFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
@@ -3238,19 +5188,23 @@ public class CheckInOutGUI extends JFrame {
             content.add(card, BorderLayout.CENTER);
 
             JButton btnCheckOutSelected = createPrimaryButton(
-                    "Check-out ph\u00f2ng \u0111\u00e3 ch\u1ecdn",
+                    allowBulkActions ? "Check-out ph\u00f2ng \u0111\u00e3 ch\u1ecdn" : "Check-out",
                     new Color(220, 38, 38),
                     Color.WHITE,
                     e -> submit(txtNgayRa, txtGioRa, false)
             );
-            JButton btnCheckOutAll = createPrimaryButton(
-                    "Check-out to\u00e0n b\u1ed9 \u0111\u01a1n",
-                    new Color(185, 28, 28),
-                    Color.WHITE,
-                    e -> submit(txtNgayRa, txtGioRa, true)
-            );
             JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
-            content.add(buildDialogButtons(btnCancel, btnCheckOutSelected, btnCheckOutAll), BorderLayout.SOUTH);
+            if (allowBulkActions) {
+                JButton btnCheckOutAll = createPrimaryButton(
+                        "Check-out to\u00e0n b\u1ed9 \u0111\u01a1n",
+                        new Color(185, 28, 28),
+                        Color.WHITE,
+                        e -> submit(txtNgayRa, txtGioRa, true)
+                );
+                content.add(buildDialogButtons(btnCancel, btnCheckOutSelected, btnCheckOutAll), BorderLayout.SOUTH);
+            } else {
+                content.add(buildDialogButtons(btnCancel, btnCheckOutSelected), BorderLayout.SOUTH);
+            }
             add(content, BorderLayout.CENTER);
             loadSelectedCheckoutIntoEditor(txtNgayRa, txtGioRa);
             refreshLateCheckoutPreview(txtNgayRa, txtGioRa);
@@ -3283,6 +5237,13 @@ public class CheckInOutGUI extends JFrame {
         }
 
         private CheckoutStayItem resolveFirstSelectableStay() {
+            if (preferredStayId != null) {
+                for (CheckoutStayItem item : stayItems) {
+                    if (item.maLuuTru == preferredStayId.intValue()) {
+                        return item;
+                    }
+                }
+            }
             for (CheckoutStayItem item : stayItems) {
                 if (!item.isCheckedOut()) {
                     return item;
@@ -3408,20 +5369,12 @@ public class CheckInOutGUI extends JFrame {
                 } else {
                     ThanhToanGUI.refreshAllOpenInstances();
                 }
-
-                if (focusInvoiceId != null || bookingFinished) {
-                    NavigationUtil.navigate(
-                            CheckInOutGUI.this,
-                            ScreenKey.CHECK_IN_OUT,
-                            ScreenKey.THANH_TOAN,
-                            username,
-                            role
-                    );
-                } else {
-                    showInfo(checkOutAll
-                            ? "\u0110\u00e3 check-out c\u00e1c ph\u00f2ng c\u00f2n \u0111ang \u1edf trong \u0111\u01a1n."
-                            : "\u0110\u00e3 check-out ph\u00f2ng \u0111\u00e3 ch\u1ecdn. C\u00e1c ph\u00f2ng c\u00f2n l\u1ea1i v\u1eabn gi\u1eef tr\u1ea1ng th\u00e1i hi\u1ec7n t\u1ea1i.");
-                }
+                showInfo((checkOutAll
+                        ? "\u0110\u00e3 check-out c\u00e1c ph\u00f2ng c\u00f2n \u0111ang \u1edf trong \u0111\u01a1n."
+                        : "\u0110\u00e3 check-out ph\u00f2ng \u0111\u00e3 ch\u1ecdn.")
+                        + (focusInvoiceId != null || bookingFinished
+                        ? " C\u00e1c ph\u00f2ng v\u1eeba tr\u1ea3 \u0111ang chuy\u1ec3n sang Ch\u1edd thanh to\u00e1n ngay tr\u00ean s\u01a1 \u0111\u1ed3."
+                        : " C\u00e1c ph\u00f2ng c\u00f2n l\u1ea1i v\u1eabn gi\u1eef tr\u1ea1ng th\u00e1i hi\u1ec7n t\u1ea1i."));
                 dispose();
             } catch (Exception e) {
                 try {
@@ -3634,7 +5587,9 @@ public class CheckInOutGUI extends JFrame {
         int affected = 0;
         List<Integer> roomIds = new ArrayList<Integer>();
         try (PreparedStatement updateStay = con.prepareStatement(
-                "UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ? AND checkOut IS NULL")) {
+                     "UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ? AND checkOut IS NULL");
+             PreparedStatement markWaitPayment = con.prepareStatement(
+                     "UPDATE Phong SET trangThai = N'Ch\u1edd thanh to\u00e1n' WHERE maPhong = ? AND ISNULL(trangThai, N'') <> N'B\u1ea3o tr\u00ec'")) {
             for (CheckoutStayItem item : items) {
                 LocalDateTime checkOut = item.editedActualCheckOut == null ? fallbackNow : item.editedActualCheckOut;
                 updateStay.setTimestamp(1, Timestamp.valueOf(checkOut));
@@ -3643,6 +5598,8 @@ public class CheckInOutGUI extends JFrame {
                 if (updated > 0) {
                     affected += updated;
                     roomIds.add(Integer.valueOf(item.maPhong));
+                    markWaitPayment.setInt(1, item.maPhong);
+                    markWaitPayment.executeUpdate();
                 }
             }
         }
@@ -3736,6 +5693,198 @@ public class CheckInOutGUI extends JFrame {
         });
     }
 
+    private Color resolveBlockBackground(String statusKey) {
+        if (RoomStatusKey.BOOKED.equals(statusKey)) {
+            return new Color(255, 247, 237);
+        }
+        if (RoomStatusKey.OCCUPIED.equals(statusKey)) {
+            return new Color(239, 246, 255);
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(statusKey)) {
+            return new Color(254, 242, 242);
+        }
+        if (RoomStatusKey.CLEANING.equals(statusKey)) {
+            return new Color(240, 253, 250);
+        }
+        if (RoomStatusKey.MAINTENANCE.equals(statusKey)) {
+            return new Color(243, 244, 246);
+        }
+        return new Color(236, 253, 245);
+    }
+
+    private Color resolveBlockAccent(String statusKey) {
+        if (RoomStatusKey.BOOKED.equals(statusKey)) {
+            return new Color(217, 119, 6);
+        }
+        if (RoomStatusKey.OCCUPIED.equals(statusKey)) {
+            return new Color(37, 99, 235);
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(statusKey)) {
+            return new Color(220, 38, 38);
+        }
+        if (RoomStatusKey.CLEANING.equals(statusKey)) {
+            return new Color(13, 148, 136);
+        }
+        if (RoomStatusKey.MAINTENANCE.equals(statusKey)) {
+            return new Color(107, 114, 128);
+        }
+        return new Color(22, 163, 74);
+    }
+
+    private static final class RoomStatusKey {
+        private static final String AVAILABLE = "AVAILABLE";
+        private static final String BOOKED = "BOOKED";
+        private static final String OCCUPIED = "OCCUPIED";
+        private static final String WAIT_PAYMENT = "WAIT_PAYMENT";
+        private static final String CLEANING = "CLEANING";
+        private static final String MAINTENANCE = "MAINTENANCE";
+    }
+
+    private static final class RoomBadgeConfig {
+        private final String text;
+        private final Color background;
+        private final Color foreground;
+        private final String tooltip;
+
+        private RoomBadgeConfig(String text, Color background, Color foreground, String tooltip) {
+            this.text = text;
+            this.background = background;
+            this.foreground = foreground;
+            this.tooltip = tooltip;
+        }
+    }
+
+    private static final class ResponsiveRoomGridLayout implements LayoutManager {
+        private int columns;
+        private final int horizontalGap;
+        private final int verticalGap;
+
+        private ResponsiveRoomGridLayout(int columns, int horizontalGap, int verticalGap) {
+            this.columns = Math.max(1, columns);
+            this.horizontalGap = Math.max(0, horizontalGap);
+            this.verticalGap = Math.max(0, verticalGap);
+        }
+
+        private void setColumns(int columns) {
+            this.columns = Math.max(1, columns);
+        }
+
+        @Override
+        public void addLayoutComponent(String name, Component comp) {
+        }
+
+        @Override
+        public void removeLayoutComponent(Component comp) {
+        }
+
+        @Override
+        public Dimension preferredLayoutSize(Container parent) {
+            Insets insets = parent.getInsets();
+            int count = parent.getComponentCount();
+            int rows = count <= 0 ? 1 : (int) Math.ceil(count / (double) columns);
+            int width = insets.left + insets.right + (columns * 160) + (Math.max(0, columns - 1) * horizontalGap);
+            int height = insets.top + insets.bottom + (rows * 132) + (Math.max(0, rows - 1) * verticalGap);
+            return new Dimension(width, height);
+        }
+
+        @Override
+        public Dimension minimumLayoutSize(Container parent) {
+            Insets insets = parent.getInsets();
+            return new Dimension(insets.left + insets.right + 200, insets.top + insets.bottom + 120);
+        }
+
+        @Override
+        public void layoutContainer(Container parent) {
+            Insets insets = parent.getInsets();
+            int count = parent.getComponentCount();
+            if (count <= 0) {
+                return;
+            }
+
+            int rows = (int) Math.ceil(count / (double) columns);
+            int availableWidth = Math.max(1, parent.getWidth() - insets.left - insets.right);
+            int availableHeight = Math.max(1, parent.getHeight() - insets.top - insets.bottom);
+
+            int totalHorizontalGap = Math.max(0, columns - 1) * horizontalGap;
+            int totalVerticalGap = Math.max(0, rows - 1) * verticalGap;
+            int cellWidth = Math.max(1, (availableWidth - totalHorizontalGap) / columns);
+            int cellHeight = Math.max(1, (availableHeight - totalVerticalGap) / rows);
+
+            for (int index = 0; index < count; index++) {
+                Component component = parent.getComponent(index);
+                int row = index / columns;
+                int column = index % columns;
+                int x = insets.left + (column * (cellWidth + horizontalGap));
+                int y = insets.top + (row * (cellHeight + verticalGap));
+                component.setBounds(x, y, cellWidth, cellHeight);
+            }
+        }
+    }
+
+    private static final class RoomFutureHint {
+        private final int bookingId;
+        private final int detailId;
+        private final LocalDateTime expectedCheckIn;
+        private final LocalDateTime expectedCheckOut;
+        private final String representativeName;
+
+        private RoomFutureHint(int bookingId, int detailId, LocalDateTime expectedCheckIn, LocalDateTime expectedCheckOut, String representativeName) {
+            this.bookingId = bookingId;
+            this.detailId = detailId;
+            this.expectedCheckIn = expectedCheckIn;
+            this.expectedCheckOut = expectedCheckOut;
+            this.representativeName = representativeName;
+        }
+    }
+
+    private static final class RoomBlockState {
+        private final int roomId;
+        private final String roomCode;
+        private final String floorName;
+        private final String roomType;
+        private final String rawRoomStatus;
+        private String statusKey;
+        private String statusText;
+        private Integer bookingId;
+        private Integer stayId;
+        private Integer detailId;
+        private Integer invoiceId;
+        private String bookingCode;
+        private String representativeName;
+        private int guestCount;
+        private LocalDateTime checkInTime;
+        private LocalDateTime expectedCheckIn;
+        private LocalDateTime expectedCheckOut;
+        private LocalDateTime actualCheckOut;
+        private String note;
+        private int futureHintCount;
+        private RoomFutureHint nextFutureHint;
+
+        private RoomBlockState(int roomId, String roomCode, String floorName, String roomType, String rawRoomStatus) {
+            this.roomId = roomId;
+            this.roomCode = roomCode;
+            this.floorName = floorName;
+            this.roomType = roomType;
+            this.rawRoomStatus = rawRoomStatus;
+        }
+
+        private boolean hasBookingContext() {
+            return bookingId != null && bookingId.intValue() > 0;
+        }
+
+        private boolean isBulkCheckInCandidate() {
+            return RoomStatusKey.BOOKED.equals(statusKey);
+        }
+
+        private boolean isBulkCheckOutCandidate() {
+            return RoomStatusKey.OCCUPIED.equals(statusKey);
+        }
+
+        private String getStayCodeDisplay() {
+            return stayId == null ? "-" : "LT" + stayId;
+        }
+    }
+
     private static final class StayRecord {
         private String maHoSo;
         private int maLuuTru;
@@ -3821,6 +5970,30 @@ public class CheckInOutGUI extends JFrame {
 
         private String safeRoomCode(String value) {
             return value == null ? "" : value.trim();
+        }
+
+        private List<RoomBlockState> resolveRoomStates(Map<String, RoomBlockState> roomStatesByCode) {
+            List<RoomBlockState> states = new ArrayList<RoomBlockState>();
+            if (roomStatesByCode == null) {
+                return states;
+            }
+            for (String roomCode : soPhongList) {
+                RoomBlockState state = roomStatesByCode.get(roomCode);
+                if (state != null) {
+                    states.add(state);
+                }
+            }
+            return states;
+        }
+
+        private int countRoomsByStatus(Map<String, RoomBlockState> roomStatesByCode, String statusKey) {
+            int count = 0;
+            for (RoomBlockState state : resolveRoomStates(roomStatesByCode)) {
+                if (state != null && statusKey.equals(state.statusKey)) {
+                    count++;
+                }
+            }
+            return count;
         }
 
         private void addActiveStayOption(int maLuuTru, int maChiTietDatPhong, int maPhong, String soPhong, String loaiPhong) {

@@ -876,7 +876,7 @@ public class DatPhongDAO {
         }
         try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.Phong SET trangThai = ? WHERE maPhong = ?")) {
             for (Integer roomId : uniqueRoomIds) {
-                String status = resolveOperationalRoomStatus(con, roomId.intValue());
+                String status = resolveOperationalRoomStatusV2(con, roomId.intValue());
                 if (status.isEmpty()) {
                     continue;
                 }
@@ -913,6 +913,35 @@ public class DatPhongDAO {
         return "Hoạt động";
     }
 
+    private String resolveOperationalRoomStatusV2(Connection con, int maPhong) throws SQLException {
+        String currentStatus = loadCurrentRoomStatus(con, maPhong);
+        if ("Bảo trì".equalsIgnoreCase(currentStatus)) {
+            return "Bảo trì";
+        }
+        if (hasActiveStayForRoom(con, maPhong)) {
+            return "Đang ở";
+        }
+        if (hasBookedAssignmentForRoom(con, maPhong)) {
+            return "Đã đặt";
+        }
+        if (hasPendingPaymentForRoom(con, maPhong)) {
+            return "Chờ thanh toán";
+        }
+        if ("Dọn dẹp".equalsIgnoreCase(currentStatus) || "Dọn phòng".equalsIgnoreCase(currentStatus)) {
+            return "Dọn dẹp";
+        }
+        if ("Chờ thanh toán".equalsIgnoreCase(currentStatus)) {
+            return "Dọn dẹp";
+        }
+        if ("Sẵn sàng".equalsIgnoreCase(currentStatus)) {
+            return "Sẵn sàng";
+        }
+        if ("Trống".equalsIgnoreCase(currentStatus)) {
+            return "Trống";
+        }
+        return "Hoạt động";
+    }
+
     private String loadCurrentRoomStatus(Connection con, int maPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement("SELECT ISNULL(trangThai, N'') FROM Phong WHERE maPhong = ?")) {
             stmt.setInt(1, maPhong);
@@ -942,6 +971,32 @@ public class DatPhongDAO {
                 + "WHERE ctdp.maPhong = ? "
                 + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Check-out một phần', N'Đã check-in') "
                 + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
+    private boolean hasPendingPaymentForRoom(Connection con, int maPhong) throws SQLException {
+        String sql = "WITH latestClosedStay AS ("
+                + "    SELECT lt.maChiTietDatPhong, lt.maDatPhong, lt.checkOut, "
+                + "           ROW_NUMBER() OVER (ORDER BY lt.checkOut DESC, lt.maLuuTru DESC) AS rn "
+                + "    FROM dbo.LuuTru lt "
+                + "    WHERE lt.maPhong = ? AND lt.checkOut IS NOT NULL"
+                + ") "
+                + "SELECT COUNT(1) "
+                + "FROM latestClosedStay lcs "
+                + "LEFT JOIN dbo.HoaDon hdRoom ON hdRoom.maChiTietDatPhong = lcs.maChiTietDatPhong "
+                + "LEFT JOIN dbo.HoaDon hdBooking ON hdBooking.maDatPhong = lcs.maDatPhong AND hdBooking.maChiTietDatPhong IS NULL "
+                + "LEFT JOIN dbo.DatPhong dp ON dp.maDatPhong = lcs.maDatPhong "
+                + "WHERE lcs.rn = 1 "
+                + "AND ("
+                + "     ISNULL(dp.trangThai, N'') IN (N'Chờ thanh toán', N'Đã check-out') "
+                + "  OR (hdRoom.maHoaDon IS NOT NULL AND ISNULL(hdRoom.trangThai, N'Chờ thanh toán') <> N'Đã thanh toán') "
+                + "  OR (hdBooking.maHoaDon IS NOT NULL AND ISNULL(hdBooking.trangThai, N'Chờ thanh toán') <> N'Đã thanh toán')"
+                + ")";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maPhong);
             try (ResultSet rs = stmt.executeQuery()) {

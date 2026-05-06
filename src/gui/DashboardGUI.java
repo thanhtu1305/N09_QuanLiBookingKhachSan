@@ -25,6 +25,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.ListSelectionModel;
+import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -38,8 +39,12 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Insets;
 import java.awt.RenderingHints;
+import java.awt.Rectangle;
 import java.text.DecimalFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -86,6 +91,9 @@ public class DashboardGUI extends JFrame {
     private static final DateTimeFormatter GANTT_HEADER_FORMAT = DateTimeFormatter.ofPattern("dd/MM");
     private static final int GANTT_DAY_COUNT = 7;
     private static final int GANTT_VISIBLE_ROW_COUNT = 9;
+    private static final int KPI_MAX_COLUMNS = 5;
+    private static final int KPI_MIN_CARD_WIDTH = 178;
+    private static final int KPI_GRID_GAP = 10;
 
     private final String username;
     private final String role;
@@ -272,38 +280,44 @@ public class DashboardGUI extends JFrame {
     }
 
     private JScrollPane buildCenterContent() {
-        JPanel content = new JPanel();
+        JPanel content = new DashboardScrollPanel();
         content.setOpaque(false);
-        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setLayout(new GridBagLayout());
 
         JPanel infoSection = buildInfoRow();
-        infoSection.setAlignmentX(Component.LEFT_ALIGNMENT);
-        infoSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, infoSection.getPreferredSize().height));
-
         JPanel kpiSection = buildKpiSection();
-        kpiSection.setAlignmentX(Component.LEFT_ALIGNMENT);
-        kpiSection.setMaximumSize(new Dimension(Integer.MAX_VALUE, kpiSection.getPreferredSize().height));
-
         JPanel ganttSection = buildGanttSection();
-        ganttSection.setAlignmentX(Component.LEFT_ALIGNMENT);
-
         JPanel taskSection = buildTaskSection();
-        taskSection.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        content.add(infoSection);
-        content.add(Box.createVerticalStrut(12));
-        content.add(kpiSection);
-        content.add(Box.createVerticalStrut(12));
-        content.add(ganttSection);
-        content.add(Box.createVerticalStrut(12));
-        content.add(taskSection);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.weightx = 1d;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+
+        addDashboardSection(content, infoSection, gbc, 0, 12);
+        addDashboardSection(content, kpiSection, gbc, 1, 12);
+        addDashboardSection(content, ganttSection, gbc, 2, 12);
+        addDashboardSection(content, taskSection, gbc, 3, 0);
+        gbc.gridy = 4;
+        gbc.weighty = 1d;
+        gbc.fill = GridBagConstraints.BOTH;
+        gbc.insets = new Insets(0, 0, 0, 0);
+        content.add(Box.createVerticalGlue(), gbc);
 
         JScrollPane scrollPane = new JScrollPane(content);
         scrollPane.setBorder(null);
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getVerticalScrollBar().setUnitIncrement(18);
         return scrollPane;
+    }
+
+    private void addDashboardSection(JPanel content, Component section, GridBagConstraints gbc, int row, int bottomGap) {
+        gbc.gridy = row;
+        gbc.insets = new Insets(0, 0, bottomGap, 0);
+        content.add(section, gbc);
     }
 
     private JPanel buildGanttSection() {
@@ -313,19 +327,23 @@ public class DashboardGUI extends JFrame {
         header.setOpaque(false);
         header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
 
-        JPanel titleRow = new JPanel(new BorderLayout());
+        JPanel titleRow = new JPanel();
         titleRow.setOpaque(false);
+        titleRow.setLayout(new BoxLayout(titleRow, BoxLayout.Y_AXIS));
 
         JLabel lblTitle = new JLabel("Sơ đồ Gantt tình trạng phòng");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
+        lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel lblSub = new JLabel("Theo dõi lịch sử dụng phòng trong 7 ngày tới.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
+        lblSub.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        titleRow.add(lblTitle, BorderLayout.WEST);
-        titleRow.add(lblSub, BorderLayout.EAST);
+        titleRow.add(lblTitle);
+        titleRow.add(Box.createVerticalStrut(4));
+        titleRow.add(lblSub);
 
         JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         controls.setOpaque(false);
@@ -395,7 +413,7 @@ public class DashboardGUI extends JFrame {
         };
         tblGantt.setFont(BODY_FONT);
         tblGantt.setRowHeight(44);
-        tblGantt.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        tblGantt.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         tblGantt.setRowSelectionAllowed(false);
         tblGantt.setColumnSelectionAllowed(false);
         tblGantt.setCellSelectionEnabled(true);
@@ -425,9 +443,8 @@ public class DashboardGUI extends JFrame {
         ganttScrollPane = new JScrollPane(tblGantt);
         ganttScrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
         ganttScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
-        ganttScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        ganttScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         ganttScrollPane.setWheelScrollingEnabled(true);
-        ganttScrollPane.getHorizontalScrollBar().setUnitIncrement(24);
         ganttScrollPane.getVerticalScrollBar().setUnitIncrement(tblGantt.getRowHeight());
         ganttScrollPane.getVerticalScrollBar().setBlockIncrement(tblGantt.getRowHeight() * 4);
         int ganttViewportHeight = resolveGanttViewportHeightByRows();
@@ -492,21 +509,25 @@ public class DashboardGUI extends JFrame {
     private JPanel buildKpiSection() {
         JPanel card = createCardPanel(new BorderLayout(0, 10));
 
-        JPanel titleRow = new JPanel(new BorderLayout());
+        JPanel titleRow = new JPanel();
         titleRow.setOpaque(false);
+        titleRow.setLayout(new BoxLayout(titleRow, BoxLayout.Y_AXIS));
 
         JLabel lblTitle = new JLabel("Chỉ số vận hành nhanh");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
+        lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel lblSub = new JLabel("Tổng hợp KPI thực từ database QLKS theo ngày làm việc hiện tại.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
+        lblSub.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        titleRow.add(lblTitle, BorderLayout.WEST);
-        titleRow.add(lblSub, BorderLayout.EAST);
+        titleRow.add(lblTitle);
+        titleRow.add(Box.createVerticalStrut(4));
+        titleRow.add(lblSub);
 
-        JPanel grid = new JPanel(new GridLayout(2, 5, 10, 10));
+        JPanel grid = new JPanel(new GridLayout(0, KPI_MAX_COLUMNS, KPI_GRID_GAP, KPI_GRID_GAP));
         grid.setOpaque(false);
 
         cardPhongHoatDong = createMetricCard("Phòng hoạt động", new Color(219, 234, 254));
@@ -530,10 +551,49 @@ public class DashboardGUI extends JFrame {
         grid.add(cardChoThanhToan.panel);
         grid.add(cardDoanhThuHomNay.panel);
         grid.add(cardDoanhThuThang.panel);
+        grid.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                updateKpiGridColumns(grid);
+            }
+        });
+        javax.swing.SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                updateKpiGridColumns(grid);
+            }
+        });
 
         card.add(titleRow, BorderLayout.NORTH);
         card.add(grid, BorderLayout.CENTER);
         return card;
+    }
+
+    private void updateKpiGridColumns(JPanel grid) {
+        if (grid == null || !(grid.getLayout() instanceof GridLayout)) {
+            return;
+        }
+        int availableWidth = grid.getWidth();
+        if (availableWidth <= 0 && grid.getParent() != null) {
+            availableWidth = grid.getParent().getWidth();
+        }
+        int columns = KPI_MAX_COLUMNS;
+        if (availableWidth > 0) {
+            columns = Math.max(1, Math.min(KPI_MAX_COLUMNS,
+                    (availableWidth + KPI_GRID_GAP) / (KPI_MIN_CARD_WIDTH + KPI_GRID_GAP)));
+        }
+
+        GridLayout layout = (GridLayout) grid.getLayout();
+        if (layout.getColumns() == columns) {
+            return;
+        }
+        layout.setRows(0);
+        layout.setColumns(columns);
+        grid.revalidate();
+        grid.repaint();
+        if (grid.getParent() != null) {
+            grid.getParent().revalidate();
+        }
     }
 
     private JSplitPane buildChartsSplitPane() {
@@ -590,19 +650,23 @@ public class DashboardGUI extends JFrame {
 
         JPanel tableCard = createCardPanel(new BorderLayout(0, 10));
 
-        JPanel titleRow = new JPanel(new BorderLayout());
+        JPanel titleRow = new JPanel();
         titleRow.setOpaque(false);
+        titleRow.setLayout(new BoxLayout(titleRow, BoxLayout.Y_AXIS));
 
         JLabel lblTitle = new JLabel("Công việc cần xử lý");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
+        lblTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel lblSub = new JLabel("Booking chờ check-in, khách sắp checkout và hóa đơn chờ thanh toán.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
+        lblSub.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        titleRow.add(lblTitle, BorderLayout.WEST);
-        titleRow.add(lblSub, BorderLayout.EAST);
+        titleRow.add(lblTitle);
+        titleRow.add(Box.createVerticalStrut(4));
+        titleRow.add(lblSub);
 
         taskTableModel = new DefaultTableModel(
                 new Object[]{"Mã", "Đối tượng", "Thời gian", "Trạng thái"},
@@ -902,15 +966,18 @@ public class DashboardGUI extends JFrame {
         }
         int columnCount = tblGantt.getColumnModel().getColumnCount();
         int dayColumnCount = Math.max(0, columnCount - 1);
-        int minRoomWidth = 140;
-        int minDayWidth = 90;
+        int minRoomWidth = 88;
+        int minDayWidth = 44;
         int viewportWidth = resolveGanttViewportWidth();
+        if (viewportWidth <= 0) {
+            viewportWidth = 760;
+        }
         int minimumTableWidth = minRoomWidth + (dayColumnCount * minDayWidth);
         int targetTableWidth = Math.max(minimumTableWidth, viewportWidth);
 
         int roomWidth = dayColumnCount == 0
                 ? targetTableWidth
-                : Math.max(minRoomWidth, Math.min(190, (int) Math.round(targetTableWidth * 0.18d)));
+                : Math.max(minRoomWidth, Math.min(150, (int) Math.round(targetTableWidth * 0.16d)));
         int remainingWidth = Math.max(0, targetTableWidth - roomWidth);
         int baseDayWidth = dayColumnCount == 0 ? 0 : Math.max(minDayWidth, remainingWidth / dayColumnCount);
         int extraPixels = dayColumnCount == 0 ? 0 : Math.max(0, remainingWidth - (baseDayWidth * dayColumnCount));
@@ -926,6 +993,7 @@ public class DashboardGUI extends JFrame {
             tblGantt.getColumnModel().getColumn(i).setMinWidth(minDayWidth);
             tblGantt.getColumnModel().getColumn(i).setPreferredWidth(dayWidth);
         }
+        tblGantt.doLayout();
         tblGantt.revalidate();
         if (tblGantt.getTableHeader() != null) {
             tblGantt.getTableHeader().revalidate();
@@ -1260,16 +1328,16 @@ public class DashboardGUI extends JFrame {
 
     private void loadSummaryCards(DashboardSummary summary) {
         cardPhongHoatDong.setValue(formatCount(summary.getActiveRooms()));
-        cardPhongHoatDong.setNote("Phòng trống + phòng sẵn sàng khai thác");
+        cardPhongHoatDong.setNote("Sẵn sàng khai thác");
 
         cardPhongDangO.setValue(formatCount(summary.getOccupiedRooms()));
-        cardPhongDangO.setNote("Trạng thái phòng đang ở");
+        cardPhongDangO.setNote("Phòng đang có khách");
 
         cardPhongDaDat.setValue(formatCount(summary.getBookedRooms()));
-        cardPhongDaDat.setNote("Phòng khóa cho booking đã xác nhận");
+        cardPhongDaDat.setNote("Booking đã xác nhận");
 
         cardPhongBaoTri.setValue(formatCount(summary.getMaintenanceRooms()));
-        cardPhongBaoTri.setNote("Cần kỹ thuật hoặc tạm ngưng khai thác");
+        cardPhongBaoTri.setNote("Tạm ngưng khai thác");
 
         cardBookingHomNay.setValue(formatCount(summary.getTodayBookings()));
         cardBookingHomNay.setNote("Số booking tạo trong ngày");
@@ -1278,16 +1346,16 @@ public class DashboardGUI extends JFrame {
         cardChoCheckin.setNote("Nhận phòng trong hôm nay");
 
         cardCheckoutHomNay.setValue(formatCount(summary.getCheckoutDueTodayCount()));
-        cardCheckoutHomNay.setNote("Lượt lưu trú đến hạn checkout");
+        cardCheckoutHomNay.setNote("Đến hạn checkout");
 
         cardChoThanhToan.setValue(formatCount(summary.getPendingPaymentCount()));
-        cardChoThanhToan.setNote("Hóa đơn còn trạng thái chờ thanh toán");
+        cardChoThanhToan.setNote("Hóa đơn chờ thanh toán");
 
         cardDoanhThuHomNay.setValue(formatMoney(summary.getRevenueToday()));
         cardDoanhThuHomNay.setNote("Tiền thu được trong ngày");
 
         cardDoanhThuThang.setValue(formatMoney(summary.getRevenueThisMonth()));
-        cardDoanhThuThang.setNote("Tiền thu từ ngày 01 đến hiện tại");
+        cardDoanhThuThang.setNote("Từ ngày 01 đến hiện tại");
     }
 
     private void loadCharts(List<DashboardChartPoint> revenuePoints, List<DashboardChartPoint> bookingPoints) {
@@ -1393,6 +1461,7 @@ public class DashboardGUI extends JFrame {
     private MetricCard createMetricCard(String title, Color badgeBg) {
         JPanel card = new JPanel(new BorderLayout(0, 8));
         card.setBackground(PANEL_SOFT);
+        card.setMinimumSize(new Dimension(0, 0));
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
                 new EmptyBorder(10, 12, 10, 12)
@@ -1401,13 +1470,14 @@ public class DashboardGUI extends JFrame {
         JLabel lblLabel = new JLabel(title);
         lblLabel.setFont(LABEL_FONT);
         lblLabel.setForeground(TEXT_MUTED);
+        lblLabel.setToolTipText(title);
 
         JLabel lblValue = new JLabel("0");
         lblValue.setFont(METRIC_VALUE_FONT);
         lblValue.setForeground(TEXT_PRIMARY);
 
         JLabel lblNote = new JLabel("-");
-        lblNote.setFont(BODY_FONT);
+        lblNote.setFont(LABEL_FONT);
         lblNote.setForeground(TEXT_PRIMARY);
         lblNote.setOpaque(true);
         lblNote.setBackground(badgeBg);
@@ -1535,6 +1605,33 @@ public class DashboardGUI extends JFrame {
         return rootPanel;
     }
 
+    private static final class DashboardScrollPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 18;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(18, visibleRect.height - 18);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+    }
+
     private final class DashboardGanttCellRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
@@ -1594,6 +1691,7 @@ public class DashboardGUI extends JFrame {
 
         private void setNote(String note) {
             noteLabel.setText(note);
+            noteLabel.setToolTipText(note);
         }
     }
 

@@ -39,6 +39,7 @@ import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
@@ -95,8 +96,9 @@ public class CheckInOutGUI extends JFrame {
     private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
     private static final int ROOM_GRID_COLUMNS = 6;
-    private static final int ROOM_CARD_PREFERRED_WIDTH = 142;
-    private static final int ROOM_CARD_PREFERRED_HEIGHT = 126;
+    private static final int ROOM_GRID_GAP = 8;
+    private static final int ROOM_CARD_PREFERRED_WIDTH = 124;
+    private static final int ROOM_CARD_PREFERRED_HEIGHT = 150;
     private static final int GANTT_DAY_COUNT = 7;
     private static final int GANTT_ROOM_INFO_WIDTH = 300;
     private static final int GANTT_ROW_MIN_HEIGHT = 86;
@@ -312,7 +314,7 @@ public class CheckInOutGUI extends JFrame {
         lblRoomMapTitle.setFont(SECTION_FONT);
         lblRoomMapTitle.setForeground(TEXT_PRIMARY);
 
-        lblRoomMapMeta = new JLabel("M\u1ed7i t\u1ea7ng hi\u1ec3n th\u1ecb theo d\u00e3y 101 102 103..., cu\u1ed9n d\u1ecdc khi nhi\u1ec1u ph\u00f2ng v\u00e0 thao t\u00e1c ngay t\u1eeb block ph\u00f2ng.");
+        lblRoomMapMeta = new JLabel("M\u1ed7i t\u1ea7ng hi\u1ec3n th\u1ecb t\u1ed1i \u0111a 6 ph\u00f2ng tr\u00ean m\u1ed9t h\u00e0ng, cu\u1ed9n d\u1ecdc khi nhi\u1ec1u ph\u00f2ng.");
         lblRoomMapMeta.setFont(BODY_FONT);
         lblRoomMapMeta.setForeground(TEXT_MUTED);
 
@@ -323,7 +325,7 @@ public class CheckInOutGUI extends JFrame {
         header.add(Box.createVerticalStrut(10));
         header.add(roomLegendPanel);
 
-        roomGridPanel = new JPanel();
+        roomGridPanel = new RoomMapScrollPanel();
         roomGridPanel.setLayout(new BoxLayout(roomGridPanel, BoxLayout.Y_AXIS));
         roomGridPanel.setOpaque(false);
         roomGridPanel.setBorder(new EmptyBorder(4, 0, 0, 0));
@@ -335,6 +337,13 @@ public class CheckInOutGUI extends JFrame {
         scrollPane.getVerticalScrollBar().setUnitIncrement(18);
         scrollPane.getViewport().setOpaque(false);
         scrollPane.setOpaque(false);
+        scrollPane.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                roomGridPanel.revalidate();
+                roomGridPanel.repaint();
+            }
+        });
 
         card.add(header, BorderLayout.NORTH);
         card.add(scrollPane, BorderLayout.CENTER);
@@ -342,7 +351,7 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JPanel buildRoomLegendPanel() {
-        JPanel legend = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel legend = new JPanel(new java.awt.GridLayout(0, 3, 8, 6));
         legend.setOpaque(false);
         legend.add(createLegendChip("S\u1eb5n s\u00e0ng", resolveBlockAccent(RoomStatusKey.AVAILABLE)));
         legend.add(createLegendChip("\u0110\u00e3 \u0111\u1eb7t", resolveBlockAccent(RoomStatusKey.BOOKED)));
@@ -366,6 +375,7 @@ public class CheckInOutGUI extends JFrame {
         JLabel lbl = new JLabel(text);
         lbl.setFont(AppFonts.body(12));
         lbl.setForeground(TEXT_PRIMARY);
+        lbl.setToolTipText(text);
 
         chip.add(dot);
         chip.add(lbl);
@@ -375,6 +385,7 @@ public class CheckInOutGUI extends JFrame {
     private JPanel buildRoomDetailColumn() {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
+        wrapper.setMinimumSize(new Dimension(0, 0));
         wrapper.add(buildOperationDetailCard(), BorderLayout.CENTER);
         return wrapper;
     }
@@ -387,9 +398,10 @@ public class CheckInOutGUI extends JFrame {
         lblTitle.setForeground(TEXT_PRIMARY);
         card.add(lblTitle, BorderLayout.NORTH);
 
-        JPanel content = new JPanel();
+        JPanel content = new DetailScrollPanel();
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setBorder(new EmptyBorder(0, 0, 0, 4));
 
         lblDetailBookingCode = createValueLabel();
         lblDetailStayCode = createValueLabel();
@@ -422,6 +434,8 @@ public class CheckInOutGUI extends JFrame {
         detailRelatedRoomsPanel = new JPanel();
         detailRelatedRoomsPanel.setOpaque(false);
         detailRelatedRoomsPanel.setLayout(new BoxLayout(detailRelatedRoomsPanel, BoxLayout.Y_AXIS));
+        detailRelatedRoomsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        detailRelatedRoomsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
         JLabel lblNotes = new JLabel("Ghi ch\u00fa v\u1eadn h\u00e0nh");
         lblNotes.setFont(LABEL_FONT);
@@ -437,6 +451,7 @@ public class CheckInOutGUI extends JFrame {
         txtDetailNotes.setBackground(PANEL_SOFT);
         txtDetailNotes.setRows(4);
         txtDetailNotes.setBorder(new EmptyBorder(8, 10, 8, 10));
+        txtDetailNotes.setMaximumSize(new Dimension(Integer.MAX_VALUE, 96));
 
         JLabel lblActions = new JLabel("Thao t\u00e1c nhanh");
         lblActions.setFont(LABEL_FONT);
@@ -446,15 +461,28 @@ public class CheckInOutGUI extends JFrame {
         detailActionPanel = new JPanel();
         detailActionPanel.setOpaque(false);
         detailActionPanel.setLayout(new BoxLayout(detailActionPanel, BoxLayout.Y_AXIS));
+        detailActionPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        detailActionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
+        lblRelatedRooms.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(lblRelatedRooms);
         content.add(detailRelatedRoomsPanel);
+        lblNotes.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(lblNotes);
         content.add(txtDetailNotes);
+        lblActions.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(lblActions);
         content.add(detailActionPanel);
 
-        card.add(content, BorderLayout.CENTER);
+        JScrollPane detailScrollPane = new JScrollPane(content);
+        detailScrollPane.setBorder(BorderFactory.createEmptyBorder());
+        detailScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        detailScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        detailScrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        detailScrollPane.setOpaque(false);
+        detailScrollPane.getViewport().setOpaque(false);
+
+        card.add(detailScrollPane, BorderLayout.CENTER);
         clearOperationDetailPanel();
         return card;
     }
@@ -511,10 +539,16 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JSplitPane buildCenterContent() {
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, buildRoomMapCard(), buildRoomDetailColumn());
+        JPanel roomMapCard = buildRoomMapCard();
+        JPanel detailColumn = buildRoomDetailColumn();
+        roomMapCard.setMinimumSize(new Dimension(650, 1));
+        detailColumn.setMinimumSize(new Dimension(280, 1));
+        detailColumn.setPreferredSize(new Dimension(300, 1));
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, roomMapCard, detailColumn);
         splitPane.setOpaque(false);
         splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.76);
+        splitPane.setResizeWeight(0.82);
         splitPane.setDividerSize(8);
         splitPane.setContinuousLayout(true);
         return splitPane;
@@ -1758,7 +1792,7 @@ public class CheckInOutGUI extends JFrame {
         if (lblRoomMapMeta != null) {
             lblRoomMapMeta.setText(visibleRooms.isEmpty()
                     ? "Kh\u00f4ng c\u00f3 ph\u00f2ng ph\u00f9 h\u1ee3p b\u1ed9 l\u1ecdc hi\u1ec7n t\u1ea1i."
-                    : "Hi\u1ec3n th\u1ecb " + visibleRooms.size() + " ph\u00f2ng, s\u1eafp theo t\u1eebng t\u1ea7ng v\u00e0 t\u1ed1i \u0111a " + ROOM_GRID_COLUMNS + " ph\u00f2ng m\u1ed7i h\u00e0ng.");
+                    : "Hi\u1ec3n th\u1ecb " + visibleRooms.size() + " ph\u00f2ng, t\u1ed1i \u0111a " + ROOM_GRID_COLUMNS + " ph\u00f2ng m\u1ed7i h\u00e0ng.");
         }
 
         if (visibleRooms.isEmpty()) {
@@ -1824,13 +1858,13 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JPanel createRoomBlockCard(RoomBlockState state) {
-        JPanel card = new JPanel(new BorderLayout(0, 8));
+        JPanel card = new JPanel(new BorderLayout(0, 5));
         card.setOpaque(true);
         card.setBackground(resolveBlockBackground(state.statusKey));
         card.setBorder(createRoomBlockBorder(state, false));
         card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         card.setPreferredSize(new Dimension(ROOM_CARD_PREFERRED_WIDTH, ROOM_CARD_PREFERRED_HEIGHT));
-        card.setMinimumSize(new Dimension(124, 112));
+        card.setMinimumSize(new Dimension(0, ROOM_CARD_PREFERRED_HEIGHT));
 
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
@@ -1838,6 +1872,7 @@ public class CheckInOutGUI extends JFrame {
         JLabel lblRoom = new JLabel(state.roomCode);
         lblRoom.setFont(AppFonts.title(18));
         lblRoom.setForeground(TEXT_PRIMARY);
+        lblRoom.setToolTipText(state.roomCode);
 
         JLabel lblBadge = createRoomBadgeLabel(state);
         top.add(lblRoom, BorderLayout.WEST);
@@ -1847,38 +1882,28 @@ public class CheckInOutGUI extends JFrame {
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
-        JLabel lblStatus = new JLabel(safeValue(state.statusText, "-"));
-        lblStatus.setFont(AppFonts.ui(Font.BOLD, 12));
-        lblStatus.setForeground(resolveBlockAccent(state.statusKey));
-        lblStatus.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lblStatus = createRoomBlockLineLabel(safeValue(state.statusText, "-"),
+                AppFonts.ui(Font.BOLD, 12), resolveBlockAccent(state.statusKey), 15);
         body.add(lblStatus);
-        body.add(Box.createVerticalStrut(4));
+        body.add(Box.createVerticalStrut(2));
 
-        JLabel lblRoomType = new JLabel(safeValue(state.roomType, "-"));
-        lblRoomType.setFont(AppFonts.body(12));
-        lblRoomType.setForeground(TEXT_MUTED);
-        lblRoomType.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lblRoomType = createRoomBlockLineLabel(safeValue(state.roomType, "-"),
+                AppFonts.body(12), TEXT_MUTED, 16);
         body.add(lblRoomType);
-        body.add(Box.createVerticalStrut(4));
+        body.add(Box.createVerticalStrut(2));
 
-        JLabel lblGuest = new JLabel(resolveRoomGuestDisplay(state));
-        lblGuest.setFont(AppFonts.ui(Font.BOLD, 13));
-        lblGuest.setForeground(TEXT_PRIMARY);
-        lblGuest.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lblGuest = createRoomBlockLineLabel(resolveRoomGuestDisplay(state),
+                AppFonts.ui(Font.BOLD, 12), TEXT_PRIMARY, 17);
         body.add(lblGuest);
-        body.add(Box.createVerticalStrut(4));
+        body.add(Box.createVerticalStrut(2));
 
-        JLabel lblMeta = new JLabel(resolveRoomPeopleDisplay(state) + " | " + resolveRoomSecondaryLine(state));
-        lblMeta.setFont(AppFonts.body(12));
-        lblMeta.setForeground(TEXT_MUTED);
-        lblMeta.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lblMeta = createRoomBlockLineLabel(resolveRoomCompactMetaLine(state),
+                AppFonts.body(12), TEXT_MUTED, 20);
         body.add(lblMeta);
-        body.add(Box.createVerticalStrut(4));
+        body.add(Box.createVerticalStrut(2));
 
-        JLabel lblFuture = new JLabel(resolveRoomCardHint(state));
-        lblFuture.setFont(AppFonts.body(11));
-        lblFuture.setForeground(TEXT_MUTED);
-        lblFuture.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lblFuture = createRoomBlockLineLabel(resolveRoomCardHintDisplay(state),
+                AppFonts.body(11), TEXT_MUTED, 18);
         body.add(lblFuture);
 
         card.setToolTipText(buildRoomBlockTooltip(state));
@@ -1899,6 +1924,17 @@ public class CheckInOutGUI extends JFrame {
         return card;
     }
 
+    private JLabel createRoomBlockLineLabel(String text, Font font, Color foreground, int maxChars) {
+        String safeText = safeValue(text, "-");
+        JLabel label = new JLabel(truncateText(safeText, maxChars));
+        label.setFont(font);
+        label.setForeground(foreground);
+        label.setToolTipText(safeText);
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setMaximumSize(new Dimension(Integer.MAX_VALUE, label.getPreferredSize().height));
+        return label;
+    }
+
     private void bindRoomBlockClick(Component component, RoomBlockState state) {
         if (component == null || state == null) {
             return;
@@ -1916,12 +1952,14 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JLabel createStatusChipLabel(String text, String statusKey) {
-        JLabel lbl = new JLabel(" " + safeValue(text, "-") + " ");
+        String safeText = safeValue(text, "-");
+        JLabel lbl = new JLabel(" " + truncateText(safeText, 16) + " ");
         lbl.setOpaque(true);
         lbl.setBackground(resolveBlockAccent(statusKey));
         lbl.setForeground(RoomStatusKey.MAINTENANCE.equals(statusKey) ? TEXT_PRIMARY : Color.WHITE);
         lbl.setFont(AppFonts.ui(Font.BOLD, 12));
-        lbl.setBorder(new EmptyBorder(5, 10, 5, 10));
+        lbl.setBorder(new EmptyBorder(5, 8, 5, 8));
+        lbl.setToolTipText(safeText);
         return lbl;
     }
 
@@ -2092,7 +2130,13 @@ public class CheckInOutGUI extends JFrame {
         titleRow.add(lblCount, BorderLayout.EAST);
         section.add(titleRow, BorderLayout.NORTH);
 
-        JPanel row = new JPanel(new java.awt.GridLayout(0, ROOM_GRID_COLUMNS, 12, 12));
+        JPanel row = new JPanel(new ResponsiveRoomGridLayout(
+                ROOM_GRID_COLUMNS,
+                ROOM_CARD_PREFERRED_WIDTH,
+                ROOM_CARD_PREFERRED_HEIGHT,
+                ROOM_GRID_GAP,
+                ROOM_GRID_GAP
+        ));
         row.setOpaque(false);
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
         if (floorRooms != null) {
@@ -2165,6 +2209,43 @@ public class CheckInOutGUI extends JFrame {
         return safeValue(state.roomType, "-") + " | " + safeValue(state.floorName, "-");
     }
 
+    private String resolveRoomCompactMetaLine(RoomBlockState state) {
+        if (state == null) {
+            return "0 ng\u01b0\u1eddi | -";
+        }
+        String people = Math.max(0, state.guestCount) + " ng\u01b0\u1eddi";
+        String floor = compactFloorName(state.floorName);
+        if (state.bookingCode != null && !state.bookingCode.trim().isEmpty()) {
+            return people + " | " + state.bookingCode + " | " + floor;
+        }
+        return people + " | " + floor;
+    }
+
+    private String compactFloorName(String floorName) {
+        String value = safeValue(floorName, "-");
+        String digits = value.replaceAll("\\D+", "");
+        if (!digits.isEmpty()) {
+            return "T" + digits;
+        }
+        return truncateText(value, 4);
+    }
+
+    private String resolveRoomCardHintDisplay(RoomBlockState state) {
+        if (state == null) {
+            return "-";
+        }
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+            return "C\u1ea7n thanh to\u00e1n";
+        }
+        if (RoomStatusKey.MAINTENANCE.equals(state.statusKey)) {
+            return "B\u1ea3o tr\u00ec";
+        }
+        if (RoomStatusKey.AVAILABLE.equals(state.statusKey) && state.nextFutureHint == null) {
+            return "S\u1eb5n s\u00e0ng";
+        }
+        return resolveRoomCardHint(state);
+    }
+
     private void handleRoomBlockSelection(RoomBlockState state, boolean openAction) {
         if (state == null) {
             selectedRoomBlock = null;
@@ -2219,7 +2300,7 @@ public class CheckInOutGUI extends JFrame {
         int thickness = selected ? 3 : related ? 2 : 1;
         return BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(accent, thickness, true),
-                new EmptyBorder(12, 12, 12, 12)
+                new EmptyBorder(7, 8, 7, 8)
         );
     }
 
@@ -2345,8 +2426,9 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JPanel createRelatedRoomCard(RoomBlockState roomState, boolean selected) {
-        JPanel card = new JPanel(new BorderLayout(10, 0));
+        JPanel card = new JPanel(new BorderLayout(0, 8));
         card.setOpaque(true);
+        card.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.setBackground(selected ? new Color(239, 246, 255) : PANEL_SOFT);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(selected ? new Color(59, 130, 246) : BORDER_SOFT, selected ? 2 : 1, true),
@@ -2354,32 +2436,45 @@ public class CheckInOutGUI extends JFrame {
         ));
 
         if (roomState == null) {
-            JLabel lbl = new JLabel("Ph\u00f2ng trong \u0111\u01a1n kh\u00f4ng c\u00f2n d\u1eef li\u1ec7u tr\u1ea1ng th\u00e1i.");
+            String message = "Ph\u00f2ng trong \u0111\u01a1n kh\u00f4ng c\u00f2n d\u1eef li\u1ec7u tr\u1ea1ng th\u00e1i.";
+            JLabel lbl = new JLabel(truncateText(message, 42));
             lbl.setFont(BODY_FONT);
             lbl.setForeground(TEXT_MUTED);
+            lbl.setToolTipText(message);
             card.add(lbl, BorderLayout.CENTER);
+            card.setMaximumSize(new Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
             return card;
         }
 
         JPanel info = new JPanel();
         info.setOpaque(false);
         info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+        info.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel top = new JPanel(new BorderLayout(8, 0));
         top.setOpaque(false);
+        top.setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel lblRoom = new JLabel(roomState.roomCode);
         lblRoom.setFont(AppFonts.ui(Font.BOLD, 13));
         lblRoom.setForeground(TEXT_PRIMARY);
+        lblRoom.setToolTipText(roomState.roomCode);
         top.add(lblRoom, BorderLayout.WEST);
         top.add(createStatusChipLabel(roomState.statusText, roomState.statusKey), BorderLayout.EAST);
+        top.setMaximumSize(new Dimension(Integer.MAX_VALUE, top.getPreferredSize().height));
 
-        JLabel lblGuest = new JLabel(resolveRoomGuestDisplay(roomState));
+        String guestText = resolveRoomGuestDisplay(roomState);
+        JLabel lblGuest = new JLabel(truncateText(guestText, 28));
         lblGuest.setFont(BODY_FONT);
         lblGuest.setForeground(TEXT_PRIMARY);
+        lblGuest.setToolTipText(guestText);
+        lblGuest.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblPeople = new JLabel(resolveRoomPeopleDisplay(roomState) + " | " + safeValue(roomState.roomType, "-"));
+        String peopleText = resolveRoomPeopleDisplay(roomState) + " | " + safeValue(roomState.roomType, "-");
+        JLabel lblPeople = new JLabel(truncateText(peopleText, 32));
         lblPeople.setFont(AppFonts.body(12));
         lblPeople.setForeground(TEXT_MUTED);
+        lblPeople.setToolTipText(peopleText);
+        lblPeople.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         info.add(top);
         info.add(Box.createVerticalStrut(4));
@@ -2390,8 +2485,9 @@ public class CheckInOutGUI extends JFrame {
         JButton btnAction = createRelatedRoomActionButton(roomState);
         card.add(info, BorderLayout.CENTER);
         if (btnAction != null) {
-            card.add(btnAction, BorderLayout.EAST);
+            card.add(btnAction, BorderLayout.SOUTH);
         }
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, card.getPreferredSize().height));
         bindRoomBlockClick(card, roomState);
         bindRoomBlockClick(info, roomState);
         bindRoomBlockClick(top, roomState);
@@ -2415,6 +2511,9 @@ public class CheckInOutGUI extends JFrame {
         });
         button.setFont(AppFonts.ui(Font.BOLD, 12));
         button.setMargin(new Insets(6, 10, 6, 10));
+        button.setAlignmentX(Component.LEFT_ALIGNMENT);
+        button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
+        button.setPreferredSize(new Dimension(0, 34));
         return button;
     }
 
@@ -2448,6 +2547,8 @@ public class CheckInOutGUI extends JFrame {
         JLabel lblSelectedRoom = new JLabel("Ph\u00f2ng \u0111ang ch\u1ecdn");
         lblSelectedRoom.setFont(LABEL_FONT);
         lblSelectedRoom.setForeground(TEXT_MUTED);
+        lblSelectedRoom.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblSelectedRoom.setMaximumSize(new Dimension(Integer.MAX_VALUE, lblSelectedRoom.getPreferredSize().height));
         detailActionPanel.add(lblSelectedRoom);
         detailActionPanel.add(Box.createVerticalStrut(8));
 
@@ -2479,6 +2580,9 @@ public class CheckInOutGUI extends JFrame {
                 JLabel lbl = new JLabel("Kh\u00f4ng c\u00f3 thao t\u00e1c tr\u1ef1c ti\u1ebfp cho tr\u1ea1ng th\u00e1i n\u00e0y.");
                 lbl.setFont(BODY_FONT);
                 lbl.setForeground(TEXT_MUTED);
+                lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+                lbl.setMaximumSize(new Dimension(Integer.MAX_VALUE, lbl.getPreferredSize().height));
+                lbl.setToolTipText(lbl.getText());
                 detailActionPanel.add(lbl);
                 break;
         }
@@ -2491,6 +2595,8 @@ public class CheckInOutGUI extends JFrame {
                 JLabel lblBulk = new JLabel("To\u00e0n b\u1ed9 \u0111\u01a1n");
                 lblBulk.setFont(LABEL_FONT);
                 lblBulk.setForeground(TEXT_MUTED);
+                lblBulk.setAlignmentX(Component.LEFT_ALIGNMENT);
+                lblBulk.setMaximumSize(new Dimension(Integer.MAX_VALUE, lblBulk.getPreferredSize().height));
                 detailActionPanel.add(lblBulk);
                 detailActionPanel.add(Box.createVerticalStrut(8));
             }
@@ -2515,6 +2621,7 @@ public class CheckInOutGUI extends JFrame {
     private void addDetailActionButton(JButton button) {
         button.setAlignmentX(Component.LEFT_ALIGNMENT);
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        button.setPreferredSize(new Dimension(0, 38));
         detailActionPanel.add(button);
         detailActionPanel.add(Box.createVerticalStrut(8));
     }
@@ -2924,6 +3031,14 @@ public class CheckInOutGUI extends JFrame {
 
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private String truncateText(String value, int maxChars) {
+        String safeText = safeValue(value, "-");
+        if (maxChars <= 3 || safeText.length() <= maxChars) {
+            return safeText;
+        }
+        return safeText.substring(0, maxChars - 3) + "...";
     }
 
     private String valueOf(Object value) {
@@ -5754,19 +5869,74 @@ public class CheckInOutGUI extends JFrame {
         }
     }
 
+    private static final class RoomMapScrollPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 18;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(18, visibleRect.height - 18);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+    }
+
+    private static final class DetailScrollPanel extends JPanel implements Scrollable {
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return 18;
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return Math.max(18, visibleRect.height - 18);
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
+    }
+
     private static final class ResponsiveRoomGridLayout implements LayoutManager {
-        private int columns;
+        private final int columns;
+        private final int minCellWidth;
+        private final int preferredCellHeight;
         private final int horizontalGap;
         private final int verticalGap;
 
-        private ResponsiveRoomGridLayout(int columns, int horizontalGap, int verticalGap) {
+        private ResponsiveRoomGridLayout(int columns, int minCellWidth, int preferredCellHeight,
+                                         int horizontalGap, int verticalGap) {
             this.columns = Math.max(1, columns);
+            this.minCellWidth = Math.max(1, minCellWidth);
+            this.preferredCellHeight = Math.max(1, preferredCellHeight);
             this.horizontalGap = Math.max(0, horizontalGap);
             this.verticalGap = Math.max(0, verticalGap);
-        }
-
-        private void setColumns(int columns) {
-            this.columns = Math.max(1, columns);
         }
 
         @Override
@@ -5781,16 +5951,23 @@ public class CheckInOutGUI extends JFrame {
         public Dimension preferredLayoutSize(Container parent) {
             Insets insets = parent.getInsets();
             int count = parent.getComponentCount();
-            int rows = count <= 0 ? 1 : (int) Math.ceil(count / (double) columns);
-            int width = insets.left + insets.right + (columns * 160) + (Math.max(0, columns - 1) * horizontalGap);
-            int height = insets.top + insets.bottom + (rows * 132) + (Math.max(0, rows - 1) * verticalGap);
+            int layoutColumns = resolveColumns(count);
+            int availableWidth = parent.getWidth() > 0
+                    ? Math.max(1, parent.getWidth() - insets.left - insets.right)
+                    : preferredColumnsWidth(layoutColumns);
+            int rows = count <= 0 ? 1 : (int) Math.ceil(count / (double) layoutColumns);
+            int width = parent.getWidth() > 0
+                    ? parent.getWidth()
+                    : insets.left + insets.right + Math.min(availableWidth, preferredColumnsWidth(layoutColumns));
+            int height = insets.top + insets.bottom + (rows * preferredCellHeight) + (Math.max(0, rows - 1) * verticalGap);
             return new Dimension(width, height);
         }
 
         @Override
         public Dimension minimumLayoutSize(Container parent) {
             Insets insets = parent.getInsets();
-            return new Dimension(insets.left + insets.right + 200, insets.top + insets.bottom + 120);
+            return new Dimension(insets.left + insets.right + preferredColumnsWidth(Math.min(columns, 2)),
+                    insets.top + insets.bottom + preferredCellHeight);
         }
 
         @Override
@@ -5801,23 +5978,29 @@ public class CheckInOutGUI extends JFrame {
                 return;
             }
 
-            int rows = (int) Math.ceil(count / (double) columns);
             int availableWidth = Math.max(1, parent.getWidth() - insets.left - insets.right);
-            int availableHeight = Math.max(1, parent.getHeight() - insets.top - insets.bottom);
-
-            int totalHorizontalGap = Math.max(0, columns - 1) * horizontalGap;
-            int totalVerticalGap = Math.max(0, rows - 1) * verticalGap;
-            int cellWidth = Math.max(1, (availableWidth - totalHorizontalGap) / columns);
-            int cellHeight = Math.max(1, (availableHeight - totalVerticalGap) / rows);
+            int layoutColumns = resolveColumns(count);
+            int totalHorizontalGap = Math.max(0, layoutColumns - 1) * horizontalGap;
+            int cellWidth = Math.max(1, (availableWidth - totalHorizontalGap) / layoutColumns);
+            int cellHeight = preferredCellHeight;
 
             for (int index = 0; index < count; index++) {
                 Component component = parent.getComponent(index);
-                int row = index / columns;
-                int column = index % columns;
+                int row = index / layoutColumns;
+                int column = index % layoutColumns;
                 int x = insets.left + (column * (cellWidth + horizontalGap));
                 int y = insets.top + (row * (cellHeight + verticalGap));
                 component.setBounds(x, y, cellWidth, cellHeight);
             }
+        }
+
+        private int resolveColumns(int componentCount) {
+            return Math.max(1, Math.min(columns, Math.max(1, componentCount)));
+        }
+
+        private int preferredColumnsWidth(int columns) {
+            int safeColumns = Math.max(1, columns);
+            return (safeColumns * minCellWidth) + (Math.max(0, safeColumns - 1) * horizontalGap);
         }
     }
 

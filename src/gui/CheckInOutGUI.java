@@ -42,6 +42,8 @@ import javax.swing.ListSelectionModel;
 import javax.swing.Scrollable;
 import javax.swing.SwingConstants;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
@@ -136,6 +138,14 @@ public class CheckInOutGUI extends JFrame {
     private JPanel roomTimelineHeaderPanel;
     private JPanel detailRelatedRoomsPanel;
     private JPanel detailActionPanel;
+    private JLabel lblActionSelectionHint;
+    private JButton btnActionCheckIn;
+    private JButton btnActionOpenStay;
+    private JButton btnActionAddService;
+    private JButton btnActionChangeRoom;
+    private JButton btnActionExtend;
+    private JButton btnActionCheckOut;
+    private JButton btnActionCheckOutAll;
     private JLabel lblRoomMapTitle;
     private JLabel lblRoomMapMeta;
     private JLabel lblGanttRange;
@@ -258,71 +268,26 @@ public class CheckInOutGUI extends JFrame {
 
     private JPanel buildRoomControlBar() {
         JPanel card = createCardPanel(new BorderLayout(12, 10));
-
-        JPanel left = new JPanel();
-        left.setOpaque(false);
-        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-
         JLabel lblTitle = new JLabel("S\u01a1 \u0111\u1ed3 ph\u00f2ng Check-in / Check-out");
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
-
-        JLabel lblSubtitle = new JLabel("Hi\u1ec3n th\u1ecb ph\u00f2ng theo t\u1eebng t\u1ea7ng, badge v\u1eadn h\u00e0nh tr\u1ef1c quan v\u00e0 highlight to\u00e0n booking khi c\u1ea7n thao t\u00e1c nhanh.");
-        lblSubtitle.setFont(BODY_FONT);
-        lblSubtitle.setForeground(TEXT_MUTED);
-
-        left.add(lblTitle);
-        left.add(Box.createVerticalStrut(4));
-        left.add(lblSubtitle);
-
-        JPanel right = new JPanel();
-        right.setOpaque(false);
-        right.setLayout(new BoxLayout(right, BoxLayout.Y_AXIS));
-
-        JLabel lblHint = new JLabel("Double click ph\u00f2ng \u0111\u1ec3 m\u1edf popup \u0111\u00fang theo tr\u1ea1ng th\u00e1i.");
-        lblHint.setFont(AppFonts.body(12));
-        lblHint.setForeground(TEXT_MUTED);
-
-        JLabel lblSearch = new JLabel("T\u00ecm nhanh");
-        lblSearch.setFont(LABEL_FONT);
-        lblSearch.setForeground(TEXT_MUTED);
         txtTuKhoa = createInputField("");
-        txtTuKhoa.setPreferredSize(new Dimension(260, 34));
+        txtTuKhoa.setPreferredSize(new Dimension(240, 34));
         txtTuKhoa.setToolTipText("S\u1ed1 ph\u00f2ng / m\u00e3 booking / t\u00ean ng\u01b0\u1eddi \u0111\u1ea1i di\u1ec7n");
         ScreenUIHelper.installLiveSearch(txtTuKhoa, this::refreshRoomGrid);
 
-        right.add(lblHint);
-        right.add(Box.createVerticalStrut(8));
-        right.add(lblSearch);
-        right.add(Box.createVerticalStrut(4));
-        right.add(txtTuKhoa);
-
-        card.add(left, BorderLayout.CENTER);
-        card.add(right, BorderLayout.EAST);
+        card.add(lblTitle, BorderLayout.NORTH);
+        card.add(buildActionBar(), BorderLayout.SOUTH);
         return card;
     }
 
     private JPanel buildRoomMapCard() {
         JPanel card = createCardPanel(new BorderLayout(0, 12));
 
-        JPanel header = new JPanel();
+        JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
-        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
-
-        lblRoomMapTitle = new JLabel("To\u00e0n b\u1ed9 ph\u00f2ng theo t\u1ea7ng");
-        lblRoomMapTitle.setFont(SECTION_FONT);
-        lblRoomMapTitle.setForeground(TEXT_PRIMARY);
-
-        lblRoomMapMeta = new JLabel("M\u1ed7i t\u1ea7ng hi\u1ec3n th\u1ecb t\u1ed1i \u0111a 6 ph\u00f2ng tr\u00ean m\u1ed9t h\u00e0ng, cu\u1ed9n d\u1ecdc khi nhi\u1ec1u ph\u00f2ng.");
-        lblRoomMapMeta.setFont(BODY_FONT);
-        lblRoomMapMeta.setForeground(TEXT_MUTED);
-
         roomLegendPanel = buildRoomLegendPanel();
-        header.add(lblRoomMapTitle);
-        header.add(Box.createVerticalStrut(4));
-        header.add(lblRoomMapMeta);
-        header.add(Box.createVerticalStrut(10));
-        header.add(roomLegendPanel);
+        header.add(roomLegendPanel, BorderLayout.CENTER);
 
         roomGridPanel = new RoomMapScrollPanel();
         roomGridPanel.setLayout(new BoxLayout(roomGridPanel, BoxLayout.Y_AXIS));
@@ -355,8 +320,6 @@ public class CheckInOutGUI extends JFrame {
         legend.add(createLegendChip("S\u1eb5n s\u00e0ng", resolveBlockAccent(RoomStatusKey.AVAILABLE)));
         legend.add(createLegendChip("\u0110\u00e3 \u0111\u1eb7t", resolveBlockAccent(RoomStatusKey.BOOKED)));
         legend.add(createLegendChip("\u0110ang \u1edf", resolveBlockAccent(RoomStatusKey.OCCUPIED)));
-        legend.add(createLegendChip("TT: Ch\u1edd thanh to\u00e1n", resolveBlockAccent(RoomStatusKey.WAIT_PAYMENT)));
-        legend.add(createLegendChip("DN: \u0110ang d\u1ecdn", resolveBlockAccent(RoomStatusKey.CLEANING)));
         legend.add(createLegendChip("\u2022: S\u1eafp c\u00f3 kh\u00e1ch", new Color(17, 24, 39)));
         legend.add(createLegendChip("B\u1ea3o tr\u00ec", resolveBlockAccent(RoomStatusKey.MAINTENANCE)));
         return legend;
@@ -494,13 +457,134 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private JPanel buildActionBar() {
-        JPanel card = createCompactCardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
-        card.add(createPrimaryButton("Check-in", new Color(22, 163, 74), Color.WHITE, e -> openCheckInDialog()));
-        card.add(createPrimaryButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), Color.WHITE, e -> openAddServiceDialog()));
-        card.add(createPrimaryButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), TEXT_PRIMARY, e -> openChangeRoomDialog()));
-        card.add(createPrimaryButton("Gia h\u1ea1n", new Color(59, 130, 246), Color.WHITE, e -> openExtendDialog()));
-        card.add(createPrimaryButton("Check-out", new Color(220, 38, 38), Color.WHITE, e -> openCheckOutDialog()));
+        JPanel card = new JPanel(new BorderLayout());
+        card.setOpaque(false);
+        card.setBorder(new EmptyBorder(8, 0, 0, 0));
+        JPanel row = new JPanel(new BorderLayout(12, 0));
+        row.setOpaque(false);
+
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        buttons.setOpaque(false);
+
+        btnActionCheckIn = createPrimaryButton("Check-in", new Color(22, 163, 74), Color.WHITE, e -> openSelectedRoomCheckInFromHeader());
+        btnActionOpenStay = createPrimaryButton("M\u1edf popup \u0111ang \u1edf", new Color(37, 99, 235), Color.WHITE, e -> openSelectedRoomOperationPopupFromHeader());
+        btnActionAddService = createOutlineButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), e -> openAddServiceDialog());
+        btnActionChangeRoom = createOutlineButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), e -> openChangeRoomDialog());
+        btnActionExtend = createOutlineButton("Gia h\u1ea1n", new Color(59, 130, 246), e -> openExtendDialog());
+        btnActionCheckOut = createPrimaryButton("Check-out ph\u00f2ng n\u00e0y", new Color(220, 38, 38), Color.WHITE, e -> openCheckOutDialog());
+        btnActionCheckOutAll = createOutlineButton("Check-out to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(220, 38, 38), e -> openSelectedBookingCheckOutAllFromHeader());
+
+        configureTopActionButton(btnActionCheckIn);
+        configureTopActionButton(btnActionOpenStay);
+        configureTopActionButton(btnActionAddService);
+        configureTopActionButton(btnActionChangeRoom);
+        configureTopActionButton(btnActionExtend);
+        configureTopActionButton(btnActionCheckOut);
+        configureTopActionButton(btnActionCheckOutAll);
+
+        buttons.add(btnActionCheckIn);
+        buttons.add(btnActionOpenStay);
+        buttons.add(btnActionAddService);
+        buttons.add(btnActionChangeRoom);
+        buttons.add(btnActionExtend);
+        buttons.add(btnActionCheckOut);
+        buttons.add(btnActionCheckOutAll);
+
+        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        searchPanel.setOpaque(false);
+        JLabel lblSearch = new JLabel("T\u00ecm nhanh");
+        lblSearch.setFont(LABEL_FONT);
+        lblSearch.setForeground(TEXT_MUTED);
+        searchPanel.add(lblSearch);
+        searchPanel.add(txtTuKhoa);
+
+        row.add(buttons, BorderLayout.CENTER);
+        row.add(searchPanel, BorderLayout.EAST);
+
+        lblActionSelectionHint = new JLabel();
+        card.add(row, BorderLayout.CENTER);
+        updateTopActionBarState(null, null);
         return card;
+    }
+
+    private void configureTopActionButton(JButton button) {
+        if (button == null) {
+            return;
+        }
+        button.setMargin(new Insets(8, 12, 8, 12));
+    }
+
+    private void openSelectedRoomCheckInFromHeader() {
+        RoomBlockState state = selectedRoomBlock;
+        StayRecord record = resolvePendingCheckInRecord(state);
+        if (state == null || record == null || state.detailId == null) {
+            return;
+        }
+        openCheckInDialog(record, state.detailId, false);
+    }
+
+    private void openSelectedRoomOperationPopupFromHeader() {
+        if (selectedRoomBlock == null) {
+            return;
+        }
+        openRoomActionForState(selectedRoomBlock);
+    }
+
+    private void openSelectedBookingCheckOutAllFromHeader() {
+        RoomBlockState state = selectedRoomBlock;
+        StayRecord record = state == null || state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
+        if (state == null || record == null || state.stayId == null) {
+            return;
+        }
+        openCheckOutDialog(record, state.stayId, true);
+    }
+
+    private void updateTopActionBarState(RoomBlockState state, StayRecord record) {
+        boolean canCheckIn = false;
+        boolean canOpenStay = false;
+        boolean canAddService = false;
+        boolean canChangeRoom = false;
+        boolean canExtend = false;
+        boolean canCheckOut = false;
+        boolean canCheckOutAll = false;
+
+        if (state != null) {
+            StayRecord effectiveRecord = record;
+            if (effectiveRecord == null && RoomStatusKey.BOOKED.equals(state.statusKey)) {
+                effectiveRecord = resolvePendingCheckInRecord(state);
+            }
+            if (RoomStatusKey.BOOKED.equals(state.statusKey) && effectiveRecord != null && state.detailId != null) {
+                canCheckIn = true;
+            } else if (RoomStatusKey.OCCUPIED.equals(state.statusKey) && effectiveRecord != null && state.stayId != null) {
+                canOpenStay = true;
+                canAddService = true;
+                canChangeRoom = true;
+                canExtend = true;
+                canCheckOut = true;
+                canCheckOutAll = effectiveRecord.hasMultipleRooms()
+                        && countBookingRoomsByStatus(effectiveRecord.maDatPhong, RoomStatusKey.OCCUPIED) > 0;
+            }
+        }
+
+        setTopActionEnabled(btnActionCheckIn, canCheckIn);
+        setTopActionEnabled(btnActionOpenStay, canOpenStay);
+        setTopActionEnabled(btnActionAddService, canAddService);
+        setTopActionEnabled(btnActionChangeRoom, canChangeRoom);
+        setTopActionEnabled(btnActionExtend, canExtend);
+        setTopActionEnabled(btnActionCheckOut, canCheckOut);
+        setTopActionEnabled(btnActionCheckOutAll, canCheckOutAll);
+
+        if (lblActionSelectionHint != null) {
+            lblActionSelectionHint.setText("");
+            lblActionSelectionHint.setToolTipText(null);
+        }
+    }
+
+    private void setTopActionEnabled(JButton button, boolean enabled) {
+        if (button == null) {
+            return;
+        }
+        button.setEnabled(enabled);
     }
 
     private JPanel buildFilterBar() {
@@ -544,20 +628,14 @@ public class CheckInOutGUI extends JFrame {
         return card;
     }
 
-    private JSplitPane buildCenterContent() {
+    private JPanel buildCenterContent() {
         JPanel roomMapCard = buildRoomMapCard();
-        JPanel detailColumn = buildRoomDetailColumn();
         roomMapCard.setMinimumSize(new Dimension(560, 1));
-        detailColumn.setMinimumSize(new Dimension(360, 1));
-        detailColumn.setPreferredSize(new Dimension(390, 1));
-
-        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, roomMapCard, detailColumn);
-        splitPane.setOpaque(false);
-        splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.76);
-        splitPane.setDividerSize(8);
-        splitPane.setContinuousLayout(true);
-        return splitPane;
+        roomMapCard.setPreferredSize(new Dimension(1, 1));
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.add(roomMapCard, BorderLayout.CENTER);
+        return wrapper;
     }
 
     private JPanel buildFooter() {
@@ -567,7 +645,7 @@ public class CheckInOutGUI extends JFrame {
                 TEXT_MUTED,
                 "Click Ch\u1ecdn ph\u00f2ng",
                 "Double click Thao t\u00e1c theo tr\u1ea1ng th\u00e1i",
-                "Panel ph\u1ea3i Xem booking c\u00f9ng \u0111\u01a1n",
+                "Thanh tr\u00ean Thao t\u00e1c theo tr\u1ea1ng th\u00e1i",
                 "Badge G\u1ee3i \u00fd ph\u00f2ng s\u1eafp c\u00f3 kh\u00e1ch"
         );
     }
@@ -1280,13 +1358,17 @@ public class CheckInOutGUI extends JFrame {
         datPhongDAO.ensureDetailScheduleSchema(con);
         String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, "
                 + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
-                + "ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(dp.trangThai, N'\u0110ang \u1edf') AS trangThaiDatPhong, "
+                + "ISNULL(p.soPhong, N'-') AS soPhong, "
+                + "COALESCE(NULLIF(LTRIM(RTRIM(roomKh.hoTen)), N''), NULLIF(LTRIM(RTRIM(bookingKh.hoTen)), N''), N'Ch\u01b0a c\u00f3 t\u00ean kh\u00e1ch') AS hoTen, "
+                + "ISNULL(dp.trangThai, N'\u0110ang \u1edf') AS trangThaiDatPhong, "
                 + "ISNULL(lt.soNguoi, ctdp.soNguoi) AS soNguoi "
                 + "FROM LuuTru lt "
                 + "JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
                 + "JOIN ChiTietDatPhong ctdp ON ctdp.maChiTietDatPhong = lt.maChiTietDatPhong "
                 + "JOIN Phong p ON p.maPhong = lt.maPhong "
-                + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
+                + "LEFT JOIN KhachHang bookingKh ON bookingKh.maKhachHang = dp.maKhachHang "
+                + "LEFT JOIN ChiTietDatPhongKhachDaiDien roomGuest ON roomGuest.maChiTietDatPhong = lt.maChiTietDatPhong "
+                + "LEFT JOIN KhachHang roomKh ON roomKh.maKhachHang = roomGuest.maKhachHang "
                 + "WHERE lt.checkOut IS NULL";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -1413,13 +1495,16 @@ public class CheckInOutGUI extends JFrame {
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, dp.maDatPhong, "
                 + "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, "
                 + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
-                + "ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(ctdp.soNguoi, 0) AS soNguoi "
+                + "ISNULL(p.soPhong, N'-') AS soPhong, "
+                + "COALESCE(NULLIF(LTRIM(RTRIM(roomKh.hoTen)), N''), N'Ch\u01b0a c\u00f3 t\u00ean kh\u00e1ch') AS hoTen, "
+                + "ISNULL(ctdp.soNguoi, 0) AS soNguoi "
                 + "FROM DatPhong dp "
                 + "JOIN ChiTietDatPhong ctdp ON ctdp.maDatPhong = dp.maDatPhong "
                 + "JOIN Phong p ON p.maPhong = ctdp.maPhong "
-                + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
-                + "WHERE ISNULL(dp.trangThai, N'') IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in') "
-                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong AND lt.checkOut IS NULL)";
+                + "LEFT JOIN ChiTietDatPhongKhachDaiDien roomGuest ON roomGuest.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "LEFT JOIN KhachHang roomKh ON roomKh.maKhachHang = roomGuest.maKhachHang "
+                + "WHERE ISNULL(dp.trangThai, N'') IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang \u1edf', N'Check-out m\u1ed9t ph\u1ea7n', N'\u0110\u00e3 check-in') "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -1547,15 +1632,15 @@ public class CheckInOutGUI extends JFrame {
             return;
         }
         if ("D\u1ecdn d\u1eb9p".equalsIgnoreCase(rawStatus) || "D\u1ecdn ph\u00f2ng".equalsIgnoreCase(rawStatus)) {
-            state.statusKey = RoomStatusKey.CLEANING;
-            state.statusText = "D\u1ecdn ph\u00f2ng";
-            state.note = "Ph\u00f2ng \u0111\u00e3 thanh to\u00e1n xong v\u00e0 \u0111ang ch\u1edd x\u00e1c nh\u1eadn d\u1ecdn.";
+            state.statusKey = RoomStatusKey.AVAILABLE;
+            state.statusText = "S\u1eb5n s\u00e0ng";
+            state.note = "Lu\u1ed3ng d\u1ecdn ph\u00f2ng kh\u00f4ng hi\u1ec3n th\u1ecb tr\u00ean m\u00e0n Check-in/out. Ph\u00f2ng \u0111\u01b0\u1ee3c xem l\u00e0 s\u1eb5n s\u00e0ng \u0111\u1ec3 ti\u1ebfp t\u1ee5c khai th\u00e1c.";
             return;
         }
         if ("Ch\u1edd thanh to\u00e1n".equalsIgnoreCase(rawStatus)) {
-            state.statusKey = RoomStatusKey.CLEANING;
-            state.statusText = "D\u1ecdn ph\u00f2ng";
-            state.note = "Ph\u00f2ng \u0111\u00e3 check-out. H\u1ec7 th\u1ed1ng s\u1ebd ch\u1ec9 hi\u1ec3n th\u1ecb ch\u1edd thanh to\u00e1n khi c\u00f2n h\u00f3a \u0111\u01a1n ch\u01b0a thanh to\u00e1n.";
+            state.statusKey = RoomStatusKey.WAIT_PAYMENT;
+            state.statusText = "Ch\u1edd thanh to\u00e1n";
+            state.note = "Ph\u00f2ng \u0111\u00e3 check-out v\u00e0 \u0111ang ch\u1edd thanh to\u00e1n.";
             return;
         }
         if ("\u0110ang \u1edf".equalsIgnoreCase(rawStatus)) {
@@ -1572,8 +1657,8 @@ public class CheckInOutGUI extends JFrame {
         }
         if ("Tr\u1ed1ng".equalsIgnoreCase(rawStatus)) {
             state.statusKey = RoomStatusKey.AVAILABLE;
-            state.statusText = "Tr\u1ed1ng";
-            state.note = "Ph\u00f2ng tr\u1ed1ng v\u00e0 c\u00f3 th\u1ec3 ph\u1ee5c v\u1ee5 ngay.";
+            state.statusText = "S\u1eb5n s\u00e0ng";
+            state.note = "Ph\u00f2ng tr\u1ed1ng v\u00e0 s\u1eb5n s\u00e0ng \u0111\u00f3n kh\u00e1ch.";
             return;
         }
         if ("S\u1eb5n s\u00e0ng".equalsIgnoreCase(rawStatus)) {
@@ -1893,10 +1978,6 @@ public class CheckInOutGUI extends JFrame {
         if (preferred != null && visibleRooms.contains(preferred)) {
             handleRoomBlockSelection(preferred, false);
             clearPendingFocusedBookingIfMatched(preferred.bookingId == null ? -1 : preferred.bookingId.intValue());
-            return;
-        }
-        if (!visibleRooms.isEmpty()) {
-            handleRoomBlockSelection(visibleRooms.get(0), false);
             return;
         }
         selectedRoomBlock = null;
@@ -2346,9 +2427,33 @@ public class CheckInOutGUI extends JFrame {
                 continue;
             }
             boolean selected = selectedRoomBlock != null && state.roomCode.equalsIgnoreCase(selectedRoomBlock.roomCode);
+            boolean related = highlightedRoomCodes.contains(state.roomCode);
+            card.setBackground(resolveRoomBlockCardBackground(state, selected, related));
             card.setBorder(createRoomBlockBorder(state, selected));
             card.repaint();
         }
+    }
+
+    private Color resolveRoomBlockCardBackground(RoomBlockState state, boolean selected, boolean related) {
+        Color base = resolveBlockBackground(state == null ? null : state.statusKey);
+        if (selected) {
+            return liftColor(base, 18);
+        }
+        if (related) {
+            return liftColor(base, 8);
+        }
+        return base;
+    }
+
+    private Color liftColor(Color base, int delta) {
+        if (base == null) {
+            return CARD_BG;
+        }
+        return new Color(
+                Math.min(255, base.getRed() + delta),
+                Math.min(255, base.getGreen() + delta),
+                Math.min(255, base.getBlue() + delta)
+        );
     }
 
     private javax.swing.border.Border createRoomBlockBorder(RoomBlockState state, boolean selected) {
@@ -2367,6 +2472,13 @@ public class CheckInOutGUI extends JFrame {
             return;
         }
         StayRecord record = state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
+        if (record == null && RoomStatusKey.BOOKED.equals(state.statusKey)) {
+            record = resolvePendingCheckInRecord(state);
+        }
+        updateTopActionBarState(state, record);
+        if (lblDetailBookingCode == null) {
+            return;
+        }
         setDetailValue(lblDetailBookingCode, state.bookingCode == null ? "-" : state.bookingCode, 24);
         setDetailValue(lblDetailStayCode, state.getStayCodeDisplay(), 24);
         setDetailValue(lblDetailGuestName, safeValue(state.representativeName, record == null ? "-" : record.khachHang), 30);
@@ -2396,6 +2508,7 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void clearOperationDetailPanel() {
+        updateTopActionBarState(null, null);
         if (lblDetailBookingCode == null) {
             return;
         }
@@ -2595,17 +2708,14 @@ public class CheckInOutGUI extends JFrame {
         if (state == null) {
             return null;
         }
-        if (RoomStatusKey.BOOKED.equals(state.statusKey)) {
+        if (RoomStatusKey.BOOKED.equals(state.statusKey) && state.detailId != null) {
             return "Check-in";
         }
-        if (RoomStatusKey.OCCUPIED.equals(state.statusKey)) {
+        if (RoomStatusKey.OCCUPIED.equals(state.statusKey) && state.stayId != null) {
             return "Chi ti\u1ebft";
         }
-        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey)) {
+        if (RoomStatusKey.WAIT_PAYMENT.equals(state.statusKey) && state.bookingId != null) {
             return "Thanh to\u00e1n";
-        }
-        if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
-            return "D\u1ecdn xong";
         }
         return null;
     }
@@ -2628,43 +2738,52 @@ public class CheckInOutGUI extends JFrame {
 
         switch (state.statusKey) {
             case RoomStatusKey.BOOKED:
-                addDetailActionButton(createPrimaryButton("Check-in ph\u00f2ng \u0111ang ch\u1ecdn", new Color(22, 163, 74), Color.WHITE,
-                        e -> openCheckInDialog(record, state.detailId, record != null && record.hasMultipleRooms())));
+                if (record != null && state.detailId != null) {
+                    addDetailActionButton(createPrimaryButton("Check-in ph\u00f2ng \u0111ang ch\u1ecdn", new Color(22, 163, 74), Color.WHITE,
+                            e -> openCheckInDialog(record, state.detailId, record.hasMultipleRooms())));
+                } else {
+                    addDetailActionInfo("Ph\u00f2ng \u0111ang ch\u1edd check-in nh\u01b0ng booking kh\u00f4ng c\u00f2n \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 thao t\u00e1c. H\u00e3y l\u00e0m m\u1edbi danh s\u00e1ch.");
+                }
                 break;
             case RoomStatusKey.OCCUPIED:
-                addDetailActionButton(createPrimaryButton("M\u1edf popup \u0111ang \u1edf", new Color(37, 99, 235), Color.WHITE, e -> openRoomActionForState(state)));
-                addDetailActionButton(createOutlineButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), e -> {
-                    handleRoomBlockSelection(state, false);
-                    openAddServiceDialog();
-                }));
-                addDetailActionButton(createOutlineButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), e -> openChangeRoomDialog(record, state.stayId)));
-                addDetailActionButton(createOutlineButton("Gia h\u1ea1n", new Color(59, 130, 246), e -> {
-                    handleRoomBlockSelection(state, false);
-                    openExtendDialog();
-                }));
-                addDetailActionButton(createOutlineButton("Check-out ph\u00f2ng n\u00e0y", new Color(220, 38, 38), e -> openCheckOutDialog(record, state.stayId, false)));
+                if (record != null && state.stayId != null) {
+                    addDetailActionButton(createPrimaryButton("M\u1edf popup \u0111ang \u1edf", new Color(37, 99, 235), Color.WHITE, e -> openRoomActionForState(state)));
+                    addDetailActionButton(createOutlineButton("Th\u00eam d\u1ecbch v\u1ee5", new Color(37, 99, 235), e -> {
+                        handleRoomBlockSelection(state, false);
+                        openAddServiceDialog();
+                    }));
+                    addDetailActionButton(createOutlineButton("\u0110\u1ed5i ph\u00f2ng", new Color(245, 158, 11), e -> openChangeRoomDialog(record, state.stayId)));
+                    addDetailActionButton(createOutlineButton("Gia h\u1ea1n", new Color(59, 130, 246), e -> {
+                        handleRoomBlockSelection(state, false);
+                        openExtendDialog();
+                    }));
+                    addDetailActionButton(createOutlineButton("Check-out ph\u00f2ng n\u00e0y", new Color(220, 38, 38), e -> openCheckOutDialog(record, state.stayId, false)));
+                } else {
+                    addDetailActionInfo("Ph\u00f2ng \u0111ang \u1edf nh\u01b0ng h\u1ed3 s\u01a1 l\u01b0u tr\u00fa kh\u00f4ng c\u00f2n \u0111\u1ed3ng b\u1ed9. H\u00e3y l\u00e0m m\u1edbi danh s\u00e1ch.");
+                }
                 break;
             case RoomStatusKey.WAIT_PAYMENT:
-                addDetailActionButton(createPrimaryButton("M\u1edf thanh to\u00e1n", new Color(220, 38, 38), Color.WHITE, e -> openRoomActionForState(state)));
+                addDetailActionButton(createOutlineButton("M\u1edf thanh to\u00e1n", new Color(220, 38, 38), e -> openPaymentPopupForState(state)));
+                addDetailActionInfo("Ph\u00f2ng \u0111\u00e3 check-out v\u00e0 \u0111ang ch\u1edd thanh to\u00e1n. Kh\u00f4ng th\u1ec3 check-in l\u1ea1i tr\u01b0\u1edbc khi ho\u00e0n t\u1ea5t thanh to\u00e1n.");
                 break;
+            case RoomStatusKey.AVAILABLE:
             case RoomStatusKey.CLEANING:
-                addDetailActionButton(createPrimaryButton("X\u00e1c nh\u1eadn d\u1ecdn xong", new Color(13, 148, 136), Color.WHITE, e -> confirmCleaningForState(state)));
+                addDetailActionInfo("Ph\u00f2ng s\u1eb5n s\u00e0ng. Ch\u1ec9 c\u00f3 th\u1ec3 check-in khi ph\u00f2ng \u0111\u00e3 c\u00f3 booking.");
+                break;
+            case RoomStatusKey.MAINTENANCE:
+                addDetailActionInfo("Ph\u00f2ng \u0111ang b\u1ea3o tr\u00ec n\u00ean kh\u00f4ng thao t\u00e1c check-in / check-out tr\u1ef1c ti\u1ebfp t\u1ea1i m\u00e0n n\u00e0y.");
                 break;
             default:
-                JLabel lbl = new JLabel("Kh\u00f4ng c\u00f3 thao t\u00e1c tr\u1ef1c ti\u1ebfp cho tr\u1ea1ng th\u00e1i n\u00e0y.");
-                lbl.setFont(BODY_FONT);
-                lbl.setForeground(TEXT_MUTED);
-                lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
-                lbl.setMaximumSize(new Dimension(Integer.MAX_VALUE, lbl.getPreferredSize().height));
-                lbl.setToolTipText(lbl.getText());
-                detailActionPanel.add(lbl);
+                addDetailActionInfo("Kh\u00f4ng c\u00f3 thao t\u00e1c tr\u1ef1c ti\u1ebfp cho tr\u1ea1ng th\u00e1i n\u00e0y.");
                 break;
         }
 
         if (record != null && record.hasMultipleRooms()) {
             int bookableCount = countBookingRoomsByStatus(record.maDatPhong, RoomStatusKey.BOOKED);
             int occupiedCount = countBookingRoomsByStatus(record.maDatPhong, RoomStatusKey.OCCUPIED);
-            if (bookableCount > 0 || occupiedCount > 0) {
+            boolean allowBulkCheckIn = RoomStatusKey.BOOKED.equals(state.statusKey) && state.detailId != null && bookableCount > 0;
+            boolean allowBulkCheckOut = RoomStatusKey.OCCUPIED.equals(state.statusKey) && state.stayId != null && occupiedCount > 0;
+            if (allowBulkCheckIn || allowBulkCheckOut) {
                 detailActionPanel.add(Box.createVerticalStrut(4));
                 JLabel lblBulk = new JLabel("To\u00e0n b\u1ed9 \u0111\u01a1n");
                 lblBulk.setFont(LABEL_FONT);
@@ -2674,13 +2793,13 @@ public class CheckInOutGUI extends JFrame {
                 detailActionPanel.add(lblBulk);
                 detailActionPanel.add(Box.createVerticalStrut(8));
             }
-            if (bookableCount > 0) {
+            if (allowBulkCheckIn) {
                 addDetailActionButton(createOutlineButton("Check-in to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(22, 163, 74), e -> {
                     handleRoomBlockSelection(state, false);
                     openCheckInDialog(record, state.detailId, true);
                 }));
             }
-            if (occupiedCount > 0) {
+            if (allowBulkCheckOut) {
                 addDetailActionButton(createOutlineButton("Check-out to\u00e0n b\u1ed9 \u0111\u01a1n", new Color(220, 38, 38), e -> {
                     handleRoomBlockSelection(state, false);
                     openCheckOutDialog(record, state.stayId, true);
@@ -2700,6 +2819,16 @@ public class CheckInOutGUI extends JFrame {
         button.setToolTipText(button.getText());
         detailActionPanel.add(button);
         detailActionPanel.add(Box.createVerticalStrut(8));
+    }
+
+    private void addDetailActionInfo(String text) {
+        JLabel lbl = new JLabel("<html>" + safeValue(text, "") + "</html>");
+        lbl.setFont(BODY_FONT);
+        lbl.setForeground(TEXT_MUTED);
+        lbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lbl.setMaximumSize(new Dimension(Integer.MAX_VALUE, lbl.getPreferredSize().height));
+        lbl.setToolTipText(text);
+        detailActionPanel.add(lbl);
     }
 
     private int countBookingRoomsByStatus(int bookingId, String statusKey) {
@@ -2723,12 +2852,119 @@ public class CheckInOutGUI extends JFrame {
         return recordsByBookingId.get(bookingId);
     }
 
+    private StayRecord resolvePendingCheckInRecord(RoomBlockState state) {
+        if (state == null || state.bookingId == null || state.bookingId.intValue() <= 0) {
+            return null;
+        }
+        StayRecord record = findRecordByBookingId(state.bookingId);
+        if (record != null) {
+            boolean matchesDetail = state.detailId == null
+                    || state.detailId.intValue() <= 0
+                    || record.maChiTietDatPhongIds.contains(state.detailId);
+            if (record.hasPendingCheckInRooms && matchesDetail) {
+                return record;
+            }
+        }
+        StayRecord fallback = loadPendingBookingRecord(state.bookingId.intValue());
+        if (fallback != null) {
+            return fallback;
+        }
+        return record != null && record.hasPendingCheckInRooms ? record : null;
+    }
+
+    private StayRecord loadPendingBookingRecord(int bookingId) {
+        if (bookingId <= 0) {
+            return null;
+        }
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return null;
+        }
+        datPhongDAO.ensureDetailScheduleSchema(con);
+        String sql = "SELECT ctdp.maChiTietDatPhong, dp.maDatPhong, ISNULL(kh.hoTen, N'-') AS hoTen, dp.tienCoc, "
+                + "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, "
+                + "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, "
+                + "dp.trangThai, ctdp.soNguoi, ctdp.maPhong, ISNULL(p.soPhong, N'Ch\u01b0a g\u00e1n') AS soPhong, "
+                + "ISNULL(p.tang, N'-') AS tang, COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong, N'-') AS tenLoaiPhong "
+                + "FROM DatPhong dp "
+                + "JOIN ChiTietDatPhong ctdp ON dp.maDatPhong = ctdp.maDatPhong "
+                + "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang "
+                + "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong "
+                + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
+                + "LEFT JOIN BangGia bg ON dp.maBangGia = bg.maBangGia "
+                + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong "
+                + "WHERE dp.maDatPhong = ? "
+                + "AND ISNULL(dp.trangThai, N'') IN (N'\u0110\u00e3 \u0111\u1eb7t', N'\u0110\u00e3 x\u00e1c nh\u1eadn', N'\u0110\u00e3 c\u1ecdc', N'Ch\u1edd check-in', N'\u0110ang \u1edf', N'Check-out m\u1ed9t ph\u1ea7n', N'\u0110\u00e3 check-in') "
+                + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, bookingId);
+            try (ResultSet rs = ps.executeQuery()) {
+                StayRecord record = null;
+                while (rs.next()) {
+                    if (record == null) {
+                        record = new StayRecord();
+                        record.maHoSo = "DP" + bookingId;
+                        record.maDatPhong = bookingId;
+                        record.khachHang = safeValue(rs.getString("hoTen"), "-");
+                        record.loaiPhong = safeValue(rs.getString("tenLoaiPhong"), "-");
+                        record.tienCoc = formatMoney(rs.getDouble("tienCoc"));
+                        record.dichVuPhatSinh = "0";
+                        record.tang = safeValue(rs.getString("tang"), "-");
+                        record.caLam = resolveCurrentShift();
+                        record.bookingTrangThai = safeValue(rs.getString("trangThai"), "Ch\u1edd check-in");
+                    }
+                    int detailId = rs.getInt("maChiTietDatPhong");
+                    int roomId = rs.getObject("maPhong") == null ? 0 : rs.getInt("maPhong");
+                    Timestamp checkInDuKien = rs.getTimestamp("checkInDuKien");
+                    Timestamp checkOutDuKien = rs.getTimestamp("checkOutDuKien");
+                    record.soNguoi += rs.getInt("soNguoi");
+                    record.hasPendingCheckInRooms = true;
+                    record.addBookingDetail(detailId);
+                    record.observeSummaryCheckIn(checkInDuKien);
+                    record.observeSummaryCheckOut(checkOutDuKien);
+                    if (checkInDuKien != null) {
+                        LocalDate current = checkInDuKien.toLocalDateTime().toLocalDate();
+                        if (record.expectedCheckInDate == null || current.isBefore(record.expectedCheckInDate)) {
+                            record.expectedCheckInDate = current;
+                            record.gioVao = formatDateTime(checkInDuKien);
+                        }
+                    }
+                    if (checkOutDuKien != null) {
+                        LocalDate current = checkOutDuKien.toLocalDateTime().toLocalDate();
+                        if (record.expectedCheckOutDate == null || current.isAfter(record.expectedCheckOutDate)) {
+                            record.expectedCheckOutDate = current;
+                            record.gioRaDuKien = formatDateTime(checkOutDuKien);
+                        }
+                    }
+                    if (roomId > 0) {
+                        record.addRoom(roomId, safeValue(rs.getString("soPhong"), "-"));
+                    } else {
+                        record.hasUnassignedRoom = true;
+                        record.addDisplayRoom("Ch\u01b0a g\u00e1n");
+                    }
+                }
+                if (record != null) {
+                    record.refreshAggregateState();
+                }
+                return record;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
     private void openRoomActionForState(RoomBlockState state) {
         if (state == null) {
             return;
         }
         StayRecord record = state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
         if (RoomStatusKey.BOOKED.equals(state.statusKey)) {
+            record = resolvePendingCheckInRecord(state);
+            if (record == null || state.detailId == null) {
+                showInfo("Ph\u00f2ng \u0111ang ch\u1edd check-in nh\u01b0ng booking kh\u00f4ng c\u00f2n \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 thao t\u00e1c.");
+                return;
+            }
             openCheckInDialog(record, state.detailId, record != null && record.hasMultipleRooms());
             return;
         }
@@ -2745,7 +2981,7 @@ public class CheckInOutGUI extends JFrame {
             return;
         }
         if (RoomStatusKey.CLEANING.equals(state.statusKey)) {
-            confirmCleaningForState(state);
+            showInfo("Lu\u1ed3ng d\u1ecdn ph\u00f2ng kh\u00f4ng thao t\u00e1c tr\u1ef1c ti\u1ebfp tr\u00ean m\u00e0n Check-in/out.");
             return;
         }
         showInfo("Tr\u1ea1ng th\u00e1i ph\u00f2ng n\u00e0y kh\u00f4ng c\u00f3 thao t\u00e1c nhanh.");
@@ -2939,18 +3175,26 @@ public class CheckInOutGUI extends JFrame {
     }
 
     private void openCheckInDialog() {
+        if (selectedRoomBlock != null && RoomStatusKey.WAIT_PAYMENT.equals(selectedRoomBlock.statusKey)) {
+            openPaymentPopupForState(selectedRoomBlock);
+            return;
+        }
         openCheckInDialog(getSelectedRecord(), selectedRoomBlock == null ? null : selectedRoomBlock.detailId, false);
     }
 
     private void openCheckInDialog(StayRecord record, Integer preferredDetailId, boolean allowBulk) {
-        if (record == null) {
+        StayRecord effectiveRecord = record;
+        if (effectiveRecord == null && selectedRoomBlock != null && RoomStatusKey.BOOKED.equals(selectedRoomBlock.statusKey)) {
+            effectiveRecord = resolvePendingCheckInRecord(selectedRoomBlock);
+        }
+        if (effectiveRecord == null) {
             return;
         }
-        if (!record.hasPendingCheckInRooms) {
+        if (!effectiveRecord.hasPendingCheckInRooms) {
             showInfo("\u0110\u01a1n n\u00e0y kh\u00f4ng c\u00f2n ph\u00f2ng n\u00e0o ch\u1edd check-in.");
             return;
         }
-        new CheckInDialog(this, record, preferredDetailId, allowBulk).setVisible(true);
+        new CheckInDialog(this, effectiveRecord, preferredDetailId, allowBulk).setVisible(true);
     }
 
     private void openAddServiceDialog() {
@@ -3623,7 +3867,7 @@ public class CheckInOutGUI extends JFrame {
                             "CCCD/Passport", "H\u1ecd t\u00ean KH", "S\u0110T", "Ng\u00e0y sinh", "Email", "\u0110\u1ecba ch\u1ec9", "Ghi ch\u00fa"}, 0) {
                 @Override
                 public boolean isCellEditable(int row, int column) {
-                    return column >= COL_CCCD;
+                    return false;
                 }
             };
             tblRooms = new JTable(roomTableModel);
@@ -3631,9 +3875,9 @@ public class CheckInOutGUI extends JFrame {
             tblRooms.setRowHeight(28);
             tblRooms.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
             configureRoomTableColumns();
-            registerCustomerAutoFillListener();
             registerScheduleFieldListeners();
             registerRoomSelectionListener();
+            registerRoomDoubleClickHandler();
             refillRoomTable();
             loadSelectedRoomScheduleIntoEditor();
 
@@ -3655,7 +3899,14 @@ public class CheckInOutGUI extends JFrame {
             lblRoomHint.setForeground(TEXT_MUTED);
             roomHeader.add(lblRoomHint);
             roomPanel.add(roomHeader, BorderLayout.NORTH);
-            roomPanel.add(new JScrollPane(tblRooms), BorderLayout.CENTER);
+            JScrollPane roomScrollPane = new JScrollPane(
+                    tblRooms,
+                    JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                    JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            );
+            roomScrollPane.getHorizontalScrollBar().setUnitIncrement(16);
+            roomScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+            roomPanel.add(roomScrollPane, BorderLayout.CENTER);
             card.add(roomPanel, BorderLayout.CENTER);
 
             content.add(card, BorderLayout.CENTER);
@@ -3664,7 +3915,7 @@ public class CheckInOutGUI extends JFrame {
                     allowBulkActions ? "Check-in ph\u00f2ng \u0111\u00e3 ch\u1ecdn" : "Check-in",
                     new Color(22, 163, 74),
                     Color.WHITE,
-                    e -> submit(false)
+                    e -> handleSelectedRoomCheckIn()
             );
             JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
             if (allowBulkActions) {
@@ -3723,6 +3974,37 @@ public class CheckInOutGUI extends JFrame {
                 }
                 loadSelectedRoomScheduleIntoEditor();
             });
+        }
+
+        private void registerRoomDoubleClickHandler() {
+            tblRooms.addMouseListener(new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent e) {
+                    if (e.getClickCount() < 2) {
+                        return;
+                    }
+                    int row = tblRooms.rowAtPoint(e.getPoint());
+                    if (row < 0 || row >= bookingItems.size()) {
+                        return;
+                    }
+                    tblRooms.setRowSelectionInterval(row, row);
+                    handleRoomDoubleClick(row);
+                }
+            });
+        }
+
+        private void handleRoomDoubleClick(int row) {
+            if (row < 0 || row >= bookingItems.size()) {
+                return;
+            }
+            CheckInOutDAO.CheckInBookingItem item = bookingItems.get(row);
+            if (!item.canCheckIn()) {
+                return;
+            }
+            if (!openRepresentativeGuestDialog(row, item)) {
+                return;
+            }
+            submit(false);
         }
 
         private void registerScheduleFieldListeners() {
@@ -3924,6 +4206,28 @@ public class CheckInOutGUI extends JFrame {
             return ngaySinh == null ? safeValue(khachHang.getNgaySinh(), "") : formatDate(ngaySinh);
         }
 
+        private void applyCustomerToRow(int row, KhachHang khachHang) {
+            if (row < 0 || row >= roomTableModel.getRowCount() || khachHang == null) {
+                return;
+            }
+            updatingCustomerCells = true;
+            try {
+                roomTableModel.setValueAt(safeValue(khachHang.getCccdPassport(), ""), row, COL_CCCD);
+                roomTableModel.setValueAt(safeValue(khachHang.getHoTen(), ""), row, COL_HO_TEN);
+                roomTableModel.setValueAt(safeValue(khachHang.getSoDienThoai(), ""), row, COL_SDT);
+                roomTableModel.setValueAt(formatCustomerBirthDateValue(khachHang.getNgaySinhAsLocalDate(), khachHang.getNgaySinh()), row, COL_NGAY_SINH);
+                roomTableModel.setValueAt(safeValue(khachHang.getEmail(), ""), row, COL_EMAIL);
+                roomTableModel.setValueAt(safeValue(khachHang.getDiaChi(), ""), row, COL_DIA_CHI);
+                roomTableModel.setValueAt(safeValue(khachHang.getGhiChu(), ""), row, COL_GHI_CHU);
+            } finally {
+                updatingCustomerCells = false;
+            }
+        }
+
+        private String formatCustomerBirthDateValue(LocalDate ngaySinh, String rawValue) {
+            return ngaySinh == null ? safeValue(rawValue, "") : DATE_FORMAT.format(ngaySinh);
+        }
+
         private void selectFirstPendingRoom() {
             if (preferredDetailId != null) {
                 for (int i = 0; i < bookingItems.size(); i++) {
@@ -3964,6 +4268,87 @@ public class CheckInOutGUI extends JFrame {
                 targets.add(selected);
             }
             return targets;
+        }
+
+        private void handleSelectedRoomCheckIn() {
+            if (tblRooms.isEditing() && tblRooms.getCellEditor() != null) {
+                tblRooms.getCellEditor().stopCellEditing();
+            }
+
+            List<CheckInOutDAO.CheckInBookingItem> targets = resolveTargets(false);
+            if (targets.isEmpty()) {
+                showInfo("Vui l\u00f2ng ch\u1ecdn ph\u00f2ng \u0111\u00e3 \u0111\u01b0\u1ee3c g\u00e1n \u0111\u1ec3 check-in.");
+                return;
+            }
+
+            int row = tblRooms.getSelectedRow();
+            if (row < 0 || row >= bookingItems.size()) {
+                showInfo("Vui l\u00f2ng ch\u1ecdn m\u1ed9t d\u00f2ng ph\u00f2ng h\u1ee3p l\u1ec7 \u0111\u1ec3 check-in.");
+                return;
+            }
+
+            if (isRepresentativeRowReady(row)) {
+                submit(false);
+                return;
+            }
+            if (!openRepresentativeGuestDialog(row, targets.get(0))) {
+                return;
+            }
+            submit(false);
+        }
+
+        private boolean openRepresentativeGuestDialog(int row, CheckInOutDAO.CheckInBookingItem item) {
+            if (row < 0 || row >= bookingItems.size() || item == null) {
+                return false;
+            }
+            focusRoomRow(row, COL_HO_TEN);
+            RepresentativeGuestDialog dialog = new RepresentativeGuestDialog(
+                    (Frame) CheckInDialog.this.getOwner(),
+                    row,
+                    item
+            );
+            dialog.setVisible(true);
+            return dialog.isConfirmed();
+        }
+
+        private boolean ensureRepresentativeGuestsReady(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            if (targets == null || targets.isEmpty()) {
+                return true;
+            }
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                int row = bookingItems.indexOf(item);
+                if (row < 0 || row >= roomTableModel.getRowCount()) {
+                    continue;
+                }
+                if (isRepresentativeRowReady(row)) {
+                    continue;
+                }
+                if (!openRepresentativeGuestDialog(row, item) || !isRepresentativeRowReady(row)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean isRepresentativeRowReady(int row) {
+            if (row < 0 || row >= roomTableModel.getRowCount()) {
+                return false;
+            }
+            String hoTen = valueOf(roomTableModel.getValueAt(row, COL_HO_TEN)).trim();
+            String cccdPassport = valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim();
+            String ngaySinh = valueOf(roomTableModel.getValueAt(row, COL_NGAY_SINH)).trim();
+            if (hoTen.isEmpty() || cccdPassport.isEmpty()) {
+                return false;
+            }
+            return ngaySinh.isEmpty() || parseCustomerBirthDate(ngaySinh) != null;
+        }
+
+        private void focusRoomRow(int row, int column) {
+            if (row < 0 || row >= roomTableModel.getRowCount()) {
+                return;
+            }
+            tblRooms.setRowSelectionInterval(row, row);
+            tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, Math.max(0, column), true));
         }
 
         private Map<Integer, KhachHang> buildCustomerInputs(List<CheckInOutDAO.CheckInBookingItem> targets) {
@@ -4149,7 +4534,13 @@ public class CheckInOutGUI extends JFrame {
             if (!validateTargetSchedules(targets)) {
                 return;
             }
+            if (!ensureRepresentativeGuestsReady(targets)) {
+                return;
+            }
             if (!validateRequiredCustomerInfo(targets)) {
+                return;
+            }
+            if (!validateDistinctRepresentativePassport(targets)) {
                 return;
             }
 
@@ -4191,21 +4582,405 @@ public class CheckInOutGUI extends JFrame {
 
                 String cccdPassport = valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim();
                 String hoTen = valueOf(roomTableModel.getValueAt(row, COL_HO_TEN)).trim();
-                if (cccdPassport.isEmpty()) {
-                    continue;
+                String ngaySinh = valueOf(roomTableModel.getValueAt(row, COL_NGAY_SINH)).trim();
+                if (cccdPassport.isEmpty() || hoTen.isEmpty()) {
+                    tblRooms.setRowSelectionInterval(row, row);
+                    tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, COL_CCCD, true));
+                    showInfo("Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7 H\u1ecd t\u00ean v\u00e0 CCCD/Passport cho kh\u00e1ch \u0111\u1ea1i di\u1ec7n c\u1ee7a ph\u00f2ng "
+                            + safeValue(item.getSoPhong(), "-") + " tr\u01b0\u1edbc khi check-in.");
+                    return false;
                 }
-                if (!hoTen.isEmpty()) {
-                    continue;
+                if (!ngaySinh.isEmpty() && parseCustomerBirthDate(ngaySinh) == null) {
+                    tblRooms.setRowSelectionInterval(row, row);
+                    tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, COL_NGAY_SINH, true));
+                    showInfo("Ng\u00e0y sinh c\u1ee7a kh\u00e1ch \u0111\u1ea1i di\u1ec7n ph\u00f2ng "
+                            + safeValue(item.getSoPhong(), "-") + " kh\u00f4ng h\u1ee3p l\u1ec7.");
+                    return false;
                 }
-
-                tblRooms.setRowSelectionInterval(row, row);
-                tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, COL_CCCD, true));
-                showInfo("Ph\u00f2ng " + safeValue(item.getSoPhong(), "-")
-                        + " \u0111\u00e3 nh\u1eadp CCCD/Passport nh\u01b0ng ch\u01b0a c\u00f3 H\u1ecd t\u00ean. "
-                        + "Vui l\u00f2ng b\u1ed5 sung H\u1ecd t\u00ean n\u1ebfu mu\u1ed1n l\u01b0u kh\u00e1ch \u0111\u1ea1i di\u1ec7n.");
-                return false;
             }
             return true;
+        }
+
+        private boolean validateDistinctRepresentativePassport(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            PassportConflict conflict = findPassportConflict(targets, null, null);
+            if (conflict == null) {
+                return true;
+            }
+            focusConflictRow(conflict.conflictedRow);
+            showInfo("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng nhập khách hàng khác.");
+            return false;
+        }
+
+        private PassportConflict findPassportConflict(List<CheckInOutDAO.CheckInBookingItem> targets,
+                                                      Integer previewRow,
+                                                      String previewPassport) {
+            Set<CheckInOutDAO.CheckInBookingItem> targetSet = new LinkedHashSet<CheckInOutDAO.CheckInBookingItem>();
+            if (targets != null) {
+                targetSet.addAll(targets);
+            }
+            Map<String, PassportOwner> usedPassports = new LinkedHashMap<String, PassportOwner>();
+            for (int row = 0; row < bookingItems.size(); row++) {
+                CheckInOutDAO.CheckInBookingItem item = bookingItems.get(row);
+                String passport = row == (previewRow == null ? -1 : previewRow.intValue())
+                        ? safeValue(previewPassport, "").trim()
+                        : valueOf(roomTableModel.getValueAt(row, COL_CCCD)).trim();
+                if (passport.isEmpty()) {
+                    continue;
+                }
+                if (!targetSet.contains(item) && item.canCheckIn()) {
+                    String hoTen = valueOf(roomTableModel.getValueAt(row, COL_HO_TEN)).trim();
+                    if (hoTen.isEmpty()) {
+                        continue;
+                    }
+                }
+
+                String key = normalizePassportKey(passport);
+                PassportOwner existing = usedPassports.get(key);
+                String roomCode = safeValue(item.getSoPhong(), "-");
+                if (existing != null && existing.row != row) {
+                    return new PassportConflict(existing.row, row, existing.roomCode, roomCode);
+                }
+                usedPassports.put(key, new PassportOwner(row, roomCode));
+            }
+            return null;
+        }
+
+        private String normalizePassportKey(String passport) {
+            return passport == null ? "" : passport.trim().toUpperCase(Locale.ROOT);
+        }
+
+        private void focusConflictRow(int row) {
+            if (row < 0 || row >= roomTableModel.getRowCount()) {
+                return;
+            }
+            tblRooms.setRowSelectionInterval(row, row);
+            tblRooms.scrollRectToVisible(tblRooms.getCellRect(row, COL_CCCD, true));
+        }
+
+        private LocalDate parseCustomerBirthDate(String value) {
+            String trimmed = value == null ? "" : value.trim();
+            if (trimmed.isEmpty()) {
+                return null;
+            }
+            try {
+                return LocalDate.parse(trimmed, DATE_FORMAT);
+            } catch (Exception ignored) {
+            }
+            try {
+                return LocalDate.parse(trimmed);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+
+        private final class RepresentativeGuestDialog extends BaseStayDialog {
+            private final int rowIndex;
+            private final CheckInOutDAO.CheckInBookingItem bookingItem;
+            private final JTextField txtHoTen;
+            private final JTextField txtCccdPassport;
+            private final JTextField txtSoDienThoai;
+            private final AppDatePickerField txtNgaySinh;
+            private final JTextField txtEmail;
+            private final JTextField txtDiaChi;
+            private final JTextField txtGhiChu;
+            private boolean confirmed;
+            private boolean updatingFormFields;
+            private String lastLookupPassportKey = "";
+            private RepresentativeCustomerSnapshot lastResolvedCustomerSnapshot;
+
+            private RepresentativeGuestDialog(Frame owner, int rowIndex, CheckInOutDAO.CheckInBookingItem bookingItem) {
+                super(owner, "Kh\u00e1ch \u0111\u1ea1i di\u1ec7n check-in", 720, 520);
+                this.rowIndex = rowIndex;
+                this.bookingItem = bookingItem;
+                txtHoTen = createInputField(valueOf(roomTableModel.getValueAt(rowIndex, COL_HO_TEN)).trim());
+                txtCccdPassport = createInputField(valueOf(roomTableModel.getValueAt(rowIndex, COL_CCCD)).trim());
+                txtSoDienThoai = createInputField(valueOf(roomTableModel.getValueAt(rowIndex, COL_SDT)).trim());
+                txtNgaySinh = new AppDatePickerField(valueOf(roomTableModel.getValueAt(rowIndex, COL_NGAY_SINH)).trim(), false);
+                txtEmail = createInputField(valueOf(roomTableModel.getValueAt(rowIndex, COL_EMAIL)).trim());
+                txtDiaChi = createInputField(valueOf(roomTableModel.getValueAt(rowIndex, COL_DIA_CHI)).trim());
+                txtGhiChu = createInputField(valueOf(roomTableModel.getValueAt(rowIndex, COL_GHI_CHU)).trim());
+                lastResolvedCustomerSnapshot = captureCurrentCustomerSnapshot();
+
+                JPanel content = new JPanel(new BorderLayout(0, 12));
+                content.setOpaque(false);
+                content.add(buildDialogHeader(
+                        "KH\u00c1CH \u0110\u1ea0I DI\u1ec6N",
+                        "Nh\u1eadp ho\u1eb7c x\u00e1c nh\u1eadn th\u00f4ng tin kh\u00e1ch \u0111\u1ea1i di\u1ec7n cho ph\u00f2ng "
+                                + safeValue(bookingItem.getSoPhong(), "-") + " tr\u01b0\u1edbc khi check-in."
+                ), BorderLayout.NORTH);
+
+                JPanel form = createDialogFormPanel();
+                GridBagConstraints gbc = new GridBagConstraints();
+                gbc.insets = new Insets(6, 0, 6, 12);
+                gbc.anchor = GridBagConstraints.WEST;
+
+                addFormRow(form, gbc, 0, "M\u00e3 \u0111\u1eb7t ph\u00f2ng", createValueLabel("DP" + record.maDatPhong));
+                addFormRow(form, gbc, 1, "Ph\u00f2ng", createValueLabel(safeValue(bookingItem.getSoPhong(), "-")));
+                addFormRow(form, gbc, 2, "H\u1ecd t\u00ean kh\u00e1ch h\u00e0ng", txtHoTen);
+                addFormRow(form, gbc, 3, "CCCD/Passport", txtCccdPassport);
+                addFormRow(form, gbc, 4, "S\u1ed1 \u0111i\u1ec7n tho\u1ea1i", txtSoDienThoai);
+                addFormRow(form, gbc, 5, "Ng\u00e0y sinh", txtNgaySinh);
+                addFormRow(form, gbc, 6, "Email", txtEmail);
+                addFormRow(form, gbc, 7, "\u0110\u1ecba ch\u1ec9", txtDiaChi);
+                addFormRow(form, gbc, 8, "Ghi ch\u00fa", txtGhiChu);
+
+                JPanel card = createDialogCardPanel();
+                card.add(form, BorderLayout.CENTER);
+                content.add(card, BorderLayout.CENTER);
+
+                JButton btnConfirm = createPrimaryButton(
+                        "X\u00e1c nh\u1eadn check-in",
+                        new Color(22, 163, 74),
+                        Color.WHITE,
+                        e -> submitRepresentative()
+                );
+                JButton btnCancel = createOutlineButton("H\u1ee7y", new Color(107, 114, 128), e -> dispose());
+                content.add(buildDialogButtons(btnCancel, btnConfirm), BorderLayout.SOUTH);
+                add(content, BorderLayout.CENTER);
+                registerPassportAutoFillListener();
+            }
+
+            private void registerPassportAutoFillListener() {
+                txtCccdPassport.getDocument().addDocumentListener(new DocumentListener() {
+                    @Override
+                    public void insertUpdate(DocumentEvent e) {
+                        handlePassportInputChanged();
+                    }
+
+                    @Override
+                    public void removeUpdate(DocumentEvent e) {
+                        handlePassportInputChanged();
+                    }
+
+                    @Override
+                    public void changedUpdate(DocumentEvent e) {
+                        handlePassportInputChanged();
+                    }
+                });
+            }
+
+            private void handlePassportInputChanged() {
+                if (updatingFormFields) {
+                    return;
+                }
+
+                String cccdPassport = txtCccdPassport.getText() == null ? "" : txtCccdPassport.getText().trim();
+                if (!isPassportLookupReady(cccdPassport)) {
+                    clearResolvedCustomerFieldsIfNeeded();
+                    lastLookupPassportKey = "";
+                    return;
+                }
+
+                String normalizedPassport = normalizePassportKey(cccdPassport);
+                if (normalizedPassport.equals(lastLookupPassportKey)) {
+                    return;
+                }
+
+                KhachHang khachHang = checkInOutDAO.findCustomerByCccdPassport(cccdPassport);
+                lastLookupPassportKey = normalizedPassport;
+                if (khachHang == null) {
+                    clearResolvedCustomerFieldsIfNeeded();
+                    return;
+                }
+                applyCustomerToForm(khachHang);
+            }
+
+            private boolean isPassportLookupReady(String value) {
+                String trimmed = value == null ? "" : value.trim();
+                if (trimmed.isEmpty() || !isCustomerPassportValueValid(trimmed)) {
+                    return false;
+                }
+                return !isDigitsOnly(trimmed) || trimmed.length() == 12;
+            }
+
+            private boolean isCustomerPassportValueValid(String value) {
+                if (value == null) {
+                    return false;
+                }
+                String trimmed = value.trim();
+                return trimmed.length() >= 8 && trimmed.length() <= 20;
+            }
+
+            private boolean isDigitsOnly(String value) {
+                if (value == null || value.isEmpty()) {
+                    return false;
+                }
+                for (int i = 0; i < value.length(); i++) {
+                    if (!Character.isDigit(value.charAt(i))) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            private void applyCustomerToForm(KhachHang khachHang) {
+                updatingFormFields = true;
+                try {
+                    txtCccdPassport.setText(safeValue(khachHang.getCccdPassport(), ""));
+                    txtHoTen.setText(safeValue(khachHang.getHoTen(), ""));
+                    txtSoDienThoai.setText(safeValue(khachHang.getSoDienThoai(), ""));
+                    LocalDate ngaySinh = khachHang.getNgaySinhAsLocalDate();
+                    if (ngaySinh != null) {
+                        txtNgaySinh.setDateValue(ngaySinh);
+                    } else {
+                        txtNgaySinh.setText(safeValue(khachHang.getNgaySinh(), ""));
+                    }
+                    txtEmail.setText(safeValue(khachHang.getEmail(), ""));
+                    txtDiaChi.setText(safeValue(khachHang.getDiaChi(), ""));
+                    txtGhiChu.setText(safeValue(khachHang.getGhiChu(), ""));
+                } finally {
+                    updatingFormFields = false;
+                }
+                lastResolvedCustomerSnapshot = captureCurrentCustomerSnapshot();
+            }
+
+            private void clearResolvedCustomerFieldsIfNeeded() {
+                if (lastResolvedCustomerSnapshot == null) {
+                    return;
+                }
+
+                updatingFormFields = true;
+                try {
+                    clearTextFieldIfUnchanged(txtHoTen, lastResolvedCustomerSnapshot.hoTen);
+                    clearTextFieldIfUnchanged(txtSoDienThoai, lastResolvedCustomerSnapshot.soDienThoai);
+                    clearDateFieldIfUnchanged(txtNgaySinh, lastResolvedCustomerSnapshot.ngaySinh);
+                    clearTextFieldIfUnchanged(txtEmail, lastResolvedCustomerSnapshot.email);
+                    clearTextFieldIfUnchanged(txtDiaChi, lastResolvedCustomerSnapshot.diaChi);
+                    clearTextFieldIfUnchanged(txtGhiChu, lastResolvedCustomerSnapshot.ghiChu);
+                } finally {
+                    updatingFormFields = false;
+                    lastResolvedCustomerSnapshot = null;
+                }
+            }
+
+            private void clearTextFieldIfUnchanged(JTextField field, String expectedValue) {
+                if (field == null) {
+                    return;
+                }
+                String currentValue = field.getText() == null ? "" : field.getText().trim();
+                if (currentValue.equals(safeValue(expectedValue, ""))) {
+                    field.setText("");
+                }
+            }
+
+            private void clearDateFieldIfUnchanged(AppDatePickerField field, String expectedValue) {
+                if (field == null) {
+                    return;
+                }
+                String currentValue = field.getText() == null ? "" : field.getText().trim();
+                if (currentValue.equals(safeValue(expectedValue, ""))) {
+                    field.setDateValue(null);
+                }
+            }
+
+            private RepresentativeCustomerSnapshot captureCurrentCustomerSnapshot() {
+                return new RepresentativeCustomerSnapshot(
+                        textOf(txtHoTen),
+                        textOf(txtSoDienThoai),
+                        textOf(txtNgaySinh),
+                        textOf(txtEmail),
+                        textOf(txtDiaChi),
+                        textOf(txtGhiChu)
+                );
+            }
+
+            private String textOf(JTextField field) {
+                return field == null || field.getText() == null ? "" : field.getText().trim();
+            }
+
+            private String textOf(AppDatePickerField field) {
+                return field == null || field.getText() == null ? "" : field.getText().trim();
+            }
+
+            private void submitRepresentative() {
+                String hoTen = txtHoTen.getText().trim();
+                String cccdPassport = txtCccdPassport.getText().trim();
+                String ngaySinh = txtNgaySinh.getText().trim();
+                LocalDate parsedNgaySinh = txtNgaySinh.getDateValue();
+                if (hoTen.isEmpty()) {
+                    showInfo("Vui l\u00f2ng nh\u1eadp H\u1ecd t\u00ean kh\u00e1ch h\u00e0ng \u0111\u1ea1i di\u1ec7n.");
+                    return;
+                }
+                if (cccdPassport.isEmpty()) {
+                    showInfo("Vui l\u00f2ng nh\u1eadp CCCD/Passport cho kh\u00e1ch \u0111\u1ea1i di\u1ec7n.");
+                    return;
+                }
+                if (!ngaySinh.isEmpty() && parsedNgaySinh == null) {
+                    showInfo("Ng\u00e0y sinh kh\u00e1ch h\u00e0ng kh\u00f4ng h\u1ee3p l\u1ec7.");
+                    return;
+                }
+                PassportConflict conflict = findPassportConflict(
+                        java.util.Collections.singletonList(bookingItem),
+                        Integer.valueOf(rowIndex),
+                        cccdPassport
+                );
+                if (conflict != null) {
+                    showInfo("CCCD/Passport n\u00e0y \u0111\u00e3 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng cho ph\u00f2ng kh\u00e1c trong c\u00f9ng \u0111\u01a1n. "
+                            + "Vui l\u00f2ng nh\u1eadp kh\u00e1ch h\u00e0ng kh\u00e1c.");
+                    return;
+                }
+
+                KhachHang representative = new KhachHang();
+                representative.setHoTen(hoTen);
+                representative.setCccdPassport(cccdPassport);
+                representative.setSoDienThoai(txtSoDienThoai.getText().trim());
+                representative.setNgaySinh(parsedNgaySinh == null ? ngaySinh : DATE_FORMAT.format(parsedNgaySinh));
+                representative.setEmail(txtEmail.getText().trim());
+                representative.setDiaChi(txtDiaChi.getText().trim());
+                representative.setGhiChu(txtGhiChu.getText().trim());
+                applyCustomerToRow(rowIndex, representative);
+                confirmed = true;
+                dispose();
+            }
+
+            private boolean isConfirmed() {
+                return confirmed;
+            }
+
+            private final class RepresentativeCustomerSnapshot {
+                private final String hoTen;
+                private final String soDienThoai;
+                private final String ngaySinh;
+                private final String email;
+                private final String diaChi;
+                private final String ghiChu;
+
+                private RepresentativeCustomerSnapshot(String hoTen,
+                                                      String soDienThoai,
+                                                      String ngaySinh,
+                                                      String email,
+                                                      String diaChi,
+                                                      String ghiChu) {
+                    this.hoTen = safeValue(hoTen, "");
+                    this.soDienThoai = safeValue(soDienThoai, "");
+                    this.ngaySinh = safeValue(ngaySinh, "");
+                    this.email = safeValue(email, "");
+                    this.diaChi = safeValue(diaChi, "");
+                    this.ghiChu = safeValue(ghiChu, "");
+                }
+            }
+        }
+
+        private final class PassportOwner {
+            private final int row;
+            private final String roomCode;
+
+            private PassportOwner(int row, String roomCode) {
+                this.row = row;
+                this.roomCode = roomCode;
+            }
+        }
+
+        private final class PassportConflict {
+            private final int conflictedRow;
+            private final String firstRoomCode;
+            private final String secondRoomCode;
+
+            private PassportConflict(int firstRow, int conflictedRow, String firstRoomCode, String secondRoomCode) {
+                this.conflictedRow = conflictedRow;
+                this.firstRoomCode = firstRoomCode;
+                this.secondRoomCode = secondRoomCode;
+            }
         }
     }
 
@@ -5617,12 +6392,13 @@ public class CheckInOutGUI extends JFrame {
                 } else {
                     ThanhToanGUI.refreshAllOpenInstances();
                 }
-                showInfo((checkOutAll
-                        ? "\u0110\u00e3 check-out c\u00e1c ph\u00f2ng c\u00f2n \u0111ang \u1edf trong \u0111\u01a1n."
-                        : "\u0110\u00e3 check-out ph\u00f2ng \u0111\u00e3 ch\u1ecdn.")
-                        + (focusInvoiceId != null || bookingFinished
-                        ? " C\u00e1c ph\u00f2ng v\u1eeba tr\u1ea3 \u0111ang chuy\u1ec3n sang Ch\u1edd thanh to\u00e1n ngay tr\u00ean s\u01a1 \u0111\u1ed3."
-                        : " C\u00e1c ph\u00f2ng c\u00f2n l\u1ea1i v\u1eabn gi\u1eef tr\u1ea1ng th\u00e1i hi\u1ec7n t\u1ea1i."));
+                String successMessage = checkOutAll
+                        ? "\u0110\u00e3 check-out c\u00e1c ph\u00f2ng c\u00f2n \u0111ang \u1edf trong \u0111\u01a1n. C\u00e1c ph\u00f2ng v\u1eeba tr\u1ea3 \u0111\u00e3 chuy\u1ec3n sang S\u1eb5n s\u00e0ng ngay tr\u00ean s\u01a1 \u0111\u1ed3."
+                        : "\u0110\u00e3 check-out ph\u00f2ng \u0111\u00e3 ch\u1ecdn. Ph\u00f2ng v\u1eeba tr\u1ea3 \u0111\u00e3 chuy\u1ec3n sang S\u1eb5n s\u00e0ng ngay tr\u00ean s\u01a1 \u0111\u1ed3.";
+                if (focusInvoiceId != null || bookingFinished) {
+                    successMessage += " H\u00f3a \u0111\u01a1n \u0111\u01b0\u1ee3c c\u1eadp nh\u1eadt \u1edf m\u00e0n Thanh to\u00e1n.";
+                }
+                showInfo(successMessage);
                 dispose();
             } catch (Exception e) {
                 try {
@@ -5835,9 +6611,7 @@ public class CheckInOutGUI extends JFrame {
         int affected = 0;
         List<Integer> roomIds = new ArrayList<Integer>();
         try (PreparedStatement updateStay = con.prepareStatement(
-                     "UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ? AND checkOut IS NULL");
-             PreparedStatement markWaitPayment = con.prepareStatement(
-                     "UPDATE Phong SET trangThai = N'Ch\u1edd thanh to\u00e1n' WHERE maPhong = ? AND ISNULL(trangThai, N'') <> N'B\u1ea3o tr\u00ec'")) {
+                     "UPDATE LuuTru SET checkOut = ? WHERE maLuuTru = ? AND checkOut IS NULL")) {
             for (CheckoutStayItem item : items) {
                 LocalDateTime checkOut = item.editedActualCheckOut == null ? fallbackNow : item.editedActualCheckOut;
                 updateStay.setTimestamp(1, Timestamp.valueOf(checkOut));
@@ -5846,8 +6620,6 @@ public class CheckInOutGUI extends JFrame {
                 if (updated > 0) {
                     affected += updated;
                     roomIds.add(Integer.valueOf(item.maPhong));
-                    markWaitPayment.setInt(1, item.maPhong);
-                    markWaitPayment.executeUpdate();
                 }
             }
         }

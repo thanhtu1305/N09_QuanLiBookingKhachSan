@@ -21,9 +21,12 @@ import gui.TienNghiGUI;
 import gui.common.AccountPermissionHelper;
 import gui.common.AppFrame;
 
+import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import java.awt.Component;
+import java.awt.Window;
 import java.util.EnumMap;
 import java.util.Map;
 
@@ -118,7 +121,21 @@ public final class NavigationUtil {
                     return;
                 }
                 String title = "Hotel PMS - " + SCREEN_TITLES.getOrDefault(targetScreen, targetScreen.name());
-                AppFrame.get().swapTo(targetScreen.name(), panel, title);
+                JFrame standaloneFrame = resolveStandaloneFrame(currentFrame);
+                AppFrame appFrame = AppFrame.getIfCreated();
+                if (appFrame != null && (appFrame.isShowing() || standaloneFrame == null)) {
+                    AppFrame targetFrame = appFrame == null ? AppFrame.get() : appFrame;
+                    targetFrame.swapTo(targetScreen.name(), panel, title);
+                    return;
+                }
+                if (standaloneFrame == null) {
+                    AppFrame.get().swapTo(targetScreen.name(), panel, title);
+                    return;
+                }
+                standaloneFrame.setContentPane(panel);
+                standaloneFrame.setTitle(title);
+                standaloneFrame.revalidate();
+                standaloneFrame.repaint();
             }
         });
     }
@@ -178,5 +195,22 @@ public final class NavigationUtil {
 
     private static String safe(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private static JFrame resolveStandaloneFrame(Object currentFrame) {
+        if (currentFrame instanceof AppFrame) {
+            return null;
+        }
+        if (currentFrame instanceof JFrame) {
+            JFrame frame = (JFrame) currentFrame;
+            return frame.isDisplayable() ? frame : null;
+        }
+        if (currentFrame instanceof Component) {
+            Window window = SwingUtilities.getWindowAncestor((Component) currentFrame);
+            if (window instanceof JFrame && !(window instanceof AppFrame) && window.isDisplayable()) {
+                return (JFrame) window;
+            }
+        }
+        return null;
     }
 }

@@ -31,6 +31,10 @@ public class AppFrame extends JFrame {
         return instance;
     }
 
+    public static AppFrame getIfCreated() {
+        return instance;
+    }
+
     /**
      * Swap nội dung màn hình — không tạo/hủy cửa sổ, không nháy.
      */

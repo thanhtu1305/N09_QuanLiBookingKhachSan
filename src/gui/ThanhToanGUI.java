@@ -742,7 +742,7 @@ public class ThanhToanGUI extends JFrame {
     private void openPaymentDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
-            if ("Đã thanh toán".equalsIgnoreCase(invoice.getTrangThai()) || invoice.getConPhaiThu() <= 0.1d) {
+            if ("Đã thanh toán".equalsIgnoreCase(invoice.getTrangThai())) {
                 showWarning("Hóa đơn này đã thanh toán. Bạn chỉ có thể in hóa đơn.");
                 return;
             }
@@ -796,10 +796,8 @@ public class ThanhToanGUI extends JFrame {
                 return;
             }
         }
-        if (!filteredInvoices.isEmpty()) {
-            tblHoaDon.setRowSelectionInterval(0, 0);
-            updateDetailPanel(filteredInvoices.get(0));
-        }
+        tblHoaDon.clearSelection();
+        clearDetailPanel();
     }
 
     private void applyPendingInvoiceSelection() {

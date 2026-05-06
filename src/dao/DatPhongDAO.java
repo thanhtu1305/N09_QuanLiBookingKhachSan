@@ -980,6 +980,9 @@ public class DatPhongDAO {
     }
 
     private boolean hasPendingPaymentForRoom(Connection con, int maPhong) throws SQLException {
+        if (con != null) {
+            return hasUnpaidInvoiceForLatestClosedStay(con, maPhong);
+        }
         String sql = "WITH latestClosedStay AS ("
                 + "    SELECT lt.maChiTietDatPhong, lt.maDatPhong, lt.checkOut, "
                 + "           ROW_NUMBER() OVER (ORDER BY lt.checkOut DESC, lt.maLuuTru DESC) AS rn "
@@ -997,6 +1000,32 @@ public class DatPhongDAO {
                 + "  OR (hdRoom.maHoaDon IS NOT NULL AND ISNULL(hdRoom.trangThai, N'Chờ thanh toán') <> N'Đã thanh toán') "
                 + "  OR (hdBooking.maHoaDon IS NOT NULL AND ISNULL(hdBooking.trangThai, N'Chờ thanh toán') <> N'Đã thanh toán')"
                 + ")";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        }
+    }
+
+    private boolean hasUnpaidInvoiceForLatestClosedStay(Connection con, int maPhong) throws SQLException {
+        String unpaidStatusClause = "ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc')";
+        String sql = "WITH latestClosedStay AS ("
+                + "    SELECT lt.maChiTietDatPhong, lt.maDatPhong, lt.checkOut, "
+                + "           ROW_NUMBER() OVER (ORDER BY lt.checkOut DESC, lt.maLuuTru DESC) AS rn "
+                + "    FROM dbo.LuuTru lt "
+                + "    WHERE lt.maPhong = ? AND lt.checkOut IS NOT NULL"
+                + ") "
+                + "SELECT COUNT(1) "
+                + "FROM latestClosedStay lcs "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM dbo.HoaDon hd "
+                + "             WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong AND " + unpaidStatusClause + " "
+                + "             ORDER BY CASE WHEN ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, hd.maHoaDon DESC) hdRoom "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM dbo.HoaDon hd "
+                + "             WHERE hd.maDatPhong = lcs.maDatPhong AND hd.maChiTietDatPhong IS NULL AND " + unpaidStatusClause + " "
+                + "             ORDER BY CASE WHEN ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, hd.maHoaDon DESC) hdBooking "
+                + "WHERE lcs.rn = 1 "
+                + "AND (hdRoom.maHoaDon IS NOT NULL OR hdBooking.maHoaDon IS NOT NULL)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maPhong);
             try (ResultSet rs = stmt.executeQuery()) {

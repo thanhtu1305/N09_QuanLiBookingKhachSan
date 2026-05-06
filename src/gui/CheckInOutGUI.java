@@ -62,7 +62,6 @@ import java.awt.LayoutManager;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Container;
-import java.lang.reflect.Method;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -385,7 +384,8 @@ public class CheckInOutGUI extends JFrame {
     private JPanel buildRoomDetailColumn() {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
-        wrapper.setMinimumSize(new Dimension(0, 0));
+        wrapper.setMinimumSize(new Dimension(360, 1));
+        wrapper.setPreferredSize(new Dimension(390, 1));
         wrapper.add(buildOperationDetailCard(), BorderLayout.CENTER);
         return wrapper;
     }
@@ -402,6 +402,7 @@ public class CheckInOutGUI extends JFrame {
         content.setOpaque(false);
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(0, 0, 0, 4));
+        content.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         lblDetailBookingCode = createValueLabel();
         lblDetailStayCode = createValueLabel();
@@ -431,6 +432,8 @@ public class CheckInOutGUI extends JFrame {
         lblRelatedRooms.setFont(LABEL_FONT);
         lblRelatedRooms.setForeground(TEXT_MUTED);
         lblRelatedRooms.setBorder(new EmptyBorder(4, 0, 4, 0));
+        lblRelatedRooms.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblRelatedRooms.setMaximumSize(new Dimension(Integer.MAX_VALUE, lblRelatedRooms.getPreferredSize().height));
         detailRelatedRoomsPanel = new JPanel();
         detailRelatedRoomsPanel.setOpaque(false);
         detailRelatedRoomsPanel.setLayout(new BoxLayout(detailRelatedRoomsPanel, BoxLayout.Y_AXIS));
@@ -441,6 +444,8 @@ public class CheckInOutGUI extends JFrame {
         lblNotes.setFont(LABEL_FONT);
         lblNotes.setForeground(TEXT_MUTED);
         lblNotes.setBorder(new EmptyBorder(6, 0, 4, 0));
+        lblNotes.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblNotes.setMaximumSize(new Dimension(Integer.MAX_VALUE, lblNotes.getPreferredSize().height));
 
         txtDetailNotes = new JTextArea(5, 20);
         txtDetailNotes.setEditable(false);
@@ -451,12 +456,16 @@ public class CheckInOutGUI extends JFrame {
         txtDetailNotes.setBackground(PANEL_SOFT);
         txtDetailNotes.setRows(4);
         txtDetailNotes.setBorder(new EmptyBorder(8, 10, 8, 10));
+        txtDetailNotes.setAlignmentX(Component.LEFT_ALIGNMENT);
         txtDetailNotes.setMaximumSize(new Dimension(Integer.MAX_VALUE, 96));
+        txtDetailNotes.setMinimumSize(new Dimension(0, 88));
 
         JLabel lblActions = new JLabel("Thao t\u00e1c nhanh");
         lblActions.setFont(LABEL_FONT);
         lblActions.setForeground(TEXT_MUTED);
         lblActions.setBorder(new EmptyBorder(6, 0, 4, 0));
+        lblActions.setAlignmentX(Component.LEFT_ALIGNMENT);
+        lblActions.setMaximumSize(new Dimension(Integer.MAX_VALUE, lblActions.getPreferredSize().height));
 
         detailActionPanel = new JPanel();
         detailActionPanel.setOpaque(false);
@@ -464,13 +473,10 @@ public class CheckInOutGUI extends JFrame {
         detailActionPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         detailActionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-        lblRelatedRooms.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(lblRelatedRooms);
         content.add(detailRelatedRoomsPanel);
-        lblNotes.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(lblNotes);
         content.add(txtDetailNotes);
-        lblActions.setAlignmentX(Component.LEFT_ALIGNMENT);
         content.add(lblActions);
         content.add(detailActionPanel);
 
@@ -541,14 +547,14 @@ public class CheckInOutGUI extends JFrame {
     private JSplitPane buildCenterContent() {
         JPanel roomMapCard = buildRoomMapCard();
         JPanel detailColumn = buildRoomDetailColumn();
-        roomMapCard.setMinimumSize(new Dimension(650, 1));
-        detailColumn.setMinimumSize(new Dimension(280, 1));
-        detailColumn.setPreferredSize(new Dimension(300, 1));
+        roomMapCard.setMinimumSize(new Dimension(560, 1));
+        detailColumn.setMinimumSize(new Dimension(360, 1));
+        detailColumn.setPreferredSize(new Dimension(390, 1));
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, roomMapCard, detailColumn);
         splitPane.setOpaque(false);
         splitPane.setBorder(null);
-        splitPane.setResizeWeight(0.82);
+        splitPane.setResizeWeight(0.76);
         splitPane.setDividerSize(8);
         splitPane.setContinuousLayout(true);
         return splitPane;
@@ -894,14 +900,18 @@ public class CheckInOutGUI extends JFrame {
         JPanel row = new JPanel(new BorderLayout(12, 0));
         row.setOpaque(false);
         row.setBorder(new EmptyBorder(0, 0, 8, 0));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JLabel lbl = new JLabel(label + ":");
         lbl.setFont(BODY_FONT);
         lbl.setForeground(TEXT_MUTED);
-        lbl.setPreferredSize(new Dimension(150, 20));
+        lbl.setPreferredSize(new Dimension(132, 20));
+        lbl.setMinimumSize(new Dimension(112, 20));
+        value.setToolTipText(value.getText());
 
         row.add(lbl, BorderLayout.WEST);
         row.add(value, BorderLayout.CENTER);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, row.getPreferredSize().height));
         panel.add(row);
     }
 
@@ -1224,6 +1234,7 @@ public class CheckInOutGUI extends JFrame {
     private void loadRoomBlockStates() {
         roomBlocksByCode.clear();
         availableFloors.clear();
+        synchronizeStalePendingPaymentRoomStatuses();
         loadBaseRoomBlocks();
         loadOccupiedRoomBlocks();
         loadPendingPaymentRoomBlocks();
@@ -1306,6 +1317,7 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return;
         }
+        String unpaidStatusClause = "ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc')";
         String sql = "WITH latestClosedStay AS ("
                 + "    SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.checkOut, lt.soNguoi, "
                 + "           ROW_NUMBER() OVER (PARTITION BY lt.maPhong ORDER BY lt.checkOut DESC, lt.maLuuTru DESC) AS rn "
@@ -1314,14 +1326,18 @@ public class CheckInOutGUI extends JFrame {
                 + ") "
                 + "SELECT lcs.maLuuTru, lcs.maChiTietDatPhong, lcs.maDatPhong, lcs.checkIn, lcs.checkOut, "
                 + "       ISNULL(p.soPhong, N'-') AS soPhong, ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(lcs.soNguoi, 0) AS soNguoi, "
-                + "       ISNULL(roomInv.maHoaDon, bookingInv.maHoaDon) AS maHoaDon "
+                + "       COALESCE(roomInv.maHoaDon, bookingInv.maHoaDon) AS maHoaDon "
                 + "FROM latestClosedStay lcs "
                 + "JOIN Phong p ON p.maPhong = lcs.maPhong "
                 + "JOIN DatPhong dp ON dp.maDatPhong = lcs.maDatPhong "
                 + "LEFT JOIN KhachHang kh ON kh.maKhachHang = dp.maKhachHang "
-                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong ORDER BY hd.maHoaDon DESC) roomInv "
-                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd WHERE hd.maDatPhong = lcs.maDatPhong AND hd.maChiTietDatPhong IS NULL ORDER BY hd.maHoaDon DESC) bookingInv "
-                + "WHERE lcs.rn = 1 AND ISNULL(p.trangThai, N'') = N'Ch\u1edd thanh to\u00e1n'";
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd "
+                + "             WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong AND " + unpaidStatusClause + " "
+                + "             ORDER BY CASE WHEN ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, hd.maHoaDon DESC) roomInv "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd "
+                + "             WHERE hd.maDatPhong = lcs.maDatPhong AND hd.maChiTietDatPhong IS NULL AND " + unpaidStatusClause + " "
+                + "             ORDER BY CASE WHEN ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, hd.maHoaDon DESC) bookingInv "
+                + "WHERE lcs.rn = 1 AND COALESCE(roomInv.maHoaDon, bookingInv.maHoaDon) IS NOT NULL";
         try (PreparedStatement ps = con.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
@@ -1344,6 +1360,47 @@ public class CheckInOutGUI extends JFrame {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    private void synchronizeStalePendingPaymentRoomStatuses() {
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return;
+        }
+        String unpaidStatusClause = "ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc')";
+        String sql = "SELECT p.maPhong "
+                + "FROM Phong p "
+                + "OUTER APPLY ("
+                + "    SELECT TOP 1 lt.maChiTietDatPhong, lt.maDatPhong "
+                + "    FROM LuuTru lt "
+                + "    WHERE lt.maPhong = p.maPhong AND lt.checkOut IS NOT NULL "
+                + "    ORDER BY lt.checkOut DESC, lt.maLuuTru DESC"
+                + ") lcs "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd "
+                + "             WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong AND " + unpaidStatusClause + " "
+                + "             ORDER BY hd.maHoaDon DESC) roomInv "
+                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM HoaDon hd "
+                + "             WHERE hd.maDatPhong = lcs.maDatPhong AND hd.maChiTietDatPhong IS NULL AND " + unpaidStatusClause + " "
+                + "             ORDER BY hd.maHoaDon DESC) bookingInv "
+                + "WHERE ISNULL(p.trangThai, N'') = N'Ch\u1edd thanh to\u00e1n' "
+                + "AND roomInv.maHoaDon IS NULL AND bookingInv.maHoaDon IS NULL";
+        List<Integer> staleRoomIds = new ArrayList<Integer>();
+        try (PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                staleRoomIds.add(Integer.valueOf(rs.getInt("maPhong")));
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return;
+        }
+        for (Integer roomId : staleRoomIds) {
+            try {
+                datPhongDAO.refreshRoomStatus(con, roomId.intValue());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -1496,9 +1553,9 @@ public class CheckInOutGUI extends JFrame {
             return;
         }
         if ("Ch\u1edd thanh to\u00e1n".equalsIgnoreCase(rawStatus)) {
-            state.statusKey = RoomStatusKey.WAIT_PAYMENT;
-            state.statusText = "Ch\u1edd thanh to\u00e1n";
-            state.note = "Ph\u00f2ng \u0111\u00e3 check-out v\u00e0 \u0111ang ch\u1edd thanh to\u00e1n.";
+            state.statusKey = RoomStatusKey.CLEANING;
+            state.statusText = "D\u1ecdn ph\u00f2ng";
+            state.note = "Ph\u00f2ng \u0111\u00e3 check-out. H\u1ec7 th\u1ed1ng s\u1ebd ch\u1ec9 hi\u1ec3n th\u1ecb ch\u1edd thanh to\u00e1n khi c\u00f2n h\u00f3a \u0111\u01a1n ch\u01b0a thanh to\u00e1n.";
             return;
         }
         if ("\u0110ang \u1edf".equalsIgnoreCase(rawStatus)) {
@@ -2310,40 +2367,53 @@ public class CheckInOutGUI extends JFrame {
             return;
         }
         StayRecord record = state.bookingId == null ? null : findRecordByBookingId(state.bookingId);
-        lblDetailBookingCode.setText(state.bookingCode == null ? "-" : state.bookingCode);
-        lblDetailStayCode.setText(state.getStayCodeDisplay());
-        lblDetailGuestName.setText(safeValue(state.representativeName, record == null ? "-" : record.khachHang));
-        lblDetailRoomCode.setText(state.roomCode);
-        lblDetailRoomType.setText(safeValue(state.roomType, "-"));
-        lblDetailFloor.setText(safeValue(state.floorName, "-"));
-        lblDetailStatus.setText(safeValue(state.statusText, "-"));
-        lblDetailGuestCount.setText(resolveRoomPeopleDisplay(state));
-        lblDetailCheckIn.setText(formatDateTime(state.checkInTime == null && record != null ? parseDateTimeOrNull(record.gioVao) : state.checkInTime));
-        lblDetailCheckOut.setText(formatDateTime(state.expectedCheckOut == null && record != null ? parseDateTimeOrNull(record.gioRaDuKien) : state.expectedCheckOut));
-        lblDetailNextBooking.setText(buildNextBookingSummary(state));
-        txtDetailNotes.setText(buildOperationNote(state, record));
+        setDetailValue(lblDetailBookingCode, state.bookingCode == null ? "-" : state.bookingCode, 24);
+        setDetailValue(lblDetailStayCode, state.getStayCodeDisplay(), 24);
+        setDetailValue(lblDetailGuestName, safeValue(state.representativeName, record == null ? "-" : record.khachHang), 30);
+        setDetailValue(lblDetailRoomCode, state.roomCode, 24);
+        setDetailValue(lblDetailRoomType, safeValue(state.roomType, "-"), 28);
+        setDetailValue(lblDetailFloor, safeValue(state.floorName, "-"), 24);
+        setDetailValue(lblDetailStatus, safeValue(state.statusText, "-"), 28);
+        setDetailValue(lblDetailGuestCount, resolveRoomPeopleDisplay(state), 26);
+        setDetailValue(lblDetailCheckIn, formatDateTime(state.checkInTime == null && record != null ? parseDateTimeOrNull(record.gioVao) : state.checkInTime), 28);
+        setDetailValue(lblDetailCheckOut, formatDateTime(state.expectedCheckOut == null && record != null ? parseDateTimeOrNull(record.gioRaDuKien) : state.expectedCheckOut), 28);
+        setDetailValue(lblDetailNextBooking, buildNextBookingSummary(state), 36);
+        String detailNotes = buildOperationNote(state, record);
+        txtDetailNotes.setText(detailNotes);
+        txtDetailNotes.setToolTipText(detailNotes);
         txtDetailNotes.setCaretPosition(0);
         rebuildRelatedRoomPanel(state, record);
         rebuildDetailActionPanel(state, record);
+    }
+
+    private void setDetailValue(JLabel label, String value, int maxChars) {
+        if (label == null) {
+            return;
+        }
+        String safeText = safeValue(value, "-");
+        label.setText(truncateText(safeText, maxChars));
+        label.setToolTipText(safeText);
     }
 
     private void clearOperationDetailPanel() {
         if (lblDetailBookingCode == null) {
             return;
         }
-        lblDetailBookingCode.setText("-");
-        lblDetailStayCode.setText("-");
-        lblDetailGuestName.setText("-");
-        lblDetailRoomCode.setText("-");
-        lblDetailRoomType.setText("-");
-        lblDetailFloor.setText("-");
-        lblDetailStatus.setText("-");
-        lblDetailGuestCount.setText("-");
-        lblDetailCheckIn.setText("-");
-        lblDetailCheckOut.setText("-");
-        lblDetailNextBooking.setText("-");
+        setDetailValue(lblDetailBookingCode, "-", 24);
+        setDetailValue(lblDetailStayCode, "-", 24);
+        setDetailValue(lblDetailGuestName, "-", 30);
+        setDetailValue(lblDetailRoomCode, "-", 24);
+        setDetailValue(lblDetailRoomType, "-", 28);
+        setDetailValue(lblDetailFloor, "-", 24);
+        setDetailValue(lblDetailStatus, "-", 28);
+        setDetailValue(lblDetailGuestCount, "-", 26);
+        setDetailValue(lblDetailCheckIn, "-", 28);
+        setDetailValue(lblDetailCheckOut, "-", 28);
+        setDetailValue(lblDetailNextBooking, "-", 36);
         if (txtDetailNotes != null) {
-            txtDetailNotes.setText("Ch\u1ecdn m\u1ed9t block ph\u00f2ng \u0111\u1ec3 xem chi ti\u1ebft v\u00e0 thao t\u00e1c.");
+            String emptyNote = "Ch\u1ecdn m\u1ed9t block ph\u00f2ng \u0111\u1ec3 xem chi ti\u1ebft v\u00e0 thao t\u00e1c.";
+            txtDetailNotes.setText(emptyNote);
+            txtDetailNotes.setToolTipText(emptyNote);
         }
         if (detailRelatedRoomsPanel != null) {
             detailRelatedRoomsPanel.removeAll();
@@ -2429,6 +2499,7 @@ public class CheckInOutGUI extends JFrame {
         JPanel card = new JPanel(new BorderLayout(0, 8));
         card.setOpaque(true);
         card.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.setMinimumSize(new Dimension(0, 0));
         card.setBackground(selected ? new Color(239, 246, 255) : PANEL_SOFT);
         card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(selected ? new Color(59, 130, 246) : BORDER_SOFT, selected ? 2 : 1, true),
@@ -2450,6 +2521,7 @@ public class CheckInOutGUI extends JFrame {
         info.setOpaque(false);
         info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
         info.setAlignmentX(Component.LEFT_ALIGNMENT);
+        info.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
         JPanel top = new JPanel(new BorderLayout(8, 0));
         top.setOpaque(false);
@@ -2513,7 +2585,9 @@ public class CheckInOutGUI extends JFrame {
         button.setMargin(new Insets(6, 10, 6, 10));
         button.setAlignmentX(Component.LEFT_ALIGNMENT);
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
-        button.setPreferredSize(new Dimension(0, 34));
+        button.setMinimumSize(new Dimension(0, 34));
+        button.setPreferredSize(new Dimension(1, 34));
+        button.setToolTipText(label);
         return button;
     }
 
@@ -2621,7 +2695,9 @@ public class CheckInOutGUI extends JFrame {
     private void addDetailActionButton(JButton button) {
         button.setAlignmentX(Component.LEFT_ALIGNMENT);
         button.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        button.setPreferredSize(new Dimension(0, 38));
+        button.setMinimumSize(new Dimension(0, 38));
+        button.setPreferredSize(new Dimension(1, 38));
+        button.setToolTipText(button.getText());
         detailActionPanel.add(button);
         detailActionPanel.add(Box.createVerticalStrut(8));
     }
@@ -2682,27 +2758,12 @@ public class CheckInOutGUI extends JFrame {
         }
         String invoiceId = resolveInvoiceIdForState(state);
         if (invoiceId == null) {
-            showInfo("Ch\u01b0a t\u1ea1o \u0111\u01b0\u1ee3c h\u00f3a \u0111\u01a1n ch\u1edd thanh to\u00e1n cho ph\u00f2ng n\u00e0y.");
+            refreshRoomStatusAfterMissingPaymentInvoice(state);
+            showInfo("Ph\u00f2ng n\u00e0y kh\u00f4ng c\u00f2n h\u00f3a \u0111\u01a1n ch\u1edd thanh to\u00e1n. D\u1eef li\u1ec7u tr\u1ea1ng th\u00e1i ph\u00f2ng s\u1ebd \u0111\u01b0\u1ee3c l\u00e0m m\u1edbi.");
             return;
         }
         ThanhToanGUI.requestInvoiceFocus(invoiceId);
-        ThanhToanGUI paymentGui = new ThanhToanGUI(username, role);
-        paymentGui.setVisible(true);
-        javax.swing.SwingUtilities.invokeLater(() -> {
-            try {
-                Method selectInvoice = ThanhToanGUI.class.getDeclaredMethod("selectInvoice", String.class);
-                selectInvoice.setAccessible(true);
-                selectInvoice.invoke(paymentGui, invoiceId);
-            } catch (Exception ignored) {
-            }
-            try {
-                Method openPaymentDialog = ThanhToanGUI.class.getDeclaredMethod("openPaymentDialog");
-                openPaymentDialog.setAccessible(true);
-                openPaymentDialog.invoke(paymentGui);
-            } catch (Exception reflectionError) {
-                NavigationUtil.navigate(CheckInOutGUI.this, ScreenKey.CHECK_IN_OUT, ScreenKey.THANH_TOAN, username, role);
-            }
-        });
+        NavigationUtil.navigate(CheckInOutGUI.this, ScreenKey.CHECK_IN_OUT, ScreenKey.THANH_TOAN, username, role);
     }
 
     private String resolveInvoiceIdForState(RoomBlockState state) {
@@ -2710,27 +2771,99 @@ public class CheckInOutGUI extends JFrame {
             return null;
         }
         if (state.invoiceId != null && state.invoiceId.intValue() > 0) {
-            return String.valueOf(state.invoiceId);
+            String invoiceId = String.valueOf(state.invoiceId);
+            if (isInvoiceAwaitingPayment(invoiceId)) {
+                return invoiceId;
+            }
         }
         Connection con = ConnectDB.getConnection();
         if (con == null) {
             return null;
         }
-        String sql = "SELECT TOP 1 maHoaDon FROM HoaDon WHERE "
-                + "((maChiTietDatPhong = ? AND ? > 0) OR (maDatPhong = ? AND maChiTietDatPhong IS NULL)) "
-                + "ORDER BY maHoaDon DESC";
+        if (state.detailId != null && state.detailId.intValue() > 0) {
+            String invoiceId = resolveAwaitingInvoiceByDetail(con, state.detailId.intValue());
+            if (invoiceId != null) {
+                return invoiceId;
+            }
+        }
+        return state.bookingId == null || state.bookingId.intValue() <= 0
+                ? null
+                : resolveAwaitingInvoiceByBooking(con, state.bookingId.intValue());
+    }
+
+    private String resolveAwaitingInvoiceByDetail(Connection con, int detailId) {
+        String sql = "SELECT TOP 1 maHoaDon FROM HoaDon "
+                + "WHERE maChiTietDatPhong = ? "
+                + "AND ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc') "
+                + "ORDER BY CASE WHEN ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, maHoaDon DESC";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, state.detailId == null ? 0 : state.detailId.intValue());
-            ps.setInt(2, state.detailId == null ? 0 : state.detailId.intValue());
-            ps.setInt(3, state.bookingId == null ? 0 : state.bookingId.intValue());
+            ps.setInt(1, detailId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? String.valueOf(rs.getInt("maHoaDon")) : null;
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String resolveAwaitingInvoiceByBooking(Connection con, int bookingId) {
+        String sql = "SELECT TOP 1 maHoaDon FROM HoaDon "
+                + "WHERE maDatPhong = ? AND maChiTietDatPhong IS NULL "
+                + "AND ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc') "
+                + "ORDER BY CASE WHEN ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, maHoaDon DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, bookingId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? String.valueOf(rs.getInt("maHoaDon")) : null;
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private boolean isInvoiceAwaitingPayment(String invoiceId) {
+        if (invoiceId == null || invoiceId.trim().isEmpty()) {
+            return false;
+        }
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return false;
+        }
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') AS trangThai FROM HoaDon WHERE maHoaDon = ?")) {
+            ps.setInt(1, Integer.parseInt(invoiceId.trim()));
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return String.valueOf(rs.getInt(1));
+                    String status = safeValue(rs.getString("trangThai"), "Ch\u1edd thanh to\u00e1n");
+                    return !isCompletedInvoiceStatus(status);
                 }
             }
         } catch (Exception ignored) {
         }
-        return null;
+        return false;
+    }
+
+    private boolean isCompletedInvoiceStatus(String status) {
+        String safeStatus = safeValue(status, "");
+        return "\u0110\u00e3 thanh to\u00e1n".equalsIgnoreCase(safeStatus)
+                || "\u0110\u00e3 ho\u00e0n c\u1ecdc".equalsIgnoreCase(safeStatus);
+    }
+
+    private void refreshRoomStatusAfterMissingPaymentInvoice(RoomBlockState state) {
+        if (state == null) {
+            return;
+        }
+        Connection con = ConnectDB.getConnection();
+        if (con != null) {
+            try {
+                datPhongDAO.refreshRoomStatus(con, state.roomId);
+                PhongGUI.refreshAllOpenInstances();
+                DatPhongGUI.refreshAllOpenInstances();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        reloadSampleData(false);
     }
 
     private void confirmCleaningForState(RoomBlockState state) {

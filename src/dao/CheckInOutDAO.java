@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -1065,10 +1066,6 @@ public class CheckInOutDAO {
         if (item == null || rs == null) {
             return;
         }
-        if (item.canCheckIn()) {
-            clearCheckInItemCustomer(item);
-            return;
-        }
         if (rs.getObject("maKhachHangDaiDien") != null) {
             item.setCccdPassport(safeTrim(rs.getString("cccdPassportDaiDien")));
             item.setHoTenKhach(safeTrim(rs.getString("hoTenDaiDien")));
@@ -1211,6 +1208,52 @@ public class CheckInOutDAO {
         return null;
     }
 
+    public boolean saveRepresentativeGuestForBookingDetail(String maDatPhong, int maChiTietDatPhong, KhachHang khachHang) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        Integer bookingId = parseIntOrNull(maDatPhong);
+        if (con == null || bookingId == null || maChiTietDatPhong <= 0) {
+            setLastError(con == null ? "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u." : "Th\u00f4ng tin booking ho\u1eb7c chi ti\u1ebft ph\u00f2ng kh\u00f4ng h\u1ee3p l\u1ec7.");
+            return false;
+        }
+        if (khachHang == null
+                || safeTrim(khachHang.getHoTen()).isEmpty()
+                || safeTrim(khachHang.getCccdPassport()).isEmpty()) {
+            setLastError("Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7 H\u1ecd t\u00ean v\u00e0 CCCD/Passport cho kh\u00e1ch \u0111\u1ea1i di\u1ec7n.");
+            return false;
+        }
+
+        try {
+            con.setAutoCommit(false);
+            ensureRepresentativeGuestSchema(con);
+            if (!belongsToBooking(con, bookingId.intValue(), maChiTietDatPhong)) {
+                con.rollback();
+                setLastError("Ph\u00f2ng \u0111\u01b0\u1ee3c ch\u1ecdn kh\u00f4ng thu\u1ed9c booking hi\u1ec7n t\u1ea1i.");
+                return false;
+            }
+
+            Map<Integer, KhachHang> customerByDetailId = new LinkedHashMap<Integer, KhachHang>();
+            customerByDetailId.put(Integer.valueOf(maChiTietDatPhong), khachHang);
+            List<Integer> targetDetailIds = new ArrayList<Integer>();
+            targetDetailIds.add(Integer.valueOf(maChiTietDatPhong));
+            if (!validateRepresentativeGuestsForBooking(con, bookingId.intValue(), targetDetailIds, customerByDetailId)) {
+                con.rollback();
+                return false;
+            }
+
+            persistRepresentativeGuest(con, maChiTietDatPhong, khachHang);
+            con.commit();
+            return true;
+        } catch (Exception e) {
+            rollbackQuietly(con);
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return false;
+        } finally {
+            resetAutoCommit(con);
+        }
+    }
+
     private boolean validateRepresentativeGuestsForBooking(Connection con,
                                                            int maDatPhong,
                                                            List<Integer> targetDetailIds,
@@ -1266,6 +1309,20 @@ public class CheckInOutDAO {
             }
         }
         return true;
+    }
+
+    private boolean belongsToBooking(Connection con, int maDatPhong, int maChiTietDatPhong) throws SQLException {
+        if (con == null || maDatPhong <= 0 || maChiTietDatPhong <= 0) {
+            return false;
+        }
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT 1 FROM ChiTietDatPhong WHERE maDatPhong = ? AND maChiTietDatPhong = ?")) {
+            stmt.setInt(1, maDatPhong);
+            stmt.setInt(2, maChiTietDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
     }
 
     private Integer findCustomerIdByPassport(Connection con, String cccdPassport) throws SQLException {

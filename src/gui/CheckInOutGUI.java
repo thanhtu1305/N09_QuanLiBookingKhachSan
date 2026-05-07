@@ -4059,10 +4059,7 @@ public class CheckInOutGUI extends JFrame {
             if (!item.canCheckIn()) {
                 return;
             }
-            if (!openRepresentativeGuestDialog(row, item)) {
-                return;
-            }
-            submit(false);
+            openRepresentativeGuestDialog(row, item);
         }
 
         private void registerScheduleFieldListeners() {
@@ -4254,6 +4251,7 @@ public class CheckInOutGUI extends JFrame {
             } finally {
                 updatingCustomerCells = false;
             }
+            syncCustomerToBookingItem(row, khachHang);
         }
 
         private String formatCustomerBirthDate(KhachHang khachHang) {
@@ -4280,6 +4278,21 @@ public class CheckInOutGUI extends JFrame {
             } finally {
                 updatingCustomerCells = false;
             }
+            syncCustomerToBookingItem(row, khachHang);
+        }
+
+        private void syncCustomerToBookingItem(int row, KhachHang khachHang) {
+            if (row < 0 || row >= bookingItems.size() || khachHang == null) {
+                return;
+            }
+            CheckInOutDAO.CheckInBookingItem item = bookingItems.get(row);
+            item.setCccdPassport(safeValue(khachHang.getCccdPassport(), ""));
+            item.setHoTenKhach(safeValue(khachHang.getHoTen(), ""));
+            item.setSoDienThoai(safeValue(khachHang.getSoDienThoai(), ""));
+            item.setNgaySinh(formatCustomerBirthDateValue(khachHang.getNgaySinhAsLocalDate(), khachHang.getNgaySinh()));
+            item.setEmail(safeValue(khachHang.getEmail(), ""));
+            item.setDiaChi(safeValue(khachHang.getDiaChi(), ""));
+            item.setGhiChu(safeValue(khachHang.getGhiChu(), ""));
         }
 
         private String formatCustomerBirthDateValue(LocalDate ngaySinh, String rawValue) {
@@ -4345,11 +4358,9 @@ public class CheckInOutGUI extends JFrame {
                 return;
             }
 
-            if (isRepresentativeRowReady(row)) {
-                submit(false);
-                return;
-            }
-            if (!openRepresentativeGuestDialog(row, targets.get(0))) {
+            if (!isRepresentativeRowReady(row)) {
+                focusRoomRow(row, COL_CCCD);
+                showInfo("Vui l\u00f2ng nh\u1eadp th\u00f4ng tin kh\u00e1ch \u0111\u1ea1i di\u1ec7n cho ph\u00f2ng n\u00e0y tr\u01b0\u1edbc khi check-in.");
                 return;
             }
             submit(false);
@@ -4369,25 +4380,6 @@ public class CheckInOutGUI extends JFrame {
             return dialog.isConfirmed();
         }
 
-        private boolean ensureRepresentativeGuestsReady(List<CheckInOutDAO.CheckInBookingItem> targets) {
-            if (targets == null || targets.isEmpty()) {
-                return true;
-            }
-            for (CheckInOutDAO.CheckInBookingItem item : targets) {
-                int row = bookingItems.indexOf(item);
-                if (row < 0 || row >= roomTableModel.getRowCount()) {
-                    continue;
-                }
-                if (isRepresentativeRowReady(row)) {
-                    continue;
-                }
-                if (!openRepresentativeGuestDialog(row, item) || !isRepresentativeRowReady(row)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
         private boolean isRepresentativeRowReady(int row) {
             if (row < 0 || row >= roomTableModel.getRowCount()) {
                 return false;
@@ -4399,6 +4391,20 @@ public class CheckInOutGUI extends JFrame {
                 return false;
             }
             return ngaySinh.isEmpty() || parseCustomerBirthDate(ngaySinh) != null;
+        }
+
+        private List<CheckInOutDAO.CheckInBookingItem> filterRepresentativeReadyTargets(List<CheckInOutDAO.CheckInBookingItem> targets) {
+            List<CheckInOutDAO.CheckInBookingItem> readyTargets = new ArrayList<CheckInOutDAO.CheckInBookingItem>();
+            if (targets == null || targets.isEmpty()) {
+                return readyTargets;
+            }
+            for (CheckInOutDAO.CheckInBookingItem item : targets) {
+                int row = bookingItems.indexOf(item);
+                if (row >= 0 && isRepresentativeRowReady(row)) {
+                    readyTargets.add(item);
+                }
+            }
+            return readyTargets;
         }
 
         private void focusRoomRow(int row, int column) {
@@ -4578,11 +4584,18 @@ public class CheckInOutGUI extends JFrame {
                 tblRooms.getCellEditor().stopCellEditing();
             }
 
-            List<CheckInOutDAO.CheckInBookingItem> targets = resolveTargets(checkInAll);
-            if (targets.isEmpty()) {
+            List<CheckInOutDAO.CheckInBookingItem> pendingTargets = resolveTargets(checkInAll);
+            if (pendingTargets.isEmpty()) {
                 showInfo(checkInAll
                         ? "\u0110\u01a1n n\u00e0y kh\u00f4ng c\u00f2n ph\u00f2ng n\u00e0o s\u1eb5n s\u00e0ng check-in."
                         : "Vui l\u00f2ng ch\u1ecdn ph\u00f2ng \u0111\u00e3 \u0111\u01b0\u1ee3c g\u00e1n \u0111\u1ec3 check-in.");
+                return;
+            }
+            List<CheckInOutDAO.CheckInBookingItem> targets = filterRepresentativeReadyTargets(pendingTargets);
+            if (targets.isEmpty()) {
+                showInfo(checkInAll
+                        ? "Vui l\u00f2ng nh\u1eadp th\u00f4ng tin kh\u00e1ch \u0111\u1ea1i di\u1ec7n cho \u00edt nh\u1ea5t m\u1ed9t ph\u00f2ng tr\u01b0\u1edbc khi check-in."
+                        : "Vui l\u00f2ng nh\u1eadp th\u00f4ng tin kh\u00e1ch \u0111\u1ea1i di\u1ec7n cho ph\u00f2ng n\u00e0y tr\u01b0\u1edbc khi check-in.");
                 return;
             }
             if (!syncCurrentEditorToSelectedRoom(targets)) {
@@ -4590,9 +4603,6 @@ public class CheckInOutGUI extends JFrame {
             }
             applyCheckInBasisToTargets(targets);
             if (!validateTargetSchedules(targets)) {
-                return;
-            }
-            if (!ensureRepresentativeGuestsReady(targets)) {
                 return;
             }
             if (!validateRequiredCustomerInfo(targets)) {
@@ -4626,7 +4636,7 @@ public class CheckInOutGUI extends JFrame {
             refreshKhachHangViewsSafely();
             CheckInOutGUI.refreshAllOpenInstances();
             showInfo(checkInAll
-                    ? "\u0110\u00e3 check-in c\u00e1c ph\u00f2ng \u0111ang ch\u1edd trong \u0111\u01a1n."
+                    ? "\u0110\u00e3 check-in c\u00e1c ph\u00f2ng \u0111\u00e3 c\u00f3 kh\u00e1ch \u0111\u1ea1i di\u1ec7n. C\u00e1c ph\u00f2ng c\u00f2n l\u1ea1i gi\u1eef nguy\u00ean tr\u1ea1ng th\u00e1i ch\u1edd check-in."
                     : "\u0110\u00e3 check-in ph\u00f2ng \u0111\u00e3 ch\u1ecdn. C\u00e1c ph\u00f2ng c\u00f2n l\u1ea1i gi\u1eef nguy\u00ean tr\u1ea1ng th\u00e1i.");
             dispose();
         }
@@ -4787,7 +4797,7 @@ public class CheckInOutGUI extends JFrame {
                 content.add(card, BorderLayout.CENTER);
 
                 JButton btnConfirm = createPrimaryButton(
-                        "X\u00e1c nh\u1eadn check-in",
+                        "L\u01b0u",
                         new Color(22, 163, 74),
                         Color.WHITE,
                         e -> submitRepresentative()
@@ -4973,6 +4983,7 @@ public class CheckInOutGUI extends JFrame {
                         cccdPassport
                 );
                 if (conflict != null) {
+                    focusConflictRow(conflict.conflictedRow);
                     showInfo("CCCD/Passport n\u00e0y \u0111\u00e3 \u0111\u01b0\u1ee3c s\u1eed d\u1ee5ng cho ph\u00f2ng kh\u00e1c trong c\u00f9ng \u0111\u01a1n. "
                             + "Vui l\u00f2ng nh\u1eadp kh\u00e1ch h\u00e0ng kh\u00e1c.");
                     return;
@@ -4986,6 +4997,16 @@ public class CheckInOutGUI extends JFrame {
                 representative.setEmail(txtEmail.getText().trim());
                 representative.setDiaChi(txtDiaChi.getText().trim());
                 representative.setGhiChu(txtGhiChu.getText().trim());
+                if (!checkInOutDAO.saveRepresentativeGuestForBookingDetail(
+                        String.valueOf(record.maDatPhong),
+                        bookingItem.getMaChiTietDatPhong(),
+                        representative)) {
+                    String message = safeValue(checkInOutDAO.getLastErrorMessage(), "");
+                    showInfo(message.isEmpty()
+                            ? "Kh\u00f4ng th\u1ec3 l\u01b0u kh\u00e1ch \u0111\u1ea1i di\u1ec7n cho ph\u00f2ng \u0111\u00e3 ch\u1ecdn."
+                            : message);
+                    return;
+                }
                 applyCustomerToRow(rowIndex, representative);
                 confirmed = true;
                 dispose();

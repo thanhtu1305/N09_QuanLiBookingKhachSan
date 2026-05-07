@@ -1968,10 +1968,13 @@ public class DatPhongGUI extends JFrame {
         private BookingDetailRecord highlightedConflictRow;
         private boolean syncingSharedSchedule;
         private boolean reloadingCustomerOptions;
+        private final LocalTime createBookingOpenedAtTime;
+        private LocalDate lastHandledSharedCheckInDate;
         private BookingEditorDialog(Window owner, BookingRecord booking) {
             super(owner, booking == null ? "Tạo booking" : "Cập nhật booking", 1420, 860);
             this.editingBooking = booking;
             this.editing = booking != null;
+            this.createBookingOpenedAtTime = booking == null ? currentBookingTimeValue() : null;
             if (editing) {
                 for (BookingDetailRecord detail : booking.details) {
                     detailRows.add(detail.copy());
@@ -2664,6 +2667,7 @@ public class DatPhongGUI extends JFrame {
             txtDetailCheckInTime = new AppTimePickerField(initialCheckIn.toLocalTime().format(TIME_FORMAT), false);
             txtDetailCheckOutDate = new AppDatePickerField(initialCheckOut.toLocalDate().format(DATE_FORMAT), true);
             txtDetailCheckOutTime = new AppTimePickerField(initialCheckOut.toLocalTime().format(TIME_FORMAT), false);
+            lastHandledSharedCheckInDate = initialCheckIn.toLocalDate();
             txtDetailCheckInDate.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 3/3/26");
             txtDetailCheckInTime.setToolTipText("Nhập giờ dạng HH:mm, ví dụ: 12:00");
             txtDetailCheckOutDate.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 4/3/26");
@@ -3062,7 +3066,13 @@ public class DatPhongGUI extends JFrame {
                     result = checkIn;
                 }
             }
-            return result == null ? toDefaultBookingStartDateTime(LocalDate.now()) : result;
+            if (result != null) {
+                return result;
+            }
+            if (!editing) {
+                return LocalDateTime.of(LocalDate.now(), resolveCreateBookingOpenedAtTime());
+            }
+            return toDefaultBookingStartDateTime(LocalDate.now());
         }
 
         private LocalDateTime resolveInitialSharedCheckOut(LocalDateTime fallbackCheckIn) {
@@ -3074,9 +3084,45 @@ public class DatPhongGUI extends JFrame {
                 }
             }
             if (result == null) {
-                return fallbackCheckIn.plusDays(1);
+                return editing
+                        ? fallbackCheckIn.plusDays(1)
+                        : LocalDateTime.of(fallbackCheckIn.toLocalDate().plusDays(1), DETAIL_BOOKING_BOUNDARY_TIME);
             }
-            return result.isAfter(fallbackCheckIn) ? result : fallbackCheckIn.plusDays(1);
+            return result.isAfter(fallbackCheckIn)
+                    ? result
+                    : editing
+                    ? fallbackCheckIn.plusDays(1)
+                    : LocalDateTime.of(fallbackCheckIn.toLocalDate().plusDays(1), DETAIL_BOOKING_BOUNDARY_TIME);
+        }
+
+        private LocalTime resolveCreateBookingOpenedAtTime() {
+            return createBookingOpenedAtTime == null ? currentBookingTimeValue() : createBookingOpenedAtTime;
+        }
+
+        private LocalTime resolveSharedStartTimeForDate(LocalDate selectedDate) {
+            if (selectedDate != null && selectedDate.isEqual(LocalDate.now())) {
+                return currentBookingTimeValue();
+            }
+            return LocalTime.of(13, 0);
+        }
+
+        private boolean applyDefaultStartTimeForSharedCheckInDateChange() {
+            if (editing || txtDetailCheckInDate == null || txtDetailCheckInTime == null) {
+                return false;
+            }
+            LocalDate selectedDate = parseDate(txtDetailCheckInDate.getText());
+            if (selectedDate == null || selectedDate.equals(lastHandledSharedCheckInDate)) {
+                return false;
+            }
+            lastHandledSharedCheckInDate = selectedDate;
+            LocalTime targetTime = resolveSharedStartTimeForDate(selectedDate);
+            LocalTime currentTime = txtDetailCheckInTime.getTimeValue();
+            LocalTime normalizedCurrentTime = currentTime == null ? null : currentTime.withSecond(0).withNano(0);
+            if (targetTime.equals(normalizedCurrentTime)) {
+                return false;
+            }
+            txtDetailCheckInTime.setTimeValue(targetTime);
+            return true;
         }
 
         private void applyAvailableRoomColumnWidths() {
@@ -3265,6 +3311,9 @@ public class DatPhongGUI extends JFrame {
 
         private void handleSharedScheduleChanged() {
             if (syncingSharedSchedule) {
+                return;
+            }
+            if (applyDefaultStartTimeForSharedCheckInDateChange()) {
                 return;
             }
             stopDetailTableEditing();

@@ -510,6 +510,16 @@ public class ThanhToanDAO {
             }
 
             for (InvoiceAggregate aggregate : aggregates.values()) {
+                InvoiceCustomerChoice customerChoice = resolveBookingInvoiceCustomer(
+                        con,
+                        aggregate.maDatPhong,
+                        aggregate.maKhachHang,
+                        aggregate.maLuuTruDaiDien
+                );
+                if (customerChoice != null && customerChoice.isValid()) {
+                    aggregate.maKhachHang = customerChoice.maKhachHang;
+                    aggregate.maLuuTruDaiDien = customerChoice.maLuuTru;
+                }
                 Integer maHoaDon = findLatestInvoiceIdByBooking(con, aggregate.maDatPhong);
                 if (maHoaDon == null) {
                     maHoaDon = insertInvoiceHeader(con, aggregate.maLuuTruDaiDien, aggregate.maDatPhong, aggregate.maKhachHang,
@@ -543,6 +553,122 @@ public class ThanhToanDAO {
         } finally {
             synchronizingInvoices = false;
         }
+    }
+
+    private InvoiceCustomerChoice resolveBookingInvoiceCustomer(Connection con,
+                                                               int maDatPhong,
+                                                               int defaultCustomerId,
+                                                               int defaultStayId) throws Exception {
+        InvoiceCustomerChoice choice = new InvoiceCustomerChoice(defaultCustomerId, defaultStayId, null);
+        if (con == null || maDatPhong <= 0) {
+            return choice.isValid() ? choice : null;
+        }
+
+        int bookingCustomerId = loadBookingCustomerId(con, maDatPhong);
+        Timestamp lastCheckout = loadLatestCheckoutForBooking(con, maDatPhong);
+        if (bookingCustomerId > 0) {
+            InvoiceCustomerChoice bookingRepresentative = loadRepresentativeStayChoice(con, maDatPhong, bookingCustomerId);
+            if (bookingRepresentative != null && bookingRepresentative.isValid()) {
+                if (bookingRepresentative.checkOut == null) {
+                    return bookingRepresentative;
+                }
+                if (lastCheckout != null && bookingRepresentative.checkOut.compareTo(lastCheckout) >= 0) {
+                    return bookingRepresentative;
+                }
+            }
+        }
+
+        InvoiceCustomerChoice firstCustomer = loadFirstBookingCustomerChoice(con, maDatPhong);
+        if (firstCustomer != null && firstCustomer.isValid()) {
+            return firstCustomer;
+        }
+
+        if (bookingCustomerId > 0) {
+            choice.maKhachHang = bookingCustomerId;
+        }
+        return choice.isValid() ? choice : null;
+    }
+
+    private int loadBookingCustomerId(Connection con, int maDatPhong) throws Exception {
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT TOP 1 ISNULL(maKhachHang, 0) AS maKhachHang FROM DatPhong WHERE maDatPhong = ?")) {
+            ps.setInt(1, maDatPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("maKhachHang");
+                }
+            }
+        }
+        return 0;
+    }
+
+    private Timestamp loadLatestCheckoutForBooking(Connection con, int maDatPhong) throws Exception {
+        try (PreparedStatement ps = con.prepareStatement(
+                "SELECT MAX(checkOut) AS lastCheckOut FROM LuuTru WHERE maDatPhong = ?")) {
+            ps.setInt(1, maDatPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getTimestamp("lastCheckOut") : null;
+            }
+        }
+    }
+
+    private InvoiceCustomerChoice loadRepresentativeStayChoice(Connection con,
+                                                               int maDatPhong,
+                                                               int maKhachHang) throws Exception {
+        if (con == null || maDatPhong <= 0 || maKhachHang <= 0) {
+            return null;
+        }
+        String sql = "SELECT TOP 1 rep.maKhachHang, lt.maLuuTru, lt.checkOut "
+                + "FROM ChiTietDatPhong ctdp "
+                + "JOIN ChiTietDatPhongKhachDaiDien rep ON rep.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "JOIN LuuTru lt ON lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "WHERE ctdp.maDatPhong = ? AND rep.maKhachHang = ? "
+                + "ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maDatPhong);
+            ps.setInt(2, maKhachHang);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new InvoiceCustomerChoice(
+                            rs.getInt("maKhachHang"),
+                            rs.getInt("maLuuTru"),
+                            rs.getTimestamp("checkOut")
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    private InvoiceCustomerChoice loadFirstBookingCustomerChoice(Connection con, int maDatPhong) throws Exception {
+        if (con == null || maDatPhong <= 0) {
+            return null;
+        }
+        String sql = "SELECT TOP 1 rep.maKhachHang, stay.maLuuTru, stay.checkOut "
+                + "FROM ChiTietDatPhong ctdp "
+                + "JOIN ChiTietDatPhongKhachDaiDien rep ON rep.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong "
+                + "OUTER APPLY ("
+                + "    SELECT TOP 1 lt.maLuuTru, lt.checkOut "
+                + "    FROM LuuTru lt "
+                + "    WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "    ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC"
+                + ") stay "
+                + "WHERE ctdp.maDatPhong = ? "
+                + "ORDER BY CASE WHEN TRY_CAST(p.soPhong AS INT) IS NULL THEN 1 ELSE 0 END, TRY_CAST(p.soPhong AS INT), p.soPhong, ctdp.maChiTietDatPhong";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setInt(1, maDatPhong);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return new InvoiceCustomerChoice(
+                            rs.getInt("maKhachHang"),
+                            rs.getInt("maLuuTru"),
+                            rs.getTimestamp("checkOut")
+                    );
+                }
+            }
+        }
+        return null;
     }
 
     private Integer insertInvoiceHeader(Connection con, int maLuuTru, int maDatPhong, int maKhachHang,
@@ -1956,6 +2082,22 @@ public class ThanhToanDAO {
         private double tienDichVu;
         private double tienCoc;
         private double phuThu;
+    }
+
+    private static final class InvoiceCustomerChoice {
+        private int maKhachHang;
+        private int maLuuTru;
+        private Timestamp checkOut;
+
+        private InvoiceCustomerChoice(int maKhachHang, int maLuuTru, Timestamp checkOut) {
+            this.maKhachHang = maKhachHang;
+            this.maLuuTru = maLuuTru;
+            this.checkOut = checkOut;
+        }
+
+        private boolean isValid() {
+            return maKhachHang > 0 && maLuuTru > 0;
+        }
     }
 
     private static final class InvoiceScope {

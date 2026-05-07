@@ -639,6 +639,10 @@ public class CheckInOutDAO {
             con.setAutoCommit(false);
             ensureDetailScheduleSchema(con);
             ensureRepresentativeGuestSchema(con);
+            if (!validateRepresentativeGuestsForBooking(con, bookingId.intValue(), detailIds, customerByDetailId)) {
+                con.rollback();
+                return 0;
+            }
             int affected = 0;
             try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
                  PreparedStatement insertStmt = con.prepareStatement(
@@ -1061,6 +1065,10 @@ public class CheckInOutDAO {
         if (item == null || rs == null) {
             return;
         }
+        if (item.canCheckIn()) {
+            clearCheckInItemCustomer(item);
+            return;
+        }
         if (rs.getObject("maKhachHangDaiDien") != null) {
             item.setCccdPassport(safeTrim(rs.getString("cccdPassportDaiDien")));
             item.setHoTenKhach(safeTrim(rs.getString("hoTenDaiDien")));
@@ -1071,13 +1079,20 @@ public class CheckInOutDAO {
             item.setGhiChu(safeTrim(rs.getString("ghiChuDaiDien")));
             return;
         }
-        item.setCccdPassport(safeTrim(rs.getString("cccdPassportBooking")));
-        item.setHoTenKhach(safeTrim(rs.getString("hoTenBooking")));
-        item.setSoDienThoai(safeTrim(rs.getString("soDienThoaiBooking")));
-        item.setNgaySinh(formatDisplayDate(rs.getDate("ngaySinhBooking")));
-        item.setEmail(safeTrim(rs.getString("emailBooking")));
-        item.setDiaChi(safeTrim(rs.getString("diaChiBooking")));
-        item.setGhiChu(safeTrim(rs.getString("ghiChuBooking")));
+        clearCheckInItemCustomer(item);
+    }
+
+    private void clearCheckInItemCustomer(CheckInBookingItem item) {
+        if (item == null) {
+            return;
+        }
+        item.setCccdPassport("");
+        item.setHoTenKhach("");
+        item.setSoDienThoai("");
+        item.setNgaySinh("");
+        item.setEmail("");
+        item.setDiaChi("");
+        item.setGhiChu("");
     }
 
     private String formatDisplayDate(Date value) {
@@ -1146,9 +1161,6 @@ public class CheckInOutDAO {
         }
 
         Integer existingId = findCustomerIdByPassport(con, cccdPassport);
-        if (existingId == null) {
-            existingId = findCustomerIdByPhone(con, khachHang.getSoDienThoai());
-        }
         if (existingId != null) {
             try (PreparedStatement update = con.prepareStatement(
                     "UPDATE KhachHang SET hoTen = ?, cccdPassport = ?, " +
@@ -1199,6 +1211,63 @@ public class CheckInOutDAO {
         return null;
     }
 
+    private boolean validateRepresentativeGuestsForBooking(Connection con,
+                                                           int maDatPhong,
+                                                           List<Integer> targetDetailIds,
+                                                           Map<Integer, KhachHang> customerByDetailId) throws SQLException {
+        if (con == null || maDatPhong <= 0 || customerByDetailId == null || customerByDetailId.isEmpty()) {
+            return true;
+        }
+
+        java.util.Set<Integer> targetSet = new java.util.LinkedHashSet<Integer>();
+        if (targetDetailIds != null) {
+            targetSet.addAll(targetDetailIds);
+        }
+
+        java.util.Map<String, Integer> passportToDetailId = new java.util.LinkedHashMap<String, Integer>();
+        for (Map.Entry<Integer, KhachHang> entry : customerByDetailId.entrySet()) {
+            Integer detailId = entry.getKey();
+            KhachHang khachHang = entry.getValue();
+            String passport = normalizePassportKey(khachHang == null ? null : khachHang.getCccdPassport());
+            if (detailId == null || detailId.intValue() <= 0 || passport.isEmpty()) {
+                continue;
+            }
+            Integer existingDetailId = passportToDetailId.get(passport);
+            if (existingDetailId != null && existingDetailId.intValue() != detailId.intValue()) {
+                setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng nhập khách hàng khác.");
+                return false;
+            }
+            passportToDetailId.put(passport, detailId);
+        }
+
+        String sql = "SELECT ctdp.maChiTietDatPhong, ISNULL(kh.cccdPassport, N'') AS cccdPassport "
+                + "FROM ChiTietDatPhong ctdp "
+                + "JOIN ChiTietDatPhongKhachDaiDien rep ON rep.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                + "JOIN KhachHang kh ON kh.maKhachHang = rep.maKhachHang "
+                + "WHERE ctdp.maDatPhong = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    int detailId = rs.getInt("maChiTietDatPhong");
+                    if (targetSet.contains(Integer.valueOf(detailId))) {
+                        continue;
+                    }
+                    String passport = normalizePassportKey(rs.getString("cccdPassport"));
+                    if (passport.isEmpty()) {
+                        continue;
+                    }
+                    Integer inputDetailId = passportToDetailId.get(passport);
+                    if (inputDetailId != null && inputDetailId.intValue() != detailId) {
+                        setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng nhập khách hàng khác.");
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
     private Integer findCustomerIdByPassport(Connection con, String cccdPassport) throws SQLException {
         String value = safeTrim(cccdPassport);
         if (con == null || value.isEmpty()) {
@@ -1231,6 +1300,10 @@ public class CheckInOutDAO {
             }
         }
         return null;
+    }
+
+    private String normalizePassportKey(String value) {
+        return value == null ? "" : value.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private void setNullableDateFromText(PreparedStatement stmt, int index, String value) throws SQLException {

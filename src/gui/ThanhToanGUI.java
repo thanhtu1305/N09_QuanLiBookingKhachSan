@@ -77,7 +77,8 @@ public class ThanhToanGUI extends JFrame {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private static final List<ThanhToanGUI> OPEN_INSTANCES = new ArrayList<ThanhToanGUI>();
-    private static String pendingInvoiceSelectionId;
+    private static String pendingFocusedInvoiceId;
+    private static boolean pendingAutoOpenPayment;
 
     private final String username;
     private final String role;
@@ -501,7 +502,7 @@ public class ThanhToanGUI extends JFrame {
         txtDenNgay.setText("");
         txtTuKhoa.setText("");
         applyFilters(false);
-        applyPendingInvoiceSelection();
+        schedulePendingInvoiceRequest();
         if (showMessage) {
             showSuccess("Đã làm mới dữ liệu thanh toán.");
         }
@@ -578,10 +579,11 @@ public class ThanhToanGUI extends JFrame {
             });
         }
 
-        if (!filteredInvoices.isEmpty()) {
+        if (!filteredInvoices.isEmpty() && !hasPendingInvoiceRequest()) {
             tblHoaDon.setRowSelectionInterval(0, 0);
             updateDetailPanel(filteredInvoices.get(0));
         } else {
+            tblHoaDon.clearSelection();
             clearDetailPanel();
         }
     }
@@ -742,11 +744,17 @@ public class ThanhToanGUI extends JFrame {
     private void openPaymentDialog() {
         ThanhToan invoice = getSelectedInvoice();
         if (invoice != null) {
-            if ("Đã thanh toán".equalsIgnoreCase(invoice.getTrangThai())) {
+            ThanhToan currentInvoice = thanhToanDAO.findById(invoice.getMaHoaDon());
+            if (currentInvoice == null) {
+                showWarning("Không tìm thấy hóa đơn HD" + invoice.getMaHoaDon() + " trong danh sách thanh toán.");
+                return;
+            }
+            if (isCompletedInvoiceStatus(currentInvoice.getTrangThai())) {
+                updateDetailPanel(currentInvoice);
                 showWarning("Hóa đơn này đã thanh toán. Bạn chỉ có thể in hóa đơn.");
                 return;
             }
-            new PaymentDialog(this, invoice).setVisible(true);
+            new PaymentDialog(this, currentInvoice).setVisible(true);
         }
     }
 
@@ -785,25 +793,43 @@ public class ThanhToanGUI extends JFrame {
         showSuccess(message);
     }
 
-    private void selectInvoice(String maHoaDon) {
+    private boolean selectInvoice(String maHoaDon) {
         if (maHoaDon == null) {
-            return;
+            return false;
         }
+        String targetId = normalizeInvoiceId(maHoaDon);
         for (int i = 0; i < filteredInvoices.size(); i++) {
-            if (maHoaDon.equals(filteredInvoices.get(i).getMaHoaDon())) {
+            if (targetId.equals(normalizeInvoiceId(filteredInvoices.get(i).getMaHoaDon()))) {
                 tblHoaDon.setRowSelectionInterval(i, i);
+                tblHoaDon.scrollRectToVisible(tblHoaDon.getCellRect(i, 0, true));
                 updateDetailPanel(filteredInvoices.get(i));
-                return;
+                tblHoaDon.requestFocusInWindow();
+                return true;
             }
         }
         tblHoaDon.clearSelection();
         clearDetailPanel();
+        return false;
     }
 
-    private void applyPendingInvoiceSelection() {
-        String maHoaDon = consumePendingInvoiceSelection();
-        if (!isBlank(maHoaDon)) {
-            selectInvoice(maHoaDon);
+    private void schedulePendingInvoiceRequest() {
+        if (hasPendingInvoiceRequest()) {
+            javax.swing.SwingUtilities.invokeLater(this::applyPendingInvoiceRequest);
+        }
+    }
+
+    private void applyPendingInvoiceRequest() {
+        PendingInvoiceRequest request = consumePendingInvoiceRequest();
+        if (request == null || isBlank(request.invoiceId)) {
+            return;
+        }
+        boolean selected = selectInvoice(request.invoiceId);
+        if (!selected) {
+            showWarning("Không tìm thấy hóa đơn " + formatPendingInvoiceCode(request.invoiceId) + " trong danh sách thanh toán.");
+            return;
+        }
+        if (request.autoOpenPayment) {
+            openPaymentDialog();
         }
     }
 
@@ -825,10 +851,8 @@ public class ThanhToanGUI extends JFrame {
         }
     }
 
-    public static void requestInvoiceFocus(String maHoaDon) {
-        synchronized (ThanhToanGUI.class) {
-            pendingInvoiceSelectionId = maHoaDon == null ? null : maHoaDon.trim();
-        }
+    public static synchronized void requestInvoiceFocus(String maHoaDon) {
+        setPendingInvoiceRequest(maHoaDon, false);
         List<ThanhToanGUI> snapshot;
         synchronized (OPEN_INSTANCES) {
             snapshot = new ArrayList<ThanhToanGUI>(OPEN_INSTANCES);
@@ -841,10 +865,61 @@ public class ThanhToanGUI extends JFrame {
         }
     }
 
-    private static synchronized String consumePendingInvoiceSelection() {
-        String value = pendingInvoiceSelectionId;
-        pendingInvoiceSelectionId = null;
-        return value;
+    public static synchronized void requestInvoiceFocusAndOpen(String maHoaDon) {
+        setPendingInvoiceRequest(maHoaDon, true);
+    }
+
+    private static synchronized void setPendingInvoiceRequest(String maHoaDon, boolean autoOpenPayment) {
+        pendingFocusedInvoiceId = maHoaDon == null ? null : maHoaDon.trim();
+        pendingAutoOpenPayment = autoOpenPayment;
+    }
+
+    private static synchronized boolean hasPendingInvoiceRequest() {
+        return pendingFocusedInvoiceId != null && !pendingFocusedInvoiceId.trim().isEmpty();
+    }
+
+    private static synchronized PendingInvoiceRequest consumePendingInvoiceRequest() {
+        if (pendingFocusedInvoiceId == null || pendingFocusedInvoiceId.trim().isEmpty()) {
+            pendingFocusedInvoiceId = null;
+            pendingAutoOpenPayment = false;
+            return null;
+        }
+        PendingInvoiceRequest request = new PendingInvoiceRequest(pendingFocusedInvoiceId, pendingAutoOpenPayment);
+        pendingFocusedInvoiceId = null;
+        pendingAutoOpenPayment = false;
+        return request;
+    }
+
+    private static String normalizeInvoiceId(String maHoaDon) {
+        if (maHoaDon == null) {
+            return "";
+        }
+        String value = maHoaDon.trim().toUpperCase(Locale.ROOT);
+        if (value.startsWith("HD")) {
+            value = value.substring(2);
+        }
+        return value.replace("-", "").trim();
+    }
+
+    private String formatPendingInvoiceCode(String maHoaDon) {
+        String normalized = normalizeInvoiceId(maHoaDon);
+        return normalized.isEmpty() ? safeValue(maHoaDon, "-") : "HD" + normalized;
+    }
+
+    private boolean isCompletedInvoiceStatus(String status) {
+        String safeStatus = safeValue(status, "");
+        return "Đã thanh toán".equalsIgnoreCase(safeStatus)
+                || "Đã hoàn cọc".equalsIgnoreCase(safeStatus);
+    }
+
+    private static final class PendingInvoiceRequest {
+        private final String invoiceId;
+        private final boolean autoOpenPayment;
+
+        private PendingInvoiceRequest(String invoiceId, boolean autoOpenPayment) {
+            this.invoiceId = invoiceId;
+            this.autoOpenPayment = autoOpenPayment;
+        }
     }
 
     private void refreshLinkedViews() {

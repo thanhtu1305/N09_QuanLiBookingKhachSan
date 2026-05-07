@@ -52,10 +52,12 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Frame;
-import java.awt.Window;
+import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.GridLayout;
+import java.awt.Rectangle;
+import java.awt.Window;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.PreparedStatement;
@@ -908,6 +910,29 @@ public class DatPhongGUI extends JFrame {
 
     private void openCreateBookingDialog() {
         new BookingEditorDialog(this, null).setVisible(true);
+    }
+
+    private void applyLargeCreateBookingDialogBounds(Window dialog) {
+        if (dialog == null) {
+            return;
+        }
+        Rectangle bounds = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int margin = 12;
+        int availableWidth = Math.max(320, bounds.width - margin * 2);
+        int availableHeight = Math.max(260, bounds.height - margin * 2);
+        int targetWidth = availableWidth;
+        int targetHeight = availableHeight;
+        Dimension minimumSize = new Dimension(Math.min(980, targetWidth), Math.min(640, targetHeight));
+        dialog.setMinimumSize(minimumSize);
+        dialog.setBounds(
+                bounds.x + Math.max(0, (bounds.width - targetWidth) / 2),
+                bounds.y + Math.max(0, (bounds.height - targetHeight) / 2),
+                targetWidth,
+                targetHeight
+        );
+        dialog.validate();
+        dialog.revalidate();
+        dialog.repaint();
     }
 
     private void openConfirmBookingDialog() {
@@ -1794,8 +1819,12 @@ public class DatPhongGUI extends JFrame {
         public void setVisible(boolean visible) {
             if (visible) {
                 ScreenUIHelper.prepareDialog(this, getOwner(), minimumWidth, minimumHeight);
+                afterPrepareDialogBeforeShow();
             }
             super.setVisible(visible);
+        }
+
+        protected void afterPrepareDialogBeforeShow() {
         }
 
         protected JPanel buildDialogHeader(String title, String subtitle) {
@@ -1888,16 +1917,24 @@ public class DatPhongGUI extends JFrame {
             body.setOpaque(false);
             JPanel headerSection = buildHeaderSection();
             JPanel detailSection = buildDetailSection();
-            headerSection.setMinimumSize(new Dimension(455, 1));
-            headerSection.setPreferredSize(new Dimension(480, 1));
-            detailSection.setMinimumSize(new Dimension(780, 1));
+            int headerWidth = editing ? 480 : 460;
+            headerSection.setMinimumSize(new Dimension(editing ? 455 : 420, 1));
+            headerSection.setPreferredSize(new Dimension(headerWidth, 1));
+            detailSection.setMinimumSize(new Dimension(editing ? 780 : 620, 1));
             JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, headerSection, detailSection);
             splitPane.setBorder(null);
-            splitPane.setResizeWeight(0.36d);
-            splitPane.setDividerLocation(480);
+            splitPane.setResizeWeight(editing ? 0.36d : 0.33d);
+            splitPane.setDividerLocation(headerWidth);
             splitPane.setContinuousLayout(true);
             body.add(splitPane, BorderLayout.CENTER);
-            content.add(body, BorderLayout.CENTER);
+            JScrollPane bodyScrollPane = new JScrollPane(body);
+            bodyScrollPane.setBorder(BorderFactory.createEmptyBorder());
+            bodyScrollPane.setOpaque(false);
+            bodyScrollPane.getViewport().setOpaque(false);
+            bodyScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+            bodyScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+            bodyScrollPane.getVerticalScrollBar().setUnitIncrement(18);
+            content.add(bodyScrollPane, BorderLayout.CENTER);
 
             JButton btnCancel = createOutlineButton("Hủy", new Color(107, 114, 128), e -> dispose());
             if (editing) {
@@ -1918,6 +1955,13 @@ public class DatPhongGUI extends JFrame {
             }
             add(content, BorderLayout.CENTER);
             reevaluateDetailValidationState(false);
+        }
+
+        @Override
+        protected void afterPrepareDialogBeforeShow() {
+            if (!editing) {
+                applyLargeCreateBookingDialogBounds(this);
+            }
         }
 
         private JPanel buildBookingEditorHeader(String title, String subtitle) {
@@ -1949,9 +1993,9 @@ public class DatPhongGUI extends JFrame {
         }
 
         private JPanel buildBookingDialogButtons(JButton... buttons) {
-            JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 8));
+            JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 4));
             panel.setOpaque(false);
-            panel.setBorder(new EmptyBorder(2, 0, 0, 0));
+            panel.setBorder(new EmptyBorder(0, 0, 0, 0));
             for (JButton button : buttons) {
                 panel.add(button);
             }
@@ -1959,8 +2003,8 @@ public class DatPhongGUI extends JFrame {
         }
 
         private void configureBookingFooterButton(JButton button) {
-            button.setPreferredSize(new Dimension(Math.max(132, button.getPreferredSize().width), 38));
-            button.setMinimumSize(new Dimension(120, 38));
+            button.setPreferredSize(new Dimension(Math.max(126, button.getPreferredSize().width), 34));
+            button.setMinimumSize(new Dimension(116, 34));
         }
 
         private JPanel buildHeaderSectionLegacy() {
@@ -2041,7 +2085,7 @@ public class DatPhongGUI extends JFrame {
 
         private JPanel buildHeaderSection() {
             JPanel card = createDialogCardPanel();
-            JPanel wrapper = new JPanel(new BorderLayout(0, 12));
+            JPanel wrapper = new JPanel(new BorderLayout(0, editing ? 12 : 8));
             wrapper.setOpaque(false);
 
             JLabel lblSection = new JLabel("Thông tin khách hàng / booking");
@@ -2051,7 +2095,7 @@ public class DatPhongGUI extends JFrame {
 
             JPanel form = createDialogFormPanel();
             GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new java.awt.Insets(7, 0, 7, 0);
+            gbc.insets = new java.awt.Insets(editing ? 7 : 4, 0, editing ? 7 : 4, 0);
             gbc.anchor = GridBagConstraints.WEST;
 
             txtNgayDatDialog = new AppDatePickerField(
@@ -2060,14 +2104,15 @@ public class DatPhongGUI extends JFrame {
                             : LocalDate.now().format(DATE_FORMAT),
                     true
             );
-            configureBookingEditorField(txtNgayDatDialog, 270, 34);
+            int headerFieldWidth = editing ? 270 : 292;
+            configureBookingEditorField(txtNgayDatDialog, headerFieldWidth, 34);
             txtNgayDatDialog.setToolTipText("Nhập ngày dạng dd/MM/yyyy, ví dụ: 03/03/2026");
 
             cboNguonBookingDialog = createComboBox(new String[]{"Đặt trước", "Walk-in"});
-            configureBookingEditorField(cboNguonBookingDialog, 270, 34);
+            configureBookingEditorField(cboNguonBookingDialog, headerFieldWidth, 34);
             cboKhachHangDialog = new JComboBox<CustomerLookup>();
             cboKhachHangDialog.setFont(BODY_FONT);
-            configureBookingEditorField(cboKhachHangDialog, 270, 34);
+            configureBookingEditorField(cboKhachHangDialog, headerFieldWidth, 34);
 
             JButton btnAddCustomer = createOutlineButton("+", new Color(37, 99, 235), e -> openCreateCustomerDialog());
             btnAddCustomer.setPreferredSize(new Dimension(46, 34));
@@ -2076,7 +2121,7 @@ public class DatPhongGUI extends JFrame {
 
             JPanel customerSelectorPanel = new JPanel(new BorderLayout(8, 0));
             customerSelectorPanel.setOpaque(false);
-            customerSelectorPanel.setPreferredSize(new Dimension(270, 34));
+            customerSelectorPanel.setPreferredSize(new Dimension(headerFieldWidth, 34));
             customerSelectorPanel.setMinimumSize(new Dimension(0, 34));
             customerSelectorPanel.add(cboKhachHangDialog, BorderLayout.CENTER);
             customerSelectorPanel.add(btnAddCustomer, BorderLayout.EAST);
@@ -2094,13 +2139,13 @@ public class DatPhongGUI extends JFrame {
             txtTongDatCocDialog = createInputField(editing ? formatMoney(editingBooking.tongTienDatCoc) : "0");
             txtTongDatCocDialog.setEditable(false);
             txtGhiChuDialog = createDialogTextArea(3);
-            configureBookingEditorField(txtCccdDialog, 270, 34);
-            configureBookingEditorField(txtHoTen, 270, 34);
-            configureBookingEditorField(txtSdt, 270, 34);
-            configureBookingEditorField(txtNgaySinhKhach, 270, 34);
-            configureBookingEditorField(txtEmailKhach, 270, 34);
-            configureBookingEditorField(txtTongSoNguoiDialog, 270, 34);
-            configureBookingEditorField(txtTongDatCocDialog, 270, 34);
+            configureBookingEditorField(txtCccdDialog, headerFieldWidth, 34);
+            configureBookingEditorField(txtHoTen, headerFieldWidth, 34);
+            configureBookingEditorField(txtSdt, headerFieldWidth, 34);
+            configureBookingEditorField(txtNgaySinhKhach, headerFieldWidth, 34);
+            configureBookingEditorField(txtEmailKhach, headerFieldWidth, 34);
+            configureBookingEditorField(txtTongSoNguoiDialog, headerFieldWidth, 34);
+            configureBookingEditorField(txtTongDatCocDialog, headerFieldWidth, 34);
 
             if (editing) {
                 cboNguonBookingDialog.setSelectedItem(editingBooking.nguonDat);
@@ -2122,22 +2167,26 @@ public class DatPhongGUI extends JFrame {
             addBookingFormRow(form, gbc, 5, "SĐT", txtSdt);
             addBookingFormRow(form, gbc, 6, "Ngày sinh", txtNgaySinhKhach);
             addBookingFormRow(form, gbc, 7, "Email", txtEmailKhach);
-            addBookingFormRow(form, gbc, 8, "Địa chỉ", createBookingTextAreaScroll(txtDiaChiKhach, 72));
+            addBookingFormRow(form, gbc, 8, "Địa chỉ", createBookingTextAreaScroll(txtDiaChiKhach, editing ? 72 : 60));
             addBookingFormRow(form, gbc, 9, "Tổng số người", txtTongSoNguoiDialog);
             addBookingFormRow(form, gbc, 10, "Tổng tiền cọc", txtTongDatCocDialog);
-            addBookingFormRow(form, gbc, 11, "Ghi chú", createBookingTextAreaScroll(txtGhiChuDialog, 78));
+            addBookingFormRow(form, gbc, 11, "Ghi chú", createBookingTextAreaScroll(txtGhiChuDialog, editing ? 78 : 60));
 
             wrapper.add(lblSection, BorderLayout.NORTH);
-            JScrollPane formScroll = new JScrollPane(form);
-            formScroll.setBorder(BorderFactory.createEmptyBorder());
-            formScroll.setOpaque(false);
-            formScroll.getViewport().setOpaque(false);
-            formScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-            formScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-            formScroll.getVerticalScrollBar().setUnitIncrement(16);
-            wrapper.add(formScroll, BorderLayout.CENTER);
-            card.setPreferredSize(new Dimension(480, 0));
-            card.setMinimumSize(new Dimension(455, 0));
+            if (editing) {
+                JScrollPane formScroll = new JScrollPane(form);
+                formScroll.setBorder(BorderFactory.createEmptyBorder());
+                formScroll.setOpaque(false);
+                formScroll.getViewport().setOpaque(false);
+                formScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+                formScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+                formScroll.getVerticalScrollBar().setUnitIncrement(16);
+                wrapper.add(formScroll, BorderLayout.CENTER);
+            } else {
+                wrapper.add(form, BorderLayout.CENTER);
+            }
+            card.setPreferredSize(new Dimension(editing ? 480 : 460, 0));
+            card.setMinimumSize(new Dimension(editing ? 455 : 420, 0));
             card.add(wrapper, BorderLayout.CENTER);
             return card;
         }
@@ -2150,7 +2199,7 @@ public class DatPhongGUI extends JFrame {
 
         private JScrollPane createBookingTextAreaScroll(JTextArea area, int height) {
             JScrollPane scrollPane = new JScrollPane(area);
-            scrollPane.setPreferredSize(new Dimension(270, height));
+            scrollPane.setPreferredSize(new Dimension(editing ? 270 : 292, height));
             scrollPane.setMinimumSize(new Dimension(0, height));
             scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
             scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
@@ -2459,16 +2508,16 @@ public class DatPhongGUI extends JFrame {
 
             JScrollPane availableRoomScrollPane = new JScrollPane(tblAvailableRoomsDialog);
             availableRoomScrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-            availableRoomScrollPane.setPreferredSize(new Dimension(0, 335));
-            availableRoomScrollPane.setMinimumSize(new Dimension(320, 260));
+            availableRoomScrollPane.setPreferredSize(new Dimension(0, editing ? 335 : 260));
+            availableRoomScrollPane.setMinimumSize(new Dimension(editing ? 320 : 260, editing ? 260 : 210));
             availableRoomScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
             availableRoomScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
             availableRoomScrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
             bookingDetailScrollPane = new JScrollPane(tblBookingDetailDialog);
             bookingDetailScrollPane.setBorder(BorderFactory.createLineBorder(BORDER_SOFT, 1, true));
-            bookingDetailScrollPane.setPreferredSize(new Dimension(0, 335));
-            bookingDetailScrollPane.setMinimumSize(new Dimension(480, 260));
+            bookingDetailScrollPane.setPreferredSize(new Dimension(0, editing ? 335 : 260));
+            bookingDetailScrollPane.setMinimumSize(new Dimension(editing ? 480 : 360, editing ? 260 : 210));
             bookingDetailScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
             bookingDetailScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
             bookingDetailScrollPane.getVerticalScrollBar().setUnitIncrement(16);
@@ -2500,17 +2549,18 @@ public class DatPhongGUI extends JFrame {
                     "Các phòng sẽ lưu trong booking.",
                     bookingDetailScrollPane
             );
-            availableTablePanel.setMinimumSize(new Dimension(320, 1));
-            availableTablePanel.setPreferredSize(new Dimension(345, 1));
-            selectedTablePanel.setMinimumSize(new Dimension(500, 1));
+            int availableTableWidth = editing ? 345 : 360;
+            availableTablePanel.setMinimumSize(new Dimension(editing ? 320 : 300, 1));
+            availableTablePanel.setPreferredSize(new Dimension(availableTableWidth, 1));
+            selectedTablePanel.setMinimumSize(new Dimension(editing ? 500 : 420, 1));
             JSplitPane centerSplitPane = new JSplitPane(
                     JSplitPane.HORIZONTAL_SPLIT,
                     availableTablePanel,
                     selectedTablePanel
             );
             centerSplitPane.setBorder(null);
-            centerSplitPane.setResizeWeight(0.40d);
-            centerSplitPane.setDividerLocation(345);
+            centerSplitPane.setResizeWeight(editing ? 0.40d : 0.36d);
+            centerSplitPane.setDividerLocation(availableTableWidth);
             centerSplitPane.setContinuousLayout(true);
             centerSplitPane.setDividerSize(8);
 
@@ -2527,7 +2577,7 @@ public class DatPhongGUI extends JFrame {
 
             wrapper.add(lblSection, BorderLayout.NORTH);
             wrapper.add(center, BorderLayout.CENTER);
-            card.setMinimumSize(new Dimension(780, 0));
+            card.setMinimumSize(new Dimension(editing ? 780 : 620, 0));
             card.add(wrapper, BorderLayout.CENTER);
             refillBookingDetailDialogTable();
             return card;
@@ -2565,12 +2615,14 @@ public class DatPhongGUI extends JFrame {
             titlePanel.add(lblTitle, BorderLayout.NORTH);
             titlePanel.add(lblSubtitle, BorderLayout.SOUTH);
 
-            configureBookingEditorField(txtDetailCheckInDate, 170, 34);
-            configureBookingEditorField(txtDetailCheckInTime, 150, 34);
-            configureBookingEditorField(txtDetailCheckOutDate, 170, 34);
-            configureBookingEditorField(txtDetailCheckOutTime, 150, 34);
+            int dateFieldWidth = editing ? 170 : 160;
+            int timeFieldWidth = editing ? 150 : 130;
+            configureBookingEditorField(txtDetailCheckInDate, dateFieldWidth, 34);
+            configureBookingEditorField(txtDetailCheckInTime, timeFieldWidth, 34);
+            configureBookingEditorField(txtDetailCheckOutDate, dateFieldWidth, 34);
+            configureBookingEditorField(txtDetailCheckOutTime, timeFieldWidth, 34);
 
-            JPanel fields = new JPanel(new GridLayout(2, 2, 14, 10));
+            JPanel fields = new JPanel(new GridLayout(2, 2, editing ? 14 : 10, editing ? 10 : 6));
             fields.setOpaque(false);
             fields.add(createFieldGroup("Ngày bắt đầu", txtDetailCheckInDate));
             fields.add(createFieldGroup("Giờ bắt đầu", txtDetailCheckInTime));
@@ -2581,11 +2633,11 @@ public class DatPhongGUI extends JFrame {
             lblSuggestedDeposit.setFont(BODY_FONT);
             lblSuggestedDeposit.setForeground(TEXT_MUTED);
 
-            JPanel panel = new JPanel(new BorderLayout(0, 10));
+            JPanel panel = new JPanel(new BorderLayout(0, editing ? 10 : 6));
             panel.setOpaque(false);
             panel.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                    new EmptyBorder(14, 14, 14, 14)
+                    new EmptyBorder(editing ? 14 : 10, editing ? 14 : 10, editing ? 14 : 10, editing ? 14 : 10)
             ));
             panel.add(titlePanel, BorderLayout.NORTH);
             panel.add(fields, BorderLayout.CENTER);
@@ -2602,16 +2654,16 @@ public class DatPhongGUI extends JFrame {
             lblSubtitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             lblSubtitle.setForeground(TEXT_MUTED);
 
-            JPanel header = new JPanel(new BorderLayout(0, 4));
+            JPanel header = new JPanel(new BorderLayout(0, editing ? 4 : 2));
             header.setOpaque(false);
             header.add(lblTitle, BorderLayout.NORTH);
             header.add(lblSubtitle, BorderLayout.SOUTH);
 
-            JPanel panel = new JPanel(new BorderLayout(0, 8));
+            JPanel panel = new JPanel(new BorderLayout(0, editing ? 8 : 6));
             panel.setBackground(PANEL_SOFT);
             panel.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(BORDER_SOFT, 1, true),
-                    new EmptyBorder(10, 10, 10, 10)
+                    new EmptyBorder(editing ? 10 : 8, editing ? 10 : 8, editing ? 10 : 8, editing ? 10 : 8)
             ));
             panel.add(header, BorderLayout.NORTH);
             panel.add(tableScrollPane, BorderLayout.CENTER);
@@ -2620,7 +2672,7 @@ public class DatPhongGUI extends JFrame {
 
         private AbstractTableModel createAvailableRoomTableModel() {
             return new AbstractTableModel() {
-                private final String[] columns = {"Số phòng", "Loại phòng", "Sức chứa", "Thêm"};
+                private final String[] columns = {"Phòng", "Loại phòng", "Sức chứa", "Thêm"};
 
                 @Override
                 public int getRowCount() {
@@ -2732,7 +2784,7 @@ public class DatPhongGUI extends JFrame {
 
         private AbstractTableModel createSelectedRoomTableModel() {
             return new AbstractTableModel() {
-                private final String[] columns = {"Số phòng", "Số người ở", "Ngày bắt đầu", "Ngày kết thúc", "Xóa"};
+                private final String[] columns = {"Phòng", "Số người", "Bắt đầu", "Kết thúc", "Xóa"};
 
                 @Override
                 public int getRowCount() {
@@ -2805,11 +2857,11 @@ public class DatPhongGUI extends JFrame {
 
         private void configureAvailableRoomsTable() {
             tblAvailableRoomsDialog.setFont(BODY_FONT);
-            tblAvailableRoomsDialog.setRowHeight(34);
+            tblAvailableRoomsDialog.setRowHeight(editing ? 34 : 32);
             tblAvailableRoomsDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-            tblAvailableRoomsDialog.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+            tblAvailableRoomsDialog.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
             tblAvailableRoomsDialog.setFillsViewportHeight(true);
-            tblAvailableRoomsDialog.getTableHeader().setPreferredSize(new Dimension(0, 34));
+            tblAvailableRoomsDialog.getTableHeader().setPreferredSize(new Dimension(0, editing ? 34 : 32));
             ScreenUIHelper.styleTableHeader(tblAvailableRoomsDialog);
             tblAvailableRoomsDialog.setDefaultRenderer(Object.class, new DefaultTableCellRenderer() {
                 @Override
@@ -2836,11 +2888,11 @@ public class DatPhongGUI extends JFrame {
 
         private void configureSelectedRoomsTable() {
             tblBookingDetailDialog.setFont(BODY_FONT);
-            tblBookingDetailDialog.setRowHeight(34);
+            tblBookingDetailDialog.setRowHeight(editing ? 34 : 32);
             tblBookingDetailDialog.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-            tblBookingDetailDialog.setAutoResizeMode(JTable.AUTO_RESIZE_SUBSEQUENT_COLUMNS);
+            tblBookingDetailDialog.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
             tblBookingDetailDialog.setToolTipText("Double click để cập nhật dòng chi tiết.");
-            tblBookingDetailDialog.getTableHeader().setPreferredSize(new Dimension(0, 34));
+            tblBookingDetailDialog.getTableHeader().setPreferredSize(new Dimension(0, editing ? 34 : 32));
             tblBookingDetailDialog.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override
                 public void mouseClicked(java.awt.event.MouseEvent e) {
@@ -2958,9 +3010,9 @@ public class DatPhongGUI extends JFrame {
             if (tblAvailableRoomsDialog == null || tblAvailableRoomsDialog.getColumnModel().getColumnCount() < 4) {
                 return;
             }
-            int[] widths = {78, 150, 82, 58};
-            int[] minWidths = {70, 120, 74, 52};
-            int[] maxWidths = {95, Integer.MAX_VALUE, 98, 64};
+            int[] widths = editing ? new int[]{78, 150, 82, 58} : new int[]{70, 160, 86, 52};
+            int[] minWidths = editing ? new int[]{70, 120, 74, 52} : new int[]{58, 110, 82, 46};
+            int[] maxWidths = editing ? new int[]{95, Integer.MAX_VALUE, 98, 64} : new int[]{86, Integer.MAX_VALUE, 104, 60};
             for (int i = 0; i < widths.length; i++) {
                 javax.swing.table.TableColumn column = tblAvailableRoomsDialog.getColumnModel().getColumn(i);
                 column.setPreferredWidth(widths[i]);
@@ -2975,9 +3027,9 @@ public class DatPhongGUI extends JFrame {
             if (tblBookingDetailDialog == null || tblBookingDetailDialog.getColumnModel().getColumnCount() < 5) {
                 return;
             }
-            int[] widths = {82, 86, 145, 145, 58};
-            int[] minWidths = {74, 78, 132, 132, 52};
-            int[] maxWidths = {100, 105, Integer.MAX_VALUE, Integer.MAX_VALUE, 64};
+            int[] widths = editing ? new int[]{82, 86, 145, 145, 58} : new int[]{68, 82, 168, 168, 50};
+            int[] minWidths = editing ? new int[]{74, 78, 132, 132, 52} : new int[]{58, 74, 132, 132, 44};
+            int[] maxWidths = editing ? new int[]{100, 105, Integer.MAX_VALUE, Integer.MAX_VALUE, 64} : new int[]{88, 100, Integer.MAX_VALUE, Integer.MAX_VALUE, 58};
             for (int i = 0; i < widths.length; i++) {
                 javax.swing.table.TableColumn column = tblBookingDetailDialog.getColumnModel().getColumn(i);
                 column.setPreferredWidth(widths[i]);

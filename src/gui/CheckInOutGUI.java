@@ -2758,23 +2758,16 @@ public class CheckInOutGUI extends JFrame {
         }
         String invoiceId = resolveInvoiceIdForState(state);
         if (invoiceId == null) {
-            refreshRoomStatusAfterMissingPaymentInvoice(state);
-            showInfo("Ph\u00f2ng n\u00e0y kh\u00f4ng c\u00f2n h\u00f3a \u0111\u01a1n ch\u1edd thanh to\u00e1n. D\u1eef li\u1ec7u tr\u1ea1ng th\u00e1i ph\u00f2ng s\u1ebd \u0111\u01b0\u1ee3c l\u00e0m m\u1edbi.");
+            showInfo("Ch\u01b0a t\u00ecm th\u1ea5y h\u00f3a \u0111\u01a1n ch\u1edd thanh to\u00e1n cho ph\u00f2ng n\u00e0y.");
             return;
         }
-        ThanhToanGUI.requestInvoiceFocus(invoiceId);
+        ThanhToanGUI.requestInvoiceFocusAndOpen(invoiceId);
         NavigationUtil.navigate(CheckInOutGUI.this, ScreenKey.CHECK_IN_OUT, ScreenKey.THANH_TOAN, username, role);
     }
 
     private String resolveInvoiceIdForState(RoomBlockState state) {
         if (state == null) {
             return null;
-        }
-        if (state.invoiceId != null && state.invoiceId.intValue() > 0) {
-            String invoiceId = String.valueOf(state.invoiceId);
-            if (isInvoiceAwaitingPayment(invoiceId)) {
-                return invoiceId;
-            }
         }
         Connection con = ConnectDB.getConnection();
         if (con == null) {
@@ -2786,6 +2779,12 @@ public class CheckInOutGUI extends JFrame {
                 return invoiceId;
             }
         }
+        if (state.invoiceId != null && state.invoiceId.intValue() > 0) {
+            String invoiceId = String.valueOf(state.invoiceId);
+            if (isInvoiceAwaitingPayment(invoiceId)) {
+                return invoiceId;
+            }
+        }
         return state.bookingId == null || state.bookingId.intValue() <= 0
                 ? null
                 : resolveAwaitingInvoiceByBooking(con, state.bookingId.intValue());
@@ -2794,8 +2793,8 @@ public class CheckInOutGUI extends JFrame {
     private String resolveAwaitingInvoiceByDetail(Connection con, int detailId) {
         String sql = "SELECT TOP 1 maHoaDon FROM HoaDon "
                 + "WHERE maChiTietDatPhong = ? "
-                + "AND ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc') "
-                + "ORDER BY CASE WHEN ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, maHoaDon DESC";
+                + "AND ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' "
+                + "ORDER BY maHoaDon DESC";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, detailId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -2809,8 +2808,8 @@ public class CheckInOutGUI extends JFrame {
     private String resolveAwaitingInvoiceByBooking(Connection con, int bookingId) {
         String sql = "SELECT TOP 1 maHoaDon FROM HoaDon "
                 + "WHERE maDatPhong = ? AND maChiTietDatPhong IS NULL "
-                + "AND ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc') "
-                + "ORDER BY CASE WHEN ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, maHoaDon DESC";
+                + "AND ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' "
+                + "ORDER BY maHoaDon DESC";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, bookingId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -2829,13 +2828,17 @@ public class CheckInOutGUI extends JFrame {
         if (con == null) {
             return false;
         }
+        Integer parsedInvoiceId = parseInvoiceIdOrNull(invoiceId);
+        if (parsedInvoiceId == null) {
+            return false;
+        }
         try (PreparedStatement ps = con.prepareStatement(
                 "SELECT ISNULL(trangThai, N'Ch\u1edd thanh to\u00e1n') AS trangThai FROM HoaDon WHERE maHoaDon = ?")) {
-            ps.setInt(1, Integer.parseInt(invoiceId.trim()));
+            ps.setInt(1, parsedInvoiceId.intValue());
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     String status = safeValue(rs.getString("trangThai"), "Ch\u1edd thanh to\u00e1n");
-                    return !isCompletedInvoiceStatus(status);
+                    return "Ch\u1edd thanh to\u00e1n".equalsIgnoreCase(status);
                 }
             }
         } catch (Exception ignored) {
@@ -2843,10 +2846,23 @@ public class CheckInOutGUI extends JFrame {
         return false;
     }
 
-    private boolean isCompletedInvoiceStatus(String status) {
-        String safeStatus = safeValue(status, "");
-        return "\u0110\u00e3 thanh to\u00e1n".equalsIgnoreCase(safeStatus)
-                || "\u0110\u00e3 ho\u00e0n c\u1ecdc".equalsIgnoreCase(safeStatus);
+    private Integer parseInvoiceIdOrNull(String invoiceId) {
+        if (invoiceId == null) {
+            return null;
+        }
+        String normalized = invoiceId.trim().toUpperCase(Locale.ROOT);
+        if (normalized.startsWith("HD")) {
+            normalized = normalized.substring(2);
+        }
+        normalized = normalized.replace("-", "").trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(normalized);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private void refreshRoomStatusAfterMissingPaymentInvoice(RoomBlockState state) {
@@ -2870,8 +2886,9 @@ public class CheckInOutGUI extends JFrame {
         if (state == null) {
             return;
         }
+        Component dialogOwner = resolveCheckInOutDialogOwner();
         int confirm = JOptionPane.showConfirmDialog(
-                this,
+                dialogOwner,
                 "X\u00e1c nh\u1eadn ph\u00f2ng " + state.roomCode + " \u0111\u00e3 d\u1ecdn xong v\u00e0 chuy\u1ec3n sang S\u1eb5n s\u00e0ng?",
                 "X\u00e1c nh\u1eadn d\u1ecdn ph\u00f2ng",
                 JOptionPane.YES_NO_OPTION,
@@ -2882,7 +2899,7 @@ public class CheckInOutGUI extends JFrame {
         }
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            showInfo("Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
+            showInfo(dialogOwner, "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
             return;
         }
         try {
@@ -2891,14 +2908,27 @@ public class CheckInOutGUI extends JFrame {
                 ps.executeUpdate();
             }
             datPhongDAO.refreshRoomStatus(con, state.roomId);
-            PhongGUI.refreshAllOpenInstances();
-            DatPhongGUI.refreshAllOpenInstances();
-            CheckInOutGUI.refreshAllOpenInstances();
-            showInfo("Ph\u00f2ng " + state.roomCode + " \u0111\u00e3 chuy\u1ec3n sang S\u1eb5n s\u00e0ng.");
+            reloadSampleData(false);
+            revalidate();
+            repaint();
+            if (rootPanel != null) {
+                rootPanel.revalidate();
+                rootPanel.repaint();
+            }
+            showInfo(dialogOwner, "Ph\u00f2ng " + state.roomCode + " \u0111\u00e3 chuy\u1ec3n sang S\u1eb5n s\u00e0ng.");
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                PhongGUI.refreshAllOpenInstances();
+                DatPhongGUI.refreshAllOpenInstances();
+            });
         } catch (Exception e) {
             e.printStackTrace();
-            showInfo("Kh\u00f4ng th\u1ec3 x\u00e1c nh\u1eadn d\u1ecdn ph\u00f2ng.");
+            showInfo(dialogOwner, "Kh\u00f4ng th\u1ec3 x\u00e1c nh\u1eadn d\u1ecdn ph\u00f2ng.");
         }
+    }
+
+    private Component resolveCheckInOutDialogOwner() {
+        java.awt.Window owner = rootPanel == null ? null : javax.swing.SwingUtilities.getWindowAncestor(rootPanel);
+        return owner == null ? this : owner;
     }
 
     private LocalDateTime parseDateTimeOrNull(String value) {
@@ -3160,6 +3190,10 @@ public class CheckInOutGUI extends JFrame {
 
     private void showInfo(String message) {
         JOptionPane.showMessageDialog(this, message, "Th\u00f4ng b\u00e1o", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void showInfo(Component owner, String message) {
+        JOptionPane.showMessageDialog(owner == null ? resolveCheckInOutDialogOwner() : owner, message, "Th\u00f4ng b\u00e1o", JOptionPane.INFORMATION_MESSAGE);
     }
 
     private String safeValue(String value, String fallback) {
@@ -3430,10 +3464,34 @@ public class CheckInOutGUI extends JFrame {
             snapshot = new ArrayList<CheckInOutGUI>(OPEN_INSTANCES);
         }
         for (CheckInOutGUI gui : snapshot) {
-            if (gui != null) {
-                javax.swing.SwingUtilities.invokeLater(() -> gui.reloadSampleData(false));
+            if (gui == null || !gui.isRefreshableOpenInstance()) {
+                synchronized (OPEN_INSTANCES) {
+                    OPEN_INSTANCES.remove(gui);
+                }
+                continue;
             }
+            javax.swing.SwingUtilities.invokeLater(() -> {
+                if (!gui.isRefreshableOpenInstance()) {
+                    synchronized (OPEN_INSTANCES) {
+                        OPEN_INSTANCES.remove(gui);
+                    }
+                    return;
+                }
+                gui.reloadSampleData(false);
+                gui.revalidate();
+                gui.repaint();
+                if (gui.rootPanel != null) {
+                    gui.rootPanel.revalidate();
+                    gui.rootPanel.repaint();
+                }
+            });
         }
+    }
+
+    private boolean isRefreshableOpenInstance() {
+        return isDisplayable()
+                || isShowing()
+                || (rootPanel != null && (rootPanel.isDisplayable() || rootPanel.isShowing()));
     }
 
     public static synchronized void prepareFocusOnBooking(int maDatPhong) {

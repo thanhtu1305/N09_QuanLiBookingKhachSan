@@ -40,6 +40,9 @@ public class DatPhongDAO {
     private static final String LOAI_GIA_THEO_GIO = "Theo giờ";
     private static final String LOAI_GIA_LE = "Giá lễ";
     private static final String LOAI_GIA_CUOI_TUAN = "Giá cuối tuần";
+    private static final String ROOM_READY_STATUS_SQL = "(N'Hoạt động', N'Trống', N'Sẵn sàng', N'Dọn dẹp', N'Dọn phòng')";
+    private static final String BOOKING_BLOCKING_STATUS_SQL =
+            "(N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in', N'Check-out một phần', N'Chờ thanh toán')";
 
     private static final String DAY_TYPE_NORMAL = "THUONG";
     private static final String DAY_TYPE_WEEKEND = "CUOI_TUAN";
@@ -496,6 +499,12 @@ public class DatPhongDAO {
         String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         String conflictCheckInExpr = "COALESCE(lt.checkIn, " + detailCheckInExpr + ")";
         String conflictCheckOutExpr = "COALESCE(lt.checkOut, " + detailCheckOutExpr + ")";
+        String paidInvoiceExistsSql = "EXISTS ("
+                + "SELECT 1 FROM dbo.HoaDon hdDone "
+                + "WHERE ISNULL(hdDone.trangThai, N'') = N'Đã thanh toán' "
+                + "AND ((hdDone.maDatPhong = dp.maDatPhong AND hdDone.maChiTietDatPhong IS NULL) "
+                + "     OR hdDone.maChiTietDatPhong = ctdp.maChiTietDatPhong)"
+                + ")";
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT TOP 1 dp.maDatPhong, ctdp.maChiTietDatPhong, ")
                 .append("ISNULL(lt.maLuuTru, 0) AS maLuuTru, ")
@@ -505,7 +514,7 @@ public class DatPhongDAO {
                 .append(conflictCheckOutExpr).append(" AS ngayTraPhong, ")
                 .append("CASE ")
                 .append(" WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN N'Đang ở' ")
-                .append(" WHEN lt.maLuuTru IS NOT NULL AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') THEN N'Đang ở' ")
+                .append(" WHEN lt.maLuuTru IS NOT NULL AND ISNULL(dp.trangThai, N'') IN ").append(BOOKING_BLOCKING_STATUS_SQL).append(" THEN N'Đang ở' ")
                 .append(" ELSE dp.trangThai ")
                 .append("END AS trangThai ")
                 .append("FROM ChiTietDatPhong ctdp ")
@@ -520,7 +529,8 @@ public class DatPhongDAO {
             sql.append("AND dp.maDatPhong <> ? ");
         }
         sql.append("AND (")
-                .append(" dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in') ")
+                .append(" (ISNULL(dp.trangThai, N'') IN ").append(BOOKING_BLOCKING_STATUS_SQL)
+                .append(" AND NOT ").append(paidInvoiceExistsSql).append(") ")
                 .append(" OR (lt.maLuuTru IS NOT NULL AND (lt.checkOut IS NULL OR lt.checkOut > ?))")
                 .append(") ")
                 .append("ORDER BY CASE WHEN lt.maLuuTru IS NOT NULL AND lt.checkOut IS NULL THEN 0 ELSE 1 END, ")
@@ -581,30 +591,46 @@ public class DatPhongDAO {
 
         String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
         String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
+        String paidInvoiceExistsSql = "EXISTS ("
+                + "SELECT 1 FROM dbo.HoaDon hdDone "
+                + "WHERE ISNULL(hdDone.trangThai, N'') = N'Đã thanh toán' "
+                + "AND ((hdDone.maDatPhong = dp.maDatPhong AND hdDone.maChiTietDatPhong IS NULL) "
+                + "     OR hdDone.maChiTietDatPhong = ctdp.maChiTietDatPhong)"
+                + ")";
         String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
                 "FROM dbo.Phong p " +
                 "JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE (p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng') OR (? IS NOT NULL AND p.maPhong = ?)) " +
+                "WHERE (p.trangThai IN " + ROOM_READY_STATUS_SQL + " OR (? IS NOT NULL AND p.maPhong = ?)) " +
                 "AND NOT EXISTS ( " +
                 "    SELECT 1 FROM dbo.LuuTru ltActive " +
+                "    LEFT JOIN dbo.DatPhong dpActive ON dpActive.maDatPhong = ltActive.maDatPhong " +
+                "    OUTER APPLY (SELECT TOP 1 ctdpActive.maChiTietDatPhong " +
+                "                 FROM dbo.ChiTietDatPhong ctdpActive " +
+                "                 WHERE ctdpActive.maChiTietDatPhong = ltActive.maChiTietDatPhong) activeDetail " +
                 "    WHERE ltActive.maPhong = p.maPhong " +
                 "      AND ltActive.checkOut IS NULL " +
-                "      AND (? IS NULL OR ltActive.maDatPhong <> ?) " +
+                "      AND (? IS NULL OR ltActive.maDatPhong IS NULL OR ltActive.maDatPhong <> ?) " +
+                "      AND (ltActive.maDatPhong IS NULL OR ISNULL(dpActive.trangThai, N'') IN " + BOOKING_BLOCKING_STATUS_SQL + ") " +
+                "      AND NOT EXISTS (SELECT 1 FROM dbo.HoaDon hdDone " +
+                "                      WHERE ISNULL(hdDone.trangThai, N'') = N'Đã thanh toán' " +
+                "                        AND ((hdDone.maDatPhong = ltActive.maDatPhong AND hdDone.maChiTietDatPhong IS NULL) " +
+                "                             OR hdDone.maChiTietDatPhong = activeDetail.maChiTietDatPhong)) " +
                 ") " +
                 "AND NOT EXISTS ( " +
                 "    SELECT 1 " +
                 "    FROM dbo.ChiTietDatPhong ctdp " +
                 "    JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong " +
-                "    OUTER APPLY (SELECT TOP 1 lt.maLuuTru " +
+                "    OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut " +
                 "                 FROM dbo.LuuTru lt " +
                 "                 WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
                 "                 ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt " +
                 "    WHERE ctdp.maPhong = p.maPhong " +
                 "      AND (? IS NULL OR dp.maDatPhong <> ?) " +
-                "      AND latestLt.maLuuTru IS NULL " +
-                "      AND dp.trangThai IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in') " +
+                "      AND ISNULL(dp.trangThai, N'') IN " + BOOKING_BLOCKING_STATUS_SQL + " " +
+                "      AND NOT " + paidInvoiceExistsSql + " " +
                 "      AND " + detailCheckInExpr + " < ? " +
                 "      AND " + detailCheckOutExpr + " > ? " +
+                "      AND (latestLt.maLuuTru IS NULL OR latestLt.checkOut IS NULL OR latestLt.checkOut > ? OR ISNULL(dp.trangThai, N'') = N'Chờ thanh toán') " +
                 ") " +
                 "ORDER BY CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, " +
                 "TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
@@ -630,6 +656,7 @@ public class DatPhongDAO {
                 stmt.setInt(index++, excludeMaDatPhong.intValue());
             }
             stmt.setTimestamp(index++, Timestamp.valueOf(ngayTraPhong));
+            stmt.setTimestamp(index++, Timestamp.valueOf(ngayNhanPhong));
             stmt.setTimestamp(index, Timestamp.valueOf(ngayNhanPhong));
 
             try (ResultSet rs = stmt.executeQuery()) {

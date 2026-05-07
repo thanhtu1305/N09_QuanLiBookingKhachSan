@@ -1148,11 +1148,83 @@ public class DatPhongGUI extends JFrame {
         field.addTextChangeListener(action);
     }
 
+    private void installFieldFocusLostListener(Component field, Runnable action) {
+        JTextField editor = findNestedTextField(field);
+        if (editor == null || action == null) {
+            return;
+        }
+        editor.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) {
+                action.run();
+            }
+        });
+    }
+
+    private void requestFocusForField(Component field) {
+        JTextField editor = findNestedTextField(field);
+        Component target = editor == null ? field : editor;
+        if (target != null) {
+            javax.swing.SwingUtilities.invokeLater(target::requestFocusInWindow);
+        }
+    }
+
     private LocalDateTime combineDateTime(LocalDate date, LocalTime time) {
         if (date == null || time == null) {
             return null;
         }
         return LocalDateTime.of(date, time.withSecond(0).withNano(0));
+    }
+
+    private LocalTime currentBookingTimeValue() {
+        return LocalTime.now().withSecond(0).withNano(0);
+    }
+
+    private LocalDateTime toDefaultBookingStartDateTime(LocalDate value) {
+        if (value == null) {
+            return null;
+        }
+        return value.isEqual(LocalDate.now())
+                ? LocalDateTime.of(value, currentBookingTimeValue())
+                : toDefaultDetailDateTime(value);
+    }
+
+    private String validateBookingDateTimeSelection(LocalDate checkInDate, LocalTime checkInTime,
+                                                    LocalDate checkOutDate, LocalTime checkOutTime) {
+        if (checkInDate == null || checkInTime == null || checkOutDate == null || checkOutTime == null) {
+            return "Vui lòng chọn ngày giờ bắt đầu/kết thúc hợp lệ để xem phòng trống.";
+        }
+
+        LocalDate today = LocalDate.now();
+        if (checkInDate.isBefore(today)) {
+            return "Không được chọn ngày quá khứ, yêu cầu chọn ngày trong tương lai và hiện tại";
+        }
+        if (checkOutDate.isBefore(checkInDate)) {
+            return "Ngày kết thúc không được nhỏ hơn ngày bắt đầu";
+        }
+
+        LocalTime normalizedCheckInTime = checkInTime.withSecond(0).withNano(0);
+        LocalTime normalizedCheckOutTime = checkOutTime.withSecond(0).withNano(0);
+        if (checkInDate.isEqual(today) && normalizedCheckInTime.isBefore(currentBookingTimeValue())) {
+            return "Không được chọn giờ quá khứ cho ngày hiện tại";
+        }
+        if (checkOutDate.isEqual(checkInDate) && !normalizedCheckOutTime.isAfter(normalizedCheckInTime)) {
+            return "Giờ kết thúc phải lớn hơn giờ bắt đầu";
+        }
+
+        return null;
+    }
+
+    private String validateBookingDateTimeSelection(LocalDateTime checkIn, LocalDateTime checkOut) {
+        if (checkIn == null || checkOut == null) {
+            return "Vui lòng chọn ngày giờ bắt đầu/kết thúc hợp lệ để xem phòng trống.";
+        }
+        return validateBookingDateTimeSelection(
+                checkIn.toLocalDate(),
+                checkIn.toLocalTime(),
+                checkOut.toLocalDate(),
+                checkOut.toLocalTime()
+        );
     }
 
     private LocalDateTime toDefaultDetailDateTime(LocalDate value) {
@@ -1601,7 +1673,7 @@ public class DatPhongGUI extends JFrame {
     private List<RoomOption> loadRoomOptions(LocalDateTime checkIn, LocalDateTime checkOut, Integer includeRoomId, Integer excludeBookingId,
                                              List<BookingDetailRecord> currentRows, BookingDetailRecord currentDetail) {
         List<RoomOption> options = new ArrayList<RoomOption>();
-        if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
+        if (validateBookingDateTimeSelection(checkIn, checkOut) != null) {
             return options;
         }
         Connection con = ConnectDB.getConnection();
@@ -1610,7 +1682,7 @@ public class DatPhongGUI extends JFrame {
         }
         String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.trangThai, p.sucChuaToiDa, lp.maLoaiPhong, lp.tenLoaiPhong, lp.giaThamChieu " +
                 "FROM Phong p JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
-                "WHERE p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng') OR p.maPhong = ? " +
+                "WHERE p.trangThai IN (N'Hoạt động', N'Trống', N'Sẵn sàng', N'Dọn dẹp', N'Dọn phòng') OR p.maPhong = ? " +
                 "ORDER BY TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setInt(1, includeRoomId == null ? -1 : includeRoomId.intValue());
@@ -1641,7 +1713,9 @@ public class DatPhongGUI extends JFrame {
             String roomStatus = safeValue(room.getTrangThai(), "Hoạt động");
             boolean isSelectableStatus = "Hoạt động".equalsIgnoreCase(roomStatus)
                     || "Trống".equalsIgnoreCase(roomStatus)
-                    || "Sẵn sàng".equalsIgnoreCase(roomStatus);
+                    || "Sẵn sàng".equalsIgnoreCase(roomStatus)
+                    || "Dọn dẹp".equalsIgnoreCase(roomStatus)
+                    || "Dọn phòng".equalsIgnoreCase(roomStatus);
             if (!isSelectableStatus && !isIncludedRoom) {
                 continue;
             }
@@ -1945,13 +2019,10 @@ public class DatPhongGUI extends JFrame {
                 content.add(buildBookingDialogButtons(btnCancel, btnUpdate), BorderLayout.SOUTH);
             } else {
                 JButton btnSaveConfirm = createOutlineButton("Lưu và xác nhận", new Color(59, 130, 246), e -> submit("confirm"));
-                JButton btnSaveCheckIn = createPrimaryButton("Lưu và check-in", new Color(245, 158, 11), TEXT_PRIMARY, e -> submit("checkin"));
                 configureBookingFooterButton(btnCancel);
                 configureBookingFooterButton(btnSaveConfirm);
-                configureBookingFooterButton(btnSaveCheckIn);
                 submitButtons.add(btnSaveConfirm);
-                submitButtons.add(btnSaveCheckIn);
-                content.add(buildBookingDialogButtons(btnCancel, btnSaveConfirm, btnSaveCheckIn), BorderLayout.SOUTH);
+                content.add(buildBookingDialogButtons(btnCancel, btnSaveConfirm), BorderLayout.SOUTH);
             }
             add(content, BorderLayout.CENTER);
             reevaluateDetailValidationState(false);
@@ -1959,6 +2030,7 @@ public class DatPhongGUI extends JFrame {
 
         @Override
         protected void afterPrepareDialogBeforeShow() {
+            reloadAvailableRoomOptions();
             if (!editing) {
                 applyLargeCreateBookingDialogBounds(this);
             }
@@ -2601,6 +2673,7 @@ public class DatPhongGUI extends JFrame {
             installTimeFieldChangeListener(txtDetailCheckInTime, this::handleSharedScheduleChanged);
             installDateFieldChangeListener(txtDetailCheckOutDate, this::handleSharedScheduleChanged);
             installTimeFieldChangeListener(txtDetailCheckOutTime, this::handleSharedScheduleChanged);
+            installSharedScheduleFocusValidation();
 
             JLabel lblTitle = new JLabel("Khoảng thời gian áp dụng");
             lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
@@ -2989,7 +3062,7 @@ public class DatPhongGUI extends JFrame {
                     result = checkIn;
                 }
             }
-            return result == null ? toDefaultDetailDateTime(LocalDate.now()) : result;
+            return result == null ? toDefaultBookingStartDateTime(LocalDate.now()) : result;
         }
 
         private LocalDateTime resolveInitialSharedCheckOut(LocalDateTime fallbackCheckIn) {
@@ -3107,15 +3180,87 @@ public class DatPhongGUI extends JFrame {
         }
 
         private String validateSharedScheduleSelection() {
-            LocalDateTime checkIn = resolveSharedCheckInSelection();
-            LocalDateTime checkOut = resolveSharedCheckOutSelection();
-            if (checkIn == null || checkOut == null) {
-                return "Vui lòng chọn ngày giờ bắt đầu/kết thúc hợp lệ để xem phòng trống.";
+            return validateBookingDateTimeSelection(
+                    parseDate(txtDetailCheckInDate == null ? null : txtDetailCheckInDate.getText()),
+                    txtDetailCheckInTime == null ? null : txtDetailCheckInTime.getTimeValue(),
+                    parseDate(txtDetailCheckOutDate == null ? null : txtDetailCheckOutDate.getText()),
+                    txtDetailCheckOutTime == null ? null : txtDetailCheckOutTime.getTimeValue()
+            );
+        }
+
+        private void installSharedScheduleFocusValidation() {
+            installFieldFocusLostListener(txtDetailCheckInDate, () -> validateSharedScheduleAfterFocusLost(txtDetailCheckInDate));
+            installFieldFocusLostListener(txtDetailCheckInTime, () -> validateSharedScheduleAfterFocusLost(txtDetailCheckInTime));
+            installFieldFocusLostListener(txtDetailCheckOutDate, () -> validateSharedScheduleAfterFocusLost(txtDetailCheckOutDate));
+            installFieldFocusLostListener(txtDetailCheckOutTime, () -> validateSharedScheduleAfterFocusLost(txtDetailCheckOutTime));
+        }
+
+        private void validateSharedScheduleAfterFocusLost(Component sourceField) {
+            if (syncingSharedSchedule) {
+                return;
             }
-            if (!checkOut.isAfter(checkIn)) {
-                return "Giờ kết thúc phải lớn hơn giờ bắt đầu.";
+            String warning = normalizeSharedScheduleAfterFocusLost(sourceField);
+            if (warning != null) {
+                showWarning(warning);
+                requestFocusForField(resolveSharedScheduleFocusTarget(warning, sourceField));
             }
-            return null;
+            handleSharedScheduleChanged();
+        }
+
+        private String normalizeSharedScheduleAfterFocusLost(Component sourceField) {
+            LocalDate checkInDate = parseDate(txtDetailCheckInDate == null ? null : txtDetailCheckInDate.getText());
+            LocalTime checkInTime = txtDetailCheckInTime == null ? null : txtDetailCheckInTime.getTimeValue();
+            LocalDate checkOutDate = parseDate(txtDetailCheckOutDate == null ? null : txtDetailCheckOutDate.getText());
+            LocalTime checkOutTime = txtDetailCheckOutTime == null ? null : txtDetailCheckOutTime.getTimeValue();
+            if (checkInDate == null || checkInTime == null || checkOutDate == null || checkOutTime == null) {
+                return null;
+            }
+
+            LocalDate today = LocalDate.now();
+            LocalTime now = currentBookingTimeValue();
+            String warning = null;
+            syncingSharedSchedule = true;
+            try {
+                if (checkInDate.isBefore(today)) {
+                    txtDetailCheckInDate.setDateValue(today);
+                    txtDetailCheckInTime.setTimeValue(now);
+                    if (checkOutDate.isBefore(today)) {
+                        txtDetailCheckOutDate.setDateValue(today);
+                    }
+                    warning = "Không được chọn ngày quá khứ, yêu cầu chọn ngày trong tương lai và hiện tại";
+                } else if (checkInDate.isEqual(today) && checkInTime.withSecond(0).withNano(0).isBefore(now)) {
+                    txtDetailCheckInTime.setTimeValue(now);
+                    if (sourceField == txtDetailCheckInDate) {
+                        return null;
+                    }
+                    warning = "Không được chọn giờ quá khứ cho ngày hiện tại";
+                } else if (checkOutDate.isBefore(checkInDate)) {
+                    txtDetailCheckOutDate.setDateValue(checkInDate);
+                    warning = "Ngày kết thúc không được nhỏ hơn ngày bắt đầu";
+                } else if (checkOutDate.isEqual(checkInDate)
+                        && !checkOutTime.withSecond(0).withNano(0).isAfter(checkInTime.withSecond(0).withNano(0))) {
+                    warning = "Giờ kết thúc phải lớn hơn giờ bắt đầu";
+                }
+            } finally {
+                syncingSharedSchedule = false;
+            }
+            return warning;
+        }
+
+        private Component resolveSharedScheduleFocusTarget(String warning, Component fallback) {
+            if ("Không được chọn ngày quá khứ, yêu cầu chọn ngày trong tương lai và hiện tại".equals(warning)) {
+                return txtDetailCheckInDate;
+            }
+            if ("Không được chọn giờ quá khứ cho ngày hiện tại".equals(warning)) {
+                return txtDetailCheckInTime;
+            }
+            if ("Ngày kết thúc không được nhỏ hơn ngày bắt đầu".equals(warning)) {
+                return txtDetailCheckOutDate;
+            }
+            if ("Giờ kết thúc phải lớn hơn giờ bắt đầu".equals(warning)) {
+                return txtDetailCheckOutTime;
+            }
+            return fallback;
         }
 
         private void handleSharedScheduleChanged() {
@@ -3142,9 +3287,9 @@ public class DatPhongGUI extends JFrame {
 
         private void reloadAvailableRoomOptions() {
             availableRoomOptions.clear();
-            LocalDateTime checkIn = resolveSharedCheckInSelection();
-            LocalDateTime checkOut = resolveSharedCheckOutSelection();
-            if (checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+            if (validateSharedScheduleSelection() == null) {
+                LocalDateTime checkIn = resolveSharedCheckInSelection();
+                LocalDateTime checkOut = resolveSharedCheckOutSelection();
                 availableRoomOptions.addAll(loadRoomOptions(
                         checkIn,
                         checkOut,
@@ -3160,13 +3305,13 @@ public class DatPhongGUI extends JFrame {
         }
 
         private void addRoomFromAvailableList(int rowIndex) {
-            if (rowIndex < 0 || rowIndex >= availableRoomOptions.size()) {
-                return;
-            }
             String scheduleWarning = validateSharedScheduleSelection();
             if (scheduleWarning != null) {
                 showWarning(scheduleWarning);
                 reevaluateDetailValidationState(false);
+                return;
+            }
+            if (rowIndex < 0 || rowIndex >= availableRoomOptions.size()) {
                 return;
             }
             RoomOption option = availableRoomOptions.get(rowIndex);
@@ -3391,6 +3536,11 @@ public class DatPhongGUI extends JFrame {
         }
 
         private String validateDetailRowsBeforeSave() {
+            String scheduleWarning = validateSharedScheduleSelection();
+            if (scheduleWarning != null) {
+                reevaluateDetailValidationState(true);
+                return scheduleWarning;
+            }
             if (detailRows.isEmpty()) {
                 reevaluateDetailValidationState(true);
                 return "Phiếu đặt phòng phải có ít nhất 1 phòng.";
@@ -3850,10 +4000,10 @@ public class DatPhongGUI extends JFrame {
                 this.editingDetail = detail;
 
                 LocalDateTime initialCheckIn = detail == null
-                        ? toDefaultDetailDateTime(LocalDate.now())
+                        ? toDefaultBookingStartDateTime(LocalDate.now())
                         : normalizeLegacyDetailDateTime(detail.checkInDuKien);
                 if (initialCheckIn == null) {
-                    initialCheckIn = toDefaultDetailDateTime(LocalDate.now());
+                    initialCheckIn = toDefaultBookingStartDateTime(LocalDate.now());
                 }
                 LocalDateTime initialCheckOut = detail == null
                         ? toDefaultDetailDateTime(LocalDate.now().plusDays(1))
@@ -3929,6 +4079,7 @@ public class DatPhongGUI extends JFrame {
                 installTimeFieldChangeListener(txtCheckOutTimeDialog, this::refreshSelectedRatePreview);
                 installDateFieldChangeListener(txtCheckOutDialog, this::reevaluateCurrentSelectionState);
                 installTimeFieldChangeListener(txtCheckOutTimeDialog, this::reevaluateCurrentSelectionState);
+                installDetailScheduleFocusValidation();
 
                 addFormRow(form, gbc, 0, "Phòng", cboPhongDialog);
                 addFormRow(form, gbc, 1, "Loại phòng", txtLoaiPhongDialog);
@@ -3987,18 +4138,102 @@ public class DatPhongGUI extends JFrame {
                 return combineDateTime(parseDate(txtCheckOutDialog.getText()), txtCheckOutTimeDialog.getTimeValue());
             }
 
+            private String validateSelectedSchedule() {
+                return validateBookingDateTimeSelection(
+                        parseDate(txtCheckInDialog.getText()),
+                        txtCheckInTimeDialog.getTimeValue(),
+                        parseDate(txtCheckOutDialog.getText()),
+                        txtCheckOutTimeDialog.getTimeValue()
+                );
+            }
+
+            private void installDetailScheduleFocusValidation() {
+                installFieldFocusLostListener(txtCheckInDialog, () -> validateDetailScheduleAfterFocusLost(txtCheckInDialog));
+                installFieldFocusLostListener(txtCheckInTimeDialog, () -> validateDetailScheduleAfterFocusLost(txtCheckInTimeDialog));
+                installFieldFocusLostListener(txtCheckOutDialog, () -> validateDetailScheduleAfterFocusLost(txtCheckOutDialog));
+                installFieldFocusLostListener(txtCheckOutTimeDialog, () -> validateDetailScheduleAfterFocusLost(txtCheckOutTimeDialog));
+            }
+
+            private void validateDetailScheduleAfterFocusLost(Component sourceField) {
+                String warning = normalizeDetailScheduleAfterFocusLost(sourceField);
+                if (warning != null) {
+                    showWarning(warning);
+                    requestFocusForField(resolveDetailScheduleFocusTarget(warning, sourceField));
+                }
+                reloadAvailableRooms();
+                refreshSelectedRatePreview();
+                reevaluateCurrentSelectionState();
+            }
+
+            private String normalizeDetailScheduleAfterFocusLost(Component sourceField) {
+                LocalDate checkInDate = parseDate(txtCheckInDialog.getText());
+                LocalTime checkInTime = txtCheckInTimeDialog.getTimeValue();
+                LocalDate checkOutDate = parseDate(txtCheckOutDialog.getText());
+                LocalTime checkOutTime = txtCheckOutTimeDialog.getTimeValue();
+                if (checkInDate == null || checkInTime == null || checkOutDate == null || checkOutTime == null) {
+                    return null;
+                }
+
+                LocalDate today = LocalDate.now();
+                LocalTime now = currentBookingTimeValue();
+                if (checkInDate.isBefore(today)) {
+                    txtCheckInDialog.setDateValue(today);
+                    txtCheckInTimeDialog.setTimeValue(now);
+                    if (checkOutDate.isBefore(today)) {
+                        txtCheckOutDialog.setDateValue(today);
+                    }
+                    return "Không được chọn ngày quá khứ, yêu cầu chọn ngày trong tương lai và hiện tại";
+                }
+                if (checkInDate.isEqual(today) && checkInTime.withSecond(0).withNano(0).isBefore(now)) {
+                    txtCheckInTimeDialog.setTimeValue(now);
+                    if (sourceField == txtCheckInDialog) {
+                        return null;
+                    }
+                    return "Không được chọn giờ quá khứ cho ngày hiện tại";
+                }
+                if (checkOutDate.isBefore(checkInDate)) {
+                    txtCheckOutDialog.setDateValue(checkInDate);
+                    return "Ngày kết thúc không được nhỏ hơn ngày bắt đầu";
+                }
+                if (checkOutDate.isEqual(checkInDate)
+                        && !checkOutTime.withSecond(0).withNano(0).isAfter(checkInTime.withSecond(0).withNano(0))) {
+                    return "Giờ kết thúc phải lớn hơn giờ bắt đầu";
+                }
+                return null;
+            }
+
+            private Component resolveDetailScheduleFocusTarget(String warning, Component fallback) {
+                if ("Không được chọn ngày quá khứ, yêu cầu chọn ngày trong tương lai và hiện tại".equals(warning)) {
+                    return txtCheckInDialog;
+                }
+                if ("Không được chọn giờ quá khứ cho ngày hiện tại".equals(warning)) {
+                    return txtCheckInTimeDialog;
+                }
+                if ("Ngày kết thúc không được nhỏ hơn ngày bắt đầu".equals(warning)) {
+                    return txtCheckOutDialog;
+                }
+                if ("Giờ kết thúc phải lớn hơn giờ bắt đầu".equals(warning)) {
+                    return txtCheckOutTimeDialog;
+                }
+                return fallback;
+            }
+
             private void reloadAvailableRooms() {
                 Integer preferredRoomId = resolvePreferredRoomId();
-                LocalDateTime checkIn = resolveSelectedCheckIn();
-                LocalDateTime checkOut = resolveSelectedCheckOut();
-                List<RoomOption> roomOptions = loadRoomOptions(
-                        checkIn,
-                        checkOut,
-                        preferredRoomId,
-                        editing ? Integer.valueOf(editingBooking.maDatPhong) : null,
-                        detailRows,
-                        editingDetail
-                );
+                String scheduleWarning = validateSelectedSchedule();
+                List<RoomOption> roomOptions = new ArrayList<RoomOption>();
+                if (scheduleWarning == null) {
+                    LocalDateTime checkIn = resolveSelectedCheckIn();
+                    LocalDateTime checkOut = resolveSelectedCheckOut();
+                    roomOptions.addAll(loadRoomOptions(
+                            checkIn,
+                            checkOut,
+                            preferredRoomId,
+                            editing ? Integer.valueOf(editingBooking.maDatPhong) : null,
+                            detailRows,
+                            editingDetail
+                    ));
+                }
                 cboPhongDialog.removeAllItems();
                 for (RoomOption option : roomOptions) {
                     cboPhongDialog.addItem(option);
@@ -4037,10 +4272,9 @@ public class DatPhongGUI extends JFrame {
             }
 
             private String resolveRoomAvailabilityMessage() {
-                LocalDateTime checkIn = resolveSelectedCheckIn();
-                LocalDateTime checkOut = resolveSelectedCheckOut();
-                if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
-                    return "Vui lòng chọn ngày nhận/trả hợp lệ để xem phòng trống.";
+                String scheduleWarning = validateSelectedSchedule();
+                if (scheduleWarning != null) {
+                    return scheduleWarning;
                 }
                 if (cboPhongDialog.getItemCount() == 0) {
                     return "Không còn phòng trống phù hợp trong khoảng thời gian đã chọn.";
@@ -4050,6 +4284,10 @@ public class DatPhongGUI extends JFrame {
 
             private void refreshSelectedRatePreview() {
                 RoomOption option = (RoomOption) cboPhongDialog.getSelectedItem();
+                if (validateSelectedSchedule() != null) {
+                    updateRatePreviewDisplay(null);
+                    return;
+                }
                 LocalDateTime checkIn = resolveSelectedCheckIn();
                 LocalDateTime checkOut = resolveSelectedCheckOut();
                 if (option == null || checkIn == null) {
@@ -4132,11 +4370,12 @@ public class DatPhongGUI extends JFrame {
 
                 String warningMessage = null;
                 boolean hasIssue = false;
-                if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
-                    warningMessage = "Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.";
+                String scheduleWarning = validateSelectedSchedule();
+                if (scheduleWarning != null) {
+                    warningMessage = scheduleWarning;
                     hasIssue = true;
                 }
-                if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0 && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0) {
                     warningMessage = "Không còn phòng trống phù hợp trong khoảng thời gian đã chọn.";
                     hasIssue = true;
                 } else if (!hasIssue && option == null) {
@@ -4144,9 +4383,6 @@ public class DatPhongGUI extends JFrame {
                     hasIssue = true;
                 } else if (!hasIssue && isDuplicateRoomSelection(option.maPhongId)) {
                     warningMessage = "Phòng " + option.soPhong + " đã được chọn trong phiếu đặt phòng này.";
-                    hasIssue = true;
-                } else if (!hasIssue && checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
-                    warningMessage = "Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.";
                     hasIssue = true;
                 } else if (!hasIssue && option != null && option.sucChuaToiDa > 0 && soNguoi > option.sucChuaToiDa) {
                     warningMessage = "Phòng " + option.soPhong + " chỉ nhận tối đa " + option.sucChuaToiDa + " khách.";
@@ -4175,11 +4411,12 @@ public class DatPhongGUI extends JFrame {
 
                 String warningMessage = null;
                 boolean hasIssue = false;
-                if (checkIn != null && checkOut != null && !checkOut.isAfter(checkIn)) {
-                    warningMessage = "Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.";
+                String scheduleWarning = validateSelectedSchedule();
+                if (scheduleWarning != null) {
+                    warningMessage = scheduleWarning;
                     hasIssue = true;
                 }
-                if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0 && checkIn != null && checkOut != null && checkOut.isAfter(checkIn)) {
+                if (!hasIssue && option == null && cboPhongDialog.getItemCount() == 0) {
                     warningMessage = "Không còn phòng trống phù hợp trong khoảng thời gian đã chọn.";
                     hasIssue = true;
                 } else if (!hasIssue && option == null) {
@@ -4280,12 +4517,13 @@ public class DatPhongGUI extends JFrame {
                 if (checkInDate == null || checkInTime == null || checkOutDate == null || checkOutTime == null) {
                     return;
                 }
-                LocalDateTime checkIn = combineDateTime(checkInDate, checkInTime);
-                LocalDateTime checkOut = combineDateTime(checkOutDate, checkOutTime);
-                if (!checkOut.isAfter(checkIn)) {
-                    showError("Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.");
+                String scheduleWarning = validateBookingDateTimeSelection(checkInDate, checkInTime, checkOutDate, checkOutTime);
+                if (scheduleWarning != null) {
+                    showError(scheduleWarning);
                     return;
                 }
+                LocalDateTime checkIn = combineDateTime(checkInDate, checkInTime);
+                LocalDateTime checkOut = combineDateTime(checkOutDate, checkOutTime);
                 int soNguoi;
                 try {
                     soNguoi = Integer.parseInt(txtSoNguoiDialog.getText().trim());
@@ -4365,12 +4603,13 @@ public class DatPhongGUI extends JFrame {
                     return;
                 }
 
-                LocalDateTime checkIn = combineDateTime(checkInDate, checkInTime);
-                LocalDateTime checkOut = combineDateTime(checkOutDate, checkOutTime);
-                if (!checkOut.isAfter(checkIn)) {
-                    showError("Giờ ra dự kiến phải lớn hơn giờ vào dự kiến.");
+                String scheduleWarning = validateBookingDateTimeSelection(checkInDate, checkInTime, checkOutDate, checkOutTime);
+                if (scheduleWarning != null) {
+                    showError(scheduleWarning);
                     return;
                 }
+                LocalDateTime checkIn = combineDateTime(checkInDate, checkInTime);
+                LocalDateTime checkOut = combineDateTime(checkOutDate, checkOutTime);
 
                 int soNguoi;
                 try {

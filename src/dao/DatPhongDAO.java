@@ -41,6 +41,7 @@ public class DatPhongDAO {
     private static final String LOAI_GIA_LE = "Giá lễ";
     private static final String LOAI_GIA_CUOI_TUAN = "Giá cuối tuần";
     private static final String ROOM_READY_STATUS_SQL = "(N'Hoạt động', N'Trống', N'Sẵn sàng', N'Dọn dẹp', N'Dọn phòng')";
+    private static final String ROOM_BLOCKED_STATUS_SQL = "(N'Bảo trì', N'Không hoạt động', N'Ngừng hoạt động', N'Đang sửa')";
     private static final String BOOKING_BLOCKING_STATUS_SQL =
             "(N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in', N'Check-out một phần', N'Chờ thanh toán')";
 
@@ -58,6 +59,7 @@ public class DatPhongDAO {
     private static final String DISPLAY_LOAI_GIA_THEO_GIO = "Theo gi\u1edd";
     private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
     private static boolean detailScheduleSchemaEnsured = false;
+    private static boolean invoiceScopeSchemaEnsured = false;
 
     public static String normalizeStageStatus(String status) {
         String value = status == null ? "" : status.trim();
@@ -104,6 +106,63 @@ public class DatPhongDAO {
         return lastErrorMessage;
     }
 
+    public boolean isOperationallyBlockedRoomStatus(String status) {
+        String value = status == null ? "" : status.trim();
+        return "Bảo trì".equalsIgnoreCase(value)
+                || "Không hoạt động".equalsIgnoreCase(value)
+                || "Ngừng hoạt động".equalsIgnoreCase(value)
+                || "Đang sửa".equalsIgnoreCase(value);
+    }
+
+    public String getOperationalBlockStatus(Connection con, int maPhong) throws SQLException {
+        if (con == null || maPhong <= 0) {
+            return "";
+        }
+        String currentStatus = loadCurrentRoomStatus(con, maPhong);
+        return isOperationallyBlockedRoomStatus(currentStatus) ? currentStatus : "";
+    }
+
+    public String resolveDisplayRoomStatus(Connection con, int maPhong) throws SQLException {
+        return resolveDisplayRoomStatus(con, maPhong, null);
+    }
+
+    public String resolveDisplayRoomStatus(Connection con, int maPhong, String currentStatus) throws SQLException {
+        String normalizedCurrent = safeTrim(currentStatus);
+        if (normalizedCurrent.isEmpty() && con != null && maPhong > 0) {
+            normalizedCurrent = loadCurrentRoomStatus(con, maPhong);
+        }
+        if (con != null && maPhong > 0) {
+            if (hasPendingPaymentForRoom(con, maPhong)) {
+                return STATUS_WAIT_PAYMENT;
+            }
+            if (hasActiveStayForRoom(con, maPhong)) {
+                return STATUS_ACTIVE;
+            }
+            if (hasBookedAssignmentForRoom(con, maPhong)) {
+                return "Đã đặt";
+            }
+        }
+        if (STATUS_WAIT_PAYMENT.equalsIgnoreCase(normalizedCurrent)
+                || STATUS_CHECKED_OUT.equalsIgnoreCase(normalizedCurrent)) {
+            return STATUS_WAIT_PAYMENT;
+        }
+        if (STATUS_ACTIVE.equalsIgnoreCase(normalizedCurrent)
+                || "Đã check-in".equalsIgnoreCase(normalizedCurrent)
+                || "Đang lưu trú".equalsIgnoreCase(normalizedCurrent)) {
+            return STATUS_ACTIVE;
+        }
+        if ("Đã đặt".equalsIgnoreCase(normalizedCurrent)
+                || "Đã xác nhận".equalsIgnoreCase(normalizedCurrent)
+                || "Đã cọc".equalsIgnoreCase(normalizedCurrent)
+                || STATUS_PENDING_CHECKIN.equalsIgnoreCase(normalizedCurrent)) {
+            return "Đã đặt";
+        }
+        if (isOperationallyBlockedRoomStatus(normalizedCurrent)) {
+            return "Bảo trì";
+        }
+        return "Hoạt động";
+    }
+
     public void ensureDetailScheduleSchema(Connection con) {
         if (con == null) {
             return;
@@ -124,6 +183,34 @@ public class DatPhongDAO {
                             + "JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong")) {
                 stmt.execute();
                 detailScheduleSchemaEnsured = true;
+            } catch (SQLException e) {
+                setLastError(e.getMessage());
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void ensureInvoiceScopeSchema(Connection con) {
+        if (con == null) {
+            return;
+        }
+        synchronized (DatPhongDAO.class) {
+            if (invoiceScopeSchemaEnsured) {
+                return;
+            }
+            try (PreparedStatement stmt = con.prepareStatement(
+                    "IF OBJECT_ID(N'dbo.HoaDonChiTietDatPhongScope', N'U') IS NULL "
+                            + "BEGIN "
+                            + "CREATE TABLE dbo.HoaDonChiTietDatPhongScope("
+                            + "maHoaDon INT NOT NULL, "
+                            + "maChiTietDatPhong INT NOT NULL, "
+                            + "thuTu INT NOT NULL CONSTRAINT DF_HoaDonChiTietDatPhongScope_thuTu DEFAULT 0, "
+                            + "ngayTao DATETIME NOT NULL CONSTRAINT DF_HoaDonChiTietDatPhongScope_ngayTao DEFAULT GETDATE(), "
+                            + "CONSTRAINT PK_HoaDonChiTietDatPhongScope PRIMARY KEY (maHoaDon, maChiTietDatPhong)"
+                            + ") "
+                            + "END")) {
+                stmt.execute();
+                invoiceScopeSchemaEnsured = true;
             } catch (SQLException e) {
                 setLastError(e.getMessage());
                 e.printStackTrace();
@@ -247,7 +334,7 @@ public class DatPhongDAO {
 
         try {
             con.setAutoCommit(false);
-            List<Integer> oldRoomIds = getAssignedRoomIds(con, id.intValue());
+            List<Integer> roomIdsToRefresh = new ArrayList<Integer>(getAssignedRoomIds(con, id.intValue()));
             boolean hasStay = hasLuuTruForBooking(con, id.intValue());
 
             try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -261,10 +348,9 @@ public class DatPhongDAO {
             }
 
             if (!hasStay) {
-                releaseRoomsIfBooked(con, oldRoomIds);
-                deleteAllChiTietByMaDatPhong(con, id.intValue());
-                insertChiTietList(con, datPhong);
-                updateAssignedRoomStatuses(con, datPhong, resolveRoomStatusForBooking(datPhong.getTrangThaiDatPhong()));
+                syncChiTietList(con, datPhong);
+                roomIdsToRefresh.addAll(collectAssignedRoomIds(datPhong));
+                refreshRoomStatuses(con, roomIdsToRefresh);
             }
 
             con.commit();
@@ -846,6 +932,105 @@ public class DatPhongDAO {
         }
     }
 
+    private void syncChiTietList(Connection con, DatPhong datPhong) throws SQLException {
+        if (con == null || datPhong == null) {
+            return;
+        }
+        List<ChiTietDatPhong> details = datPhong.getChiTietDatPhongs();
+        if (details == null) {
+            return;
+        }
+
+        ensureDetailScheduleSchema(con);
+        Integer bookingId = parseIntOrNull(datPhong.getMaDatPhong());
+        if (bookingId == null) {
+            return;
+        }
+
+        LinkedHashSet<Integer> existingDetailIds = new LinkedHashSet<Integer>();
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT maChiTietDatPhong FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
+            stmt.setInt(1, bookingId.intValue());
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    existingDetailIds.add(Integer.valueOf(rs.getInt("maChiTietDatPhong")));
+                }
+            }
+        }
+
+        LinkedHashSet<Integer> retainedDetailIds = new LinkedHashSet<Integer>();
+        String updateSql = "UPDATE ChiTietDatPhong "
+                + "SET maPhong = ?, soNguoi = ?, giaPhong = ?, thanhTien = ?, checkInDuKien = ?, checkOutDuKien = ? "
+                + "WHERE maChiTietDatPhong = ? AND maDatPhong = ?";
+        String insertSql = "INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+        try (PreparedStatement updateStmt = con.prepareStatement(updateSql);
+             PreparedStatement insertStmt = con.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
+            for (ChiTietDatPhong detail : details) {
+                if (detail == null) {
+                    continue;
+                }
+
+                detail.setMaDatPhong(datPhong.getMaDatPhong());
+                String detailBangGia = resolveBangGiaForDetail(con, detail, datPhong.getMaBangGia());
+                applyResolvedRoomRate(detail, detailBangGia, datPhong.getNgayNhanPhong(), datPhong.getNgayTraPhong());
+
+                Integer detailId = parseIntOrNull(detail.getMaChiTietDatPhong());
+                Timestamp checkInDuKien = toDetailScheduleTimestamp(
+                        detail.getCheckInDuKien() == null ? datPhong.getNgayNhanPhong() : detail.getCheckInDuKien());
+                Timestamp checkOutDuKien = toDetailScheduleTimestamp(
+                        detail.getCheckOutDuKien() == null ? datPhong.getNgayTraPhong() : detail.getCheckOutDuKien());
+
+                if (detailId != null && existingDetailIds.contains(detailId)) {
+                    setNullableInt(updateStmt, 1, detail.getMaPhong());
+                    updateStmt.setInt(2, detail.getSoNguoi() <= 0 ? 1 : detail.getSoNguoi());
+                    updateStmt.setDouble(3, detail.getGiaApDung());
+                    updateStmt.setDouble(4, calculateThanhTien(detail));
+                    updateStmt.setTimestamp(5, checkInDuKien);
+                    updateStmt.setTimestamp(6, checkOutDuKien);
+                    updateStmt.setInt(7, detailId.intValue());
+                    updateStmt.setInt(8, bookingId.intValue());
+                    updateStmt.executeUpdate();
+                    retainedDetailIds.add(detailId);
+                    continue;
+                }
+
+                insertStmt.setInt(1, bookingId.intValue());
+                setNullableInt(insertStmt, 2, detail.getMaPhong());
+                insertStmt.setInt(3, detail.getSoNguoi() <= 0 ? 1 : detail.getSoNguoi());
+                insertStmt.setDouble(4, detail.getGiaApDung());
+                insertStmt.setDouble(5, calculateThanhTien(detail));
+                insertStmt.setTimestamp(6, checkInDuKien);
+                insertStmt.setTimestamp(7, checkOutDuKien);
+                insertStmt.executeUpdate();
+
+                try (ResultSet rs = insertStmt.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        int newDetailId = rs.getInt(1);
+                        detail.setMaChiTietDatPhong(String.valueOf(newDetailId));
+                        retainedDetailIds.add(Integer.valueOf(newDetailId));
+                    }
+                }
+            }
+        }
+
+        if (existingDetailIds.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement deleteStmt = con.prepareStatement(
+                "DELETE FROM ChiTietDatPhong WHERE maChiTietDatPhong = ? AND maDatPhong = ?")) {
+            for (Integer existingDetailId : existingDetailIds) {
+                if (existingDetailId == null || retainedDetailIds.contains(existingDetailId)) {
+                    continue;
+                }
+                deleteStmt.setInt(1, existingDetailId.intValue());
+                deleteStmt.setInt(2, bookingId.intValue());
+                deleteStmt.executeUpdate();
+            }
+        }
+    }
+
     private void deleteAllChiTietByMaDatPhong(Connection con, int maDatPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement("DELETE FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
             stmt.setInt(1, maDatPhong);
@@ -881,6 +1066,23 @@ public class DatPhongDAO {
         return roomIds;
     }
 
+    private List<Integer> collectAssignedRoomIds(DatPhong datPhong) {
+        List<Integer> roomIds = new ArrayList<Integer>();
+        if (datPhong == null || datPhong.getChiTietDatPhongs() == null) {
+            return roomIds;
+        }
+        for (ChiTietDatPhong detail : datPhong.getChiTietDatPhongs()) {
+            if (detail == null) {
+                continue;
+            }
+            Integer roomId = parseIntOrNull(detail.getMaPhong());
+            if (roomId != null) {
+                roomIds.add(roomId);
+            }
+        }
+        return roomIds;
+    }
+
     private void releaseRoomsIfBooked(Connection con, List<Integer> roomIds) throws SQLException {
         if (roomIds == null || roomIds.isEmpty()) {
             return;
@@ -903,7 +1105,11 @@ public class DatPhongDAO {
         }
         try (PreparedStatement stmt = con.prepareStatement("UPDATE dbo.Phong SET trangThai = ? WHERE maPhong = ?")) {
             for (Integer roomId : uniqueRoomIds) {
-                String status = resolveOperationalRoomStatusV2(con, roomId.intValue());
+                String currentStatus = loadCurrentRoomStatus(con, roomId.intValue());
+                if (isOperationallyBlockedRoomStatus(currentStatus)) {
+                    continue;
+                }
+                String status = normalizeResolvedRoomStatus(resolveOperationalRoomStatusV2(con, roomId.intValue()), currentStatus);
                 if (status.isEmpty()) {
                     continue;
                 }
@@ -912,6 +1118,19 @@ public class DatPhongDAO {
                 stmt.executeUpdate();
             }
         }
+    }
+
+    private String normalizeResolvedRoomStatus(String resolvedStatus, String currentStatus) {
+        String normalizedResolved = safeTrim(resolvedStatus);
+        String normalizedCurrent = safeTrim(currentStatus);
+        if (isOperationallyBlockedRoomStatus(normalizedCurrent)) {
+            return normalizedCurrent;
+        }
+        if ("Ch\u1edd thanh to\u00e1n".equalsIgnoreCase(normalizedCurrent)
+                && "D\u1ecdn d\u1eb9p".equalsIgnoreCase(normalizedResolved)) {
+            return "S\u1eb5n s\u00e0ng";
+        }
+        return normalizedResolved;
     }
 
     public void refreshRoomStatus(Connection con, int maPhong) throws SQLException {
@@ -925,8 +1144,8 @@ public class DatPhongDAO {
 
     private String resolveOperationalRoomStatus(Connection con, int maPhong) throws SQLException {
         String currentStatus = loadCurrentRoomStatus(con, maPhong);
-        if ("Bảo trì".equalsIgnoreCase(currentStatus)) {
-            return "Bảo trì";
+        if (isOperationallyBlockedRoomStatus(currentStatus)) {
+            return currentStatus;
         }
         if (hasActiveStayForRoom(con, maPhong)) {
             return "Đang ở";
@@ -942,8 +1161,8 @@ public class DatPhongDAO {
 
     private String resolveOperationalRoomStatusV2(Connection con, int maPhong) throws SQLException {
         String currentStatus = loadCurrentRoomStatus(con, maPhong);
-        if ("Bảo trì".equalsIgnoreCase(currentStatus)) {
-            return "Bảo trì";
+        if (isOperationallyBlockedRoomStatus(currentStatus)) {
+            return currentStatus;
         }
         if (hasActiveStayForRoom(con, maPhong)) {
             return "Đang ở";
@@ -996,7 +1215,7 @@ public class DatPhongDAO {
                 + "FROM dbo.ChiTietDatPhong ctdp "
                 + "JOIN dbo.DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
                 + "WHERE ctdp.maPhong = ? "
-                + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Check-out một phần', N'Đã check-in') "
+                + "AND ISNULL(dp.trangThai, N'') NOT IN (N'Đã hủy', N'Hủy booking') "
                 + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maPhong);
@@ -1035,7 +1254,89 @@ public class DatPhongDAO {
         }
     }
 
+    public boolean isBookingFullyPaid(Connection con, int maDatPhong) throws SQLException {
+        if (con == null || maDatPhong <= 0 || !isBookingReadyForPayment(con, maDatPhong)) {
+            return false;
+        }
+        ensureInvoiceScopeSchema(con);
+        List<Integer> detailIds = new ArrayList<Integer>();
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT maChiTietDatPhong FROM dbo.ChiTietDatPhong WHERE maDatPhong = ?")) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    detailIds.add(Integer.valueOf(rs.getInt("maChiTietDatPhong")));
+                }
+            }
+        }
+        if (detailIds.isEmpty()) {
+            return false;
+        }
+        for (Integer detailId : detailIds) {
+            if (detailId == null || detailId.intValue() <= 0) {
+                return false;
+            }
+            if (!hasPaidInvoiceForDetail(con, maDatPhong, detailId.intValue())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isBookingReadyForPayment(Connection con, int maDatPhong) throws SQLException {
+        if (con == null || maDatPhong <= 0) {
+            return false;
+        }
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT CASE WHEN "
+                        + "EXISTS (SELECT 1 FROM dbo.ChiTietDatPhong ctdp WHERE ctdp.maDatPhong = ?) "
+                        + "AND NOT EXISTS (SELECT 1 FROM dbo.LuuTru lt WHERE lt.maDatPhong = ? AND lt.checkOut IS NULL) "
+                        + "AND NOT EXISTS ("
+                        + "    SELECT 1 FROM dbo.ChiTietDatPhong ctdp "
+                        + "    WHERE ctdp.maDatPhong = ? "
+                        + "      AND NOT EXISTS ("
+                        + "          SELECT 1 FROM dbo.LuuTru ltDone "
+                        + "          WHERE ltDone.maChiTietDatPhong = ctdp.maChiTietDatPhong "
+                        + "            AND ltDone.checkOut IS NOT NULL"
+                        + "      )"
+                        + ") "
+                        + "THEN 1 ELSE 0 END")) {
+            stmt.setInt(1, maDatPhong);
+            stmt.setInt(2, maDatPhong);
+            stmt.setInt(3, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) == 1;
+            }
+        }
+    }
+
+    private boolean hasPaidInvoiceForDetail(Connection con, int maDatPhong, int maChiTietDatPhong) throws SQLException {
+        if (con == null || maChiTietDatPhong <= 0) {
+            return false;
+        }
+        ensureInvoiceScopeSchema(con);
+        String sql = "SELECT CASE WHEN "
+                + "EXISTS (SELECT 1 FROM dbo.HoaDon hd WHERE hd.maChiTietDatPhong = ? AND ISNULL(hd.trangThai, N'') = N'Đã thanh toán') "
+                + "OR EXISTS (SELECT 1 FROM dbo.HoaDon hd "
+                + "          JOIN dbo.HoaDonChiTietDatPhongScope scope ON scope.maHoaDon = hd.maHoaDon "
+                + "          WHERE scope.maChiTietDatPhong = ? AND ISNULL(hd.trangThai, N'') = N'Đã thanh toán') "
+                + "OR EXISTS (SELECT 1 FROM dbo.HoaDon hd "
+                + "          WHERE hd.maDatPhong = ? AND hd.maChiTietDatPhong IS NULL "
+                + "            AND NOT EXISTS (SELECT 1 FROM dbo.HoaDonChiTietDatPhongScope scopeAny WHERE scopeAny.maHoaDon = hd.maHoaDon) "
+                + "            AND ISNULL(hd.trangThai, N'') = N'Đã thanh toán') "
+                + "THEN 1 ELSE 0 END";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maChiTietDatPhong);
+            stmt.setInt(2, maChiTietDatPhong);
+            stmt.setInt(3, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() && rs.getInt(1) == 1;
+            }
+        }
+    }
+
     private boolean hasUnpaidInvoiceForLatestClosedStay(Connection con, int maPhong) throws SQLException {
+        ensureInvoiceScopeSchema(con);
         String unpaidStatusClause = "ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc')";
         String sql = "WITH latestClosedStay AS ("
                 + "    SELECT lt.maChiTietDatPhong, lt.maDatPhong, lt.checkOut, "
@@ -1045,14 +1346,27 @@ public class DatPhongDAO {
                 + ") "
                 + "SELECT COUNT(1) "
                 + "FROM latestClosedStay lcs "
-                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM dbo.HoaDon hd "
-                + "             WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong AND " + unpaidStatusClause + " "
-                + "             ORDER BY CASE WHEN ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, hd.maHoaDon DESC) hdRoom "
-                + "OUTER APPLY (SELECT TOP 1 hd.maHoaDon FROM dbo.HoaDon hd "
-                + "             WHERE hd.maDatPhong = lcs.maDatPhong AND hd.maChiTietDatPhong IS NULL AND " + unpaidStatusClause + " "
-                + "             ORDER BY CASE WHEN ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') = N'Ch\u1edd thanh to\u00e1n' THEN 0 ELSE 1 END, hd.maHoaDon DESC) hdBooking "
                 + "WHERE lcs.rn = 1 "
-                + "AND (hdRoom.maHoaDon IS NOT NULL OR hdBooking.maHoaDon IS NOT NULL)";
+                + "AND ("
+                + "    EXISTS ("
+                + "        SELECT 1 FROM dbo.HoaDon hd "
+                + "        WHERE hd.maChiTietDatPhong = lcs.maChiTietDatPhong "
+                + "          AND " + unpaidStatusClause
+                + "    ) "
+                + " OR EXISTS ("
+                + "        SELECT 1 FROM dbo.HoaDon hd "
+                + "        JOIN dbo.HoaDonChiTietDatPhongScope scope ON scope.maHoaDon = hd.maHoaDon "
+                + "        WHERE scope.maChiTietDatPhong = lcs.maChiTietDatPhong "
+                + "          AND " + unpaidStatusClause
+                + "    ) "
+                + " OR EXISTS ("
+                + "        SELECT 1 FROM dbo.HoaDon hd "
+                + "        WHERE hd.maDatPhong = lcs.maDatPhong "
+                + "          AND hd.maChiTietDatPhong IS NULL "
+                + "          AND NOT EXISTS (SELECT 1 FROM dbo.HoaDonChiTietDatPhongScope scopeAny WHERE scopeAny.maHoaDon = hd.maHoaDon) "
+                + "          AND " + unpaidStatusClause
+                + "    )"
+                + ")";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maPhong);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -1673,13 +1987,7 @@ public class DatPhongDAO {
     }
 
     private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
-        String sql = "SELECT COUNT(1) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'') = N'Đã thanh toán'";
-        try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setInt(1, maDatPhong);
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next() && rs.getInt(1) > 0;
-            }
-        }
+        return isBookingFullyPaid(con, maDatPhong);
     }
 
     private void setNullableInt(PreparedStatement stmt, int index, String value) throws SQLException {

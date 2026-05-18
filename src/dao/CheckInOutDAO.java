@@ -74,6 +74,25 @@ public class CheckInOutDAO {
         updateBookingStatus(con, Integer.valueOf(maDatPhong), resolveBookingStatusForBooking(con, maDatPhong));
     }
 
+    public List<Integer> loadActiveStayIdsForCheckout(Connection con, int maDatPhong) throws SQLException {
+        List<Integer> stayIds = new ArrayList<Integer>();
+        if (con == null || maDatPhong <= 0) {
+            return stayIds;
+        }
+        String sql = "SELECT lt.maLuuTru FROM LuuTru lt "
+                + "WHERE lt.maDatPhong = ? AND lt.checkOut IS NULL "
+                + "ORDER BY lt.maLuuTru ASC";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    stayIds.add(Integer.valueOf(rs.getInt("maLuuTru")));
+                }
+            }
+        }
+        return stayIds;
+    }
+
     public List<LuuTru> getAll() {
         clearLastError();
         List<LuuTru> result = new ArrayList<LuuTru>();
@@ -583,6 +602,92 @@ public class CheckInOutDAO {
         return null;
     }
 
+    public KhachHang findCustomerById(int maKhachHang) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        if (con == null || maKhachHang <= 0) {
+            return null;
+        }
+
+        String sql = "SELECT TOP 1 maKhachHang, hoTen, soDienThoai, ngaySinh, email, cccdPassport, diaChi, ghiChu "
+                + "FROM KhachHang WHERE maKhachHang = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maKhachHang);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return mapRepresentativeCustomer(rs);
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public List<KhachHang> getAvailableCustomers(Integer preferredCustomerId) {
+        clearLastError();
+        List<KhachHang> customers = new ArrayList<KhachHang>();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            return customers;
+        }
+
+        String sql = "SELECT maKhachHang, hoTen, soDienThoai, ngaySinh, email, cccdPassport, diaChi, ghiChu "
+                + "FROM KhachHang "
+                + "WHERE ISNULL(trangThai, N'Hoạt động') <> N'Ngừng giao dịch' "
+                + "ORDER BY maKhachHang DESC";
+        try (PreparedStatement stmt = con.prepareStatement(sql);
+             ResultSet rs = stmt.executeQuery()) {
+            while (rs.next()) {
+                customers.add(mapRepresentativeCustomer(rs));
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return customers;
+        }
+
+        if (preferredCustomerId != null
+                && preferredCustomerId.intValue() > 0
+                && !containsCustomerId(customers, preferredCustomerId.intValue())) {
+            KhachHang preferredCustomer = findCustomerById(preferredCustomerId.intValue());
+            if (preferredCustomer != null) {
+                customers.add(0, preferredCustomer);
+            }
+        }
+        return customers;
+    }
+
+    private boolean containsCustomerId(List<KhachHang> customers, int maKhachHang) {
+        if (customers == null || maKhachHang <= 0) {
+            return false;
+        }
+        for (KhachHang customer : customers) {
+            if (customer == null) {
+                continue;
+            }
+            Integer customerId = parseIntOrNull(customer.getMaKhachHang());
+            if (customerId != null && customerId.intValue() == maKhachHang) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private KhachHang mapRepresentativeCustomer(ResultSet rs) throws SQLException {
+        KhachHang khachHang = new KhachHang();
+        khachHang.setMaKhachHang(String.valueOf(rs.getInt("maKhachHang")));
+        khachHang.setHoTen(safeTrim(rs.getString("hoTen")));
+        khachHang.setSoDienThoai(safeTrim(rs.getString("soDienThoai")));
+        khachHang.setNgaySinh(rs.getDate("ngaySinh") == null ? "" : rs.getDate("ngaySinh").toLocalDate().toString());
+        khachHang.setEmail(safeTrim(rs.getString("email")));
+        khachHang.setCccdPassport(safeTrim(rs.getString("cccdPassport")));
+        khachHang.setDiaChi(safeTrim(rs.getString("diaChi")));
+        khachHang.setGhiChu(safeTrim(rs.getString("ghiChu")));
+        return khachHang;
+    }
+
     public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
         return checkInBookingDetails(maDatPhong, maChiTietDatPhongIds, buildUniformCheckInTimings(maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien), null);
     }
@@ -621,10 +726,12 @@ public class CheckInOutDAO {
         String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, ")
+                .append("ISNULL(p.soPhong, CAST(ctdp.maPhong AS NVARCHAR(20))) AS soPhong, ")
                 .append(detailCheckInExpr).append(" AS checkInDuKien, ")
                 .append(detailCheckOutExpr).append(" AS checkOutDuKien ")
                 .append("FROM ChiTietDatPhong ctdp ")
                 .append("JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong ")
+                .append("LEFT JOIN Phong p ON p.maPhong = ctdp.maPhong ")
                 .append("WHERE ctdp.maDatPhong = ? ")
                 .append("AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) ")
                 .append("AND ctdp.maChiTietDatPhong IN (");
@@ -644,13 +751,16 @@ public class CheckInOutDAO {
                 con.rollback();
                 return 0;
             }
+            DatPhongDAO roomStatusDAO = new DatPhongDAO();
             int affected = 0;
             try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
                  PreparedStatement insertStmt = con.prepareStatement(
-                         "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                          "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                  PreparedStatement detailScheduleStmt = con.prepareStatement(
-                         "UPDATE ChiTietDatPhong SET checkInDuKien = ?, checkOutDuKien = ? WHERE maChiTietDatPhong = ?");
-                 PreparedStatement roomStmt = con.prepareStatement("UPDATE Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? AND trangThai <> N'B\u1ea3o tr\u00ec'")) {
+                          "UPDATE ChiTietDatPhong SET checkInDuKien = ?, checkOutDuKien = ? WHERE maChiTietDatPhong = ?");
+                 PreparedStatement roomStmt = con.prepareStatement(
+                         "UPDATE Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? "
+                                 + "AND ISNULL(trangThai, N'') NOT IN (N'B\u1ea3o tr\u00ec', N'Kh\u00f4ng ho\u1ea1t \u0111\u1ed9ng', N'Ng\u1eebng ho\u1ea1t \u0111\u1ed9ng', N'\u0110ang s\u1eeda')")) {
                 int index = 1;
                 selectStmt.setInt(index++, bookingId.intValue());
                 for (Integer detailId : detailIds) {
@@ -660,6 +770,14 @@ public class CheckInOutDAO {
                     while (rs.next()) {
                         if (rs.getObject("maPhong") == null) {
                             continue;
+                        }
+                        int maPhong = rs.getInt("maPhong");
+                        String blockedStatus = roomStatusDAO.getOperationalBlockStatus(con, maPhong);
+                        if (!blockedStatus.isEmpty()) {
+                            con.rollback();
+                            setLastError("Ph\u00f2ng " + safeTrim(rs.getString("soPhong"))
+                                    + " \u0111ang \u1edf tr\u1ea1ng th\u00e1i " + blockedStatus + ", kh\u00f4ng th\u1ec3 check-in.");
+                            return 0;
                         }
 
                         int maChiTietDatPhong = rs.getInt("maChiTietDatPhong");
@@ -674,7 +792,6 @@ public class CheckInOutDAO {
                             setLastError("Thời gian check-in / check-out dự kiến của chi tiết đặt phòng CTDP" + maChiTietDatPhong + " không hợp lệ.");
                             return 0;
                         }
-                        int maPhong = rs.getInt("maPhong");
                         insertStmt.setInt(1, maChiTietDatPhong);
                         insertStmt.setInt(2, bookingId.intValue());
                         insertStmt.setInt(3, maPhong);
@@ -860,7 +977,9 @@ public class CheckInOutDAO {
         if (maPhong == null) {
             return;
         }
-        try (PreparedStatement stmt = con.prepareStatement("UPDATE Phong SET trangThai = ? WHERE maPhong = ? AND trangThai <> N'Bảo trì'")) {
+        try (PreparedStatement stmt = con.prepareStatement(
+                "UPDATE Phong SET trangThai = ? WHERE maPhong = ? "
+                        + "AND ISNULL(trangThai, N'') NOT IN (N'Bảo trì', N'Không hoạt động', N'Ngừng hoạt động', N'Đang sửa')")) {
             stmt.setString(1, trangThai);
             stmt.setInt(2, maPhong.intValue());
             stmt.executeUpdate();
@@ -943,7 +1062,7 @@ public class CheckInOutDAO {
                 + "FROM ChiTietDatPhong ctdp "
                 + "JOIN DatPhong dp ON dp.maDatPhong = ctdp.maDatPhong "
                 + "WHERE ctdp.maDatPhong = ? "
-                + "AND ISNULL(dp.trangThai, N'') IN (N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in') "
+                + "AND ISNULL(dp.trangThai, N'') NOT IN (N'Đã hủy', N'Hủy booking') "
                 + "AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong)";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             stmt.setInt(1, maDatPhong);
@@ -1005,13 +1124,7 @@ public class CheckInOutDAO {
     }
 
     private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
-        try (PreparedStatement stmt = con.prepareStatement(
-                "SELECT COUNT(1) FROM HoaDon WHERE maDatPhong = ? AND ISNULL(trangThai, N'') = N'Đã thanh toán'")) {
-            stmt.setInt(1, maDatPhong);
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next() && rs.getInt(1) > 0;
-            }
-        }
+        return new DatPhongDAO().isBookingFullyPaid(con, maDatPhong);
     }
 
     private boolean shouldMoveToCleaning(LuuTru luuTru) {
@@ -1067,6 +1180,7 @@ public class CheckInOutDAO {
             return;
         }
         if (rs.getObject("maKhachHangDaiDien") != null) {
+            item.setRepresentativeCustomerId(rs.getInt("maKhachHangDaiDien"));
             item.setCccdPassport(safeTrim(rs.getString("cccdPassportDaiDien")));
             item.setHoTenKhach(safeTrim(rs.getString("hoTenDaiDien")));
             item.setSoDienThoai(safeTrim(rs.getString("soDienThoaiDaiDien")));
@@ -1083,6 +1197,7 @@ public class CheckInOutDAO {
         if (item == null) {
             return;
         }
+        item.setRepresentativeCustomerId(0);
         item.setCccdPassport("");
         item.setHoTenKhach("");
         item.setSoDienThoai("");
@@ -1157,7 +1272,10 @@ public class CheckInOutDAO {
             return null;
         }
 
-        Integer existingId = findCustomerIdByPassport(con, cccdPassport);
+        Integer requestedCustomerId = parseIntOrNull(khachHang.getMaKhachHang());
+        Integer existingId = isExistingCustomerId(con, requestedCustomerId)
+                ? requestedCustomerId
+                : findCustomerIdByPassport(con, cccdPassport);
         if (existingId != null) {
             try (PreparedStatement update = con.prepareStatement(
                     "UPDATE KhachHang SET hoTen = ?, cccdPassport = ?, " +
@@ -1277,7 +1395,7 @@ public class CheckInOutDAO {
             }
             Integer existingDetailId = passportToDetailId.get(passport);
             if (existingDetailId != null && existingDetailId.intValue() != detailId.intValue()) {
-                setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng nhập khách hàng khác.");
+                setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng chọn khách hàng khác.");
                 return false;
             }
             passportToDetailId.put(passport, detailId);
@@ -1302,7 +1420,7 @@ public class CheckInOutDAO {
                     }
                     Integer inputDetailId = passportToDetailId.get(passport);
                     if (inputDetailId != null && inputDetailId.intValue() != detailId) {
-                        setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng nhập khách hàng khác.");
+                        setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng chọn khách hàng khác.");
                         return false;
                     }
                 }
@@ -1319,6 +1437,19 @@ public class CheckInOutDAO {
                 "SELECT 1 FROM ChiTietDatPhong WHERE maDatPhong = ? AND maChiTietDatPhong = ?")) {
             stmt.setInt(1, maDatPhong);
             stmt.setInt(2, maChiTietDatPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private boolean isExistingCustomerId(Connection con, Integer maKhachHang) throws SQLException {
+        if (con == null || maKhachHang == null || maKhachHang.intValue() <= 0) {
+            return false;
+        }
+        try (PreparedStatement stmt = con.prepareStatement(
+                "SELECT 1 FROM KhachHang WHERE maKhachHang = ?")) {
+            stmt.setInt(1, maKhachHang.intValue());
             try (ResultSet rs = stmt.executeQuery()) {
                 return rs.next();
             }
@@ -1527,6 +1658,7 @@ public class CheckInOutDAO {
         private String email;
         private String diaChi;
         private String ghiChu;
+        private int representativeCustomerId;
 
         public int getMaChiTietDatPhong() {
             return maChiTietDatPhong;
@@ -1662,6 +1794,14 @@ public class CheckInOutDAO {
 
         public void setGhiChu(String ghiChu) {
             this.ghiChu = ghiChu;
+        }
+
+        public int getRepresentativeCustomerId() {
+            return representativeCustomerId;
+        }
+
+        public void setRepresentativeCustomerId(int representativeCustomerId) {
+            this.representativeCustomerId = representativeCustomerId;
         }
 
         public boolean canCheckIn() {

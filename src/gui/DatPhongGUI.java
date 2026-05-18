@@ -603,14 +603,22 @@ public class DatPhongGUI extends JFrame {
             for (entity.DatPhong datPhong : datPhongDAO.getAll()) {
                 BookingRecord booking = toBookingRecord(datPhong);
                 booking.trangThai = DatPhongDAO.normalizeStageStatus(booking.trangThai);
-                if (DatPhongDAO.isBookingStageStatus(booking.trangThai) || isCancelledBooking(booking.trangThai)) {
-                    allBookings.add(booking);
+                if (!shouldDisplayBookingInList(booking.trangThai)) {
+                    continue;
                 }
+                allBookings.add(booking);
             }
         } catch (Exception e) {
             e.printStackTrace();
             showError("Kh?ng th? t?i d? li?u ??t ph?ng.");
         }
+    }
+
+    private boolean shouldDisplayBookingInList(String trangThai) {
+        String status = safeValue(trangThai, "");
+        return !"Đã thanh toán".equalsIgnoreCase(status)
+                && !"Hoàn tất".equalsIgnoreCase(status)
+                && !"Đã hoàn tất".equalsIgnoreCase(status);
     }
 
     private List<BookingDetailRecord> loadDetailsForBooking(int maDatPhong, String headerLoaiPhong) {
@@ -625,13 +633,16 @@ public class DatPhongGUI extends JFrame {
                 "ISNULL(p.sucChuaToiDa, 0) AS sucChuaToiDa, " +
                 "COALESCE(ctdp.checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayNhanPhong AS DATETIME2))) AS checkInDuKien, " +
                 "COALESCE(ctdp.checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour() + ", CAST(dp.ngayTraPhong AS DATETIME2))) AS checkOutDuKien, " +
-                "dp.trangThai, " +
+                "dp.trangThai, latestLt.maLuuTru AS maLuuTruGanNhat, latestLt.checkOut AS checkOutGanNhat, " +
                 "ISNULL(lp.tenLoaiPhong, ?) AS tenLoaiPhong, " +
                 "ISNULL(CAST(lp.maLoaiPhong AS NVARCHAR(20)), '') AS maLoaiPhong " +
                 "FROM ChiTietDatPhong ctdp " +
                 "JOIN DatPhong dp ON ctdp.maDatPhong = dp.maDatPhong " +
                 "LEFT JOIN Phong p ON ctdp.maPhong = p.maPhong " +
                 "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong " +
+                "OUTER APPLY (SELECT TOP 1 lt.maLuuTru, lt.checkOut FROM LuuTru lt " +
+                "             WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong " +
+                "             ORDER BY CASE WHEN lt.checkOut IS NULL THEN 0 ELSE 1 END, COALESCE(lt.checkOut, lt.checkIn) DESC, lt.maLuuTru DESC) latestLt " +
                 "WHERE ctdp.maDatPhong = ? " +
                 "ORDER BY ctdp.maChiTietDatPhong";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
@@ -654,7 +665,12 @@ public class DatPhongGUI extends JFrame {
                     detail.giaApDung = rs.getDouble("giaPhong");
                     detail.tienDatCocChiTiet = 0;
                     detail.thanhTien = rs.getDouble("thanhTien");
-                    detail.trangThaiChiTiet = safeValue(rs.getString("trangThai"), "Đã đặt");
+                    detail.trangThaiChiTiet = resolveBookingDetailStatus(
+                            safeValue(rs.getString("trangThai"), "Đã đặt"),
+                            detail.maPhong,
+                            rs.getObject("maLuuTruGanNhat") == null ? null : Integer.valueOf(rs.getInt("maLuuTruGanNhat")),
+                            rs.getTimestamp("checkOutGanNhat")
+                    );
                     refreshResolvedRate(con, detail);
                     details.add(detail);
                 }
@@ -663,6 +679,20 @@ public class DatPhongGUI extends JFrame {
             e.printStackTrace();
         }
         return details;
+    }
+
+    private String resolveBookingDetailStatus(String bookingStatus, String soPhong, Integer latestStayId, Timestamp latestCheckOut) {
+        if (isCancelledBooking(bookingStatus)) {
+            return "Đã hủy";
+        }
+        if (latestStayId != null) {
+            return latestCheckOut == null ? "Đang ở" : "Đã check-out";
+        }
+        String roomCode = safeValue(soPhong, "").trim();
+        if (roomCode.isEmpty() || "Chưa gán".equalsIgnoreCase(roomCode) || "ChÆ°a gÃ¡n".equalsIgnoreCase(roomCode)) {
+            return "Chưa gán phòng";
+        }
+        return "Chờ check-in";
     }
 
     private BookingRecord toBookingRecord(entity.DatPhong datPhong) {
@@ -766,6 +796,9 @@ public class DatPhongGUI extends JFrame {
         }
 
         for (BookingRecord booking : allBookings) {
+            if (!shouldDisplayBookingInList(booking.trangThai)) {
+                continue;
+            }
             if (!"Tất cả".equals(trangThai) && !booking.trangThai.equalsIgnoreCase(trangThai)) {
                 continue;
             }
@@ -831,15 +864,20 @@ public class DatPhongGUI extends JFrame {
                     return i;
                 }
             }
+            clearPendingFocusedBookingFilter();
         }
         return 0;
     }
 
     private static synchronized void clearPendingFocusedBookingIfMatched(int maDatPhong) {
         if (pendingFocusedBookingId != null && pendingFocusedBookingId.intValue() == maDatPhong) {
-            pendingFocusedBookingId = null;
-            pendingStatusFilter = null;
+            clearPendingFocusedBookingFilter();
         }
+    }
+
+    private static synchronized void clearPendingFocusedBookingFilter() {
+        pendingFocusedBookingId = null;
+        pendingStatusFilter = null;
     }
 
     private void updateDetailPanel(BookingRecord booking) {
@@ -1786,6 +1824,27 @@ public class DatPhongGUI extends JFrame {
 
     private void refreshRoomStatuses(Connection con, List<Integer> roomIds) throws Exception {
         datPhongDAO.refreshRoomStatuses(con, roomIds);
+    }
+
+    private String validateOperationalRoomStatusesBeforeSave(Connection con, List<BookingDetailRecord> rows) throws Exception {
+        if (con == null || rows == null) {
+            return null;
+        }
+        for (BookingDetailRecord detail : rows) {
+            if (detail == null || detail.maPhongId <= 0) {
+                continue;
+            }
+            String blockedStatus = datPhongDAO.getOperationalBlockStatus(con, detail.maPhongId);
+            if (blockedStatus.isEmpty()) {
+                continue;
+            }
+            String soPhong = safeValue(detail.maPhong, String.valueOf(detail.maPhongId));
+            if ("Bảo trì".equalsIgnoreCase(blockedStatus)) {
+                return "Phòng " + soPhong + " đang bảo trì, không thể đặt phòng.";
+            }
+            return "Phòng " + soPhong + " đang ở trạng thái " + blockedStatus + ", không thể đặt phòng.";
+        }
+        return null;
     }
 
     private List<Integer> collectRoomIds(List<BookingDetailRecord> rows) {
@@ -3724,8 +3783,15 @@ public class DatPhongGUI extends JFrame {
                     showError("Không tìm thấy bảng giá đang áp dụng cho loại phòng đã chọn.");
                     return;
                 }
+                String blockedRoomMessage = validateOperationalRoomStatusesBeforeSave(con, detailRows);
+                if (blockedRoomMessage != null) {
+                    con.rollback();
+                    showError(blockedRoomMessage);
+                    return;
+                }
 
                 int maDatPhong;
+                List<Integer> roomIdsToRefresh = new ArrayList<Integer>();
                 if (editing) {
                     if (bookingHasStay(con, editingBooking.maDatPhong)) {
                         con.rollback();
@@ -3733,7 +3799,7 @@ public class DatPhongGUI extends JFrame {
                         return;
                     }
                     maDatPhong = editingBooking.maDatPhong;
-                    List<Integer> oldRoomIds = getAssignedRoomIdsForBooking(con, maDatPhong);
+                    roomIdsToRefresh.addAll(getAssignedRoomIdsForBooking(con, maDatPhong));
                     try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET maKhachHang = ?, maNhanVien = ?, maBangGia = ?, ngayDat = ?, ngayNhanPhong = ?, ngayTraPhong = ?, soLuongPhong = ?, soNguoi = ?, tienCoc = ?, trangThai = ?, ghiChu = ? WHERE maDatPhong = ?")) {
                         ps.setInt(1, maKhachHang.intValue());
                         ps.setInt(2, maNhanVien);
@@ -3749,11 +3815,7 @@ public class DatPhongGUI extends JFrame {
                         ps.setInt(12, maDatPhong);
                         ps.executeUpdate();
                     }
-                    try (PreparedStatement ps = con.prepareStatement("DELETE FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
-                        ps.setInt(1, maDatPhong);
-                        ps.executeUpdate();
-                    }
-                    refreshRoomStatuses(con, oldRoomIds);
+                    syncBookingDetails(con, maDatPhong);
                 } else {
                     try (PreparedStatement ps = con.prepareStatement("INSERT INTO DatPhong(maKhachHang, maNhanVien, maBangGia, ngayDat, ngayNhanPhong, ngayTraPhong, soLuongPhong, soNguoi, tienCoc, trangThai, ghiChu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
                         ps.setInt(1, maKhachHang.intValue());
@@ -3775,22 +3837,25 @@ public class DatPhongGUI extends JFrame {
                     }
                 }
 
-                try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
-                    for (BookingDetailRecord detail : detailRows) {
-                        refreshResolvedRate(con, detail);
-                        ps.setInt(1, maDatPhong);
-                        ps.setInt(2, detail.maPhongId);
-                        ps.setInt(3, detail.soNguoi);
-                        ps.setDouble(4, detail.giaApDung);
-                        ps.setDouble(5, detail.computeThanhTien());
-                        ps.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
-                        ps.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
-                        ps.addBatch();
+                if (!editing) {
+                    try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                        for (BookingDetailRecord detail : detailRows) {
+                            refreshResolvedRate(con, detail);
+                            ps.setInt(1, maDatPhong);
+                            ps.setInt(2, detail.maPhongId);
+                            ps.setInt(3, detail.soNguoi);
+                            ps.setDouble(4, detail.giaApDung);
+                            ps.setDouble(5, detail.computeThanhTien());
+                            ps.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
+                            ps.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
+                            ps.addBatch();
+                        }
+                        ps.executeBatch();
                     }
-                    ps.executeBatch();
                 }
 
-                refreshRoomStatuses(con, collectRoomIds(detailRows));
+                roomIdsToRefresh.addAll(collectRoomIds(detailRows));
+                refreshRoomStatuses(con, roomIdsToRefresh);
 
                 con.commit();
                 reloadSampleData(false);
@@ -3873,8 +3938,15 @@ public class DatPhongGUI extends JFrame {
                     showError("Không tìm thấy bảng giá đang áp dụng cho loại phòng đã chọn.");
                     return;
                 }
+                String blockedRoomMessage = validateOperationalRoomStatusesBeforeSave(con, detailRows);
+                if (blockedRoomMessage != null) {
+                    con.rollback();
+                    showError(blockedRoomMessage);
+                    return;
+                }
 
                 int maDatPhong;
+                List<Integer> roomIdsToRefresh = new ArrayList<Integer>();
                 if (editing) {
                     if (bookingHasStay(con, editingBooking.maDatPhong)) {
                         con.rollback();
@@ -3882,7 +3954,7 @@ public class DatPhongGUI extends JFrame {
                         return;
                     }
                     maDatPhong = editingBooking.maDatPhong;
-                    List<Integer> oldRoomIds = getAssignedRoomIdsForBooking(con, maDatPhong);
+                    roomIdsToRefresh.addAll(getAssignedRoomIdsForBooking(con, maDatPhong));
                     try (PreparedStatement ps = con.prepareStatement("UPDATE DatPhong SET maKhachHang = ?, maNhanVien = ?, maBangGia = ?, ngayDat = ?, ngayNhanPhong = ?, ngayTraPhong = ?, soLuongPhong = ?, soNguoi = ?, tienCoc = ?, trangThai = ?, ghiChu = ? WHERE maDatPhong = ?")) {
                         ps.setInt(1, maKhachHang.intValue());
                         ps.setInt(2, maNhanVien);
@@ -3898,11 +3970,7 @@ public class DatPhongGUI extends JFrame {
                         ps.setInt(12, maDatPhong);
                         ps.executeUpdate();
                     }
-                    try (PreparedStatement ps = con.prepareStatement("DELETE FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
-                        ps.setInt(1, maDatPhong);
-                        ps.executeUpdate();
-                    }
-                    refreshRoomStatuses(con, oldRoomIds);
+                    syncBookingDetails(con, maDatPhong);
                 } else {
                     try (PreparedStatement ps = con.prepareStatement("INSERT INTO DatPhong(maKhachHang, maNhanVien, maBangGia, ngayDat, ngayNhanPhong, ngayTraPhong, soLuongPhong, soNguoi, tienCoc, trangThai, ghiChu) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", Statement.RETURN_GENERATED_KEYS)) {
                         ps.setInt(1, maKhachHang.intValue());
@@ -3924,22 +3992,25 @@ public class DatPhongGUI extends JFrame {
                     }
                 }
 
-                try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
-                    for (BookingDetailRecord detail : detailRows) {
-                        refreshResolvedRate(con, detail);
-                        ps.setInt(1, maDatPhong);
-                        ps.setInt(2, detail.maPhongId);
-                        ps.setInt(3, detail.soNguoi);
-                        ps.setDouble(4, detail.giaApDung);
-                        ps.setDouble(5, detail.computeThanhTien());
-                        ps.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
-                        ps.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
-                        ps.addBatch();
+                if (!editing) {
+                    try (PreparedStatement ps = con.prepareStatement("INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                        for (BookingDetailRecord detail : detailRows) {
+                            refreshResolvedRate(con, detail);
+                            ps.setInt(1, maDatPhong);
+                            ps.setInt(2, detail.maPhongId);
+                            ps.setInt(3, detail.soNguoi);
+                            ps.setDouble(4, detail.giaApDung);
+                            ps.setDouble(5, detail.computeThanhTien());
+                            ps.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
+                            ps.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
+                            ps.addBatch();
+                        }
+                        ps.executeBatch();
                     }
-                    ps.executeBatch();
                 }
 
-                refreshRoomStatuses(con, collectRoomIds(detailRows));
+                roomIdsToRefresh.addAll(collectRoomIds(detailRows));
+                refreshRoomStatuses(con, roomIdsToRefresh);
 
                 con.commit();
                 reloadSampleData(false);
@@ -3963,6 +4034,72 @@ public class DatPhongGUI extends JFrame {
                 try {
                     con.setAutoCommit(true);
                 } catch (Exception ignore) {
+                }
+            }
+        }
+
+        private void syncBookingDetails(Connection con, int maDatPhong) throws Exception {
+            LinkedHashSet<Integer> existingDetailIds = new LinkedHashSet<Integer>();
+            try (PreparedStatement ps = con.prepareStatement(
+                    "SELECT maChiTietDatPhong FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
+                ps.setInt(1, maDatPhong);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        existingDetailIds.add(Integer.valueOf(rs.getInt("maChiTietDatPhong")));
+                    }
+                }
+            }
+
+            LinkedHashSet<Integer> retainedDetailIds = new LinkedHashSet<Integer>();
+            try (PreparedStatement updatePs = con.prepareStatement(
+                    "UPDATE ChiTietDatPhong SET maPhong = ?, soNguoi = ?, giaPhong = ?, thanhTien = ?, checkInDuKien = ?, checkOutDuKien = ? "
+                            + "WHERE maChiTietDatPhong = ? AND maDatPhong = ?");
+                 PreparedStatement insertPs = con.prepareStatement(
+                         "INSERT INTO ChiTietDatPhong(maDatPhong, maPhong, soNguoi, giaPhong, thanhTien, checkInDuKien, checkOutDuKien) "
+                                 + "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         Statement.RETURN_GENERATED_KEYS)) {
+                for (BookingDetailRecord detail : detailRows) {
+                    refreshResolvedRate(con, detail);
+                    if (detail.maChiTietDatPhong > 0 && existingDetailIds.contains(Integer.valueOf(detail.maChiTietDatPhong))) {
+                        updatePs.setInt(1, detail.maPhongId);
+                        updatePs.setInt(2, detail.soNguoi);
+                        updatePs.setDouble(3, detail.giaApDung);
+                        updatePs.setDouble(4, detail.computeThanhTien());
+                        updatePs.setTimestamp(5, toSqlTimestamp(detail.checkInDuKien));
+                        updatePs.setTimestamp(6, toSqlTimestamp(detail.checkOutDuKien));
+                        updatePs.setInt(7, detail.maChiTietDatPhong);
+                        updatePs.setInt(8, maDatPhong);
+                        updatePs.executeUpdate();
+                        retainedDetailIds.add(Integer.valueOf(detail.maChiTietDatPhong));
+                        continue;
+                    }
+
+                    insertPs.setInt(1, maDatPhong);
+                    insertPs.setInt(2, detail.maPhongId);
+                    insertPs.setInt(3, detail.soNguoi);
+                    insertPs.setDouble(4, detail.giaApDung);
+                    insertPs.setDouble(5, detail.computeThanhTien());
+                    insertPs.setTimestamp(6, toSqlTimestamp(detail.checkInDuKien));
+                    insertPs.setTimestamp(7, toSqlTimestamp(detail.checkOutDuKien));
+                    insertPs.executeUpdate();
+                    try (ResultSet rs = insertPs.getGeneratedKeys()) {
+                        if (rs.next()) {
+                            detail.maChiTietDatPhong = rs.getInt(1);
+                            retainedDetailIds.add(Integer.valueOf(detail.maChiTietDatPhong));
+                        }
+                    }
+                }
+            }
+
+            try (PreparedStatement deletePs = con.prepareStatement(
+                    "DELETE FROM ChiTietDatPhong WHERE maChiTietDatPhong = ? AND maDatPhong = ?")) {
+                for (Integer existingDetailId : existingDetailIds) {
+                    if (existingDetailId == null || retainedDetailIds.contains(existingDetailId)) {
+                        continue;
+                    }
+                    deletePs.setInt(1, existingDetailId.intValue());
+                    deletePs.setInt(2, maDatPhong);
+                    deletePs.executeUpdate();
                 }
             }
         }

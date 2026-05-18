@@ -26,8 +26,14 @@ public class PhongDAO {
     private static final String ROOM_STATUS_MAINTENANCE = "Bảo trì";
     private static final String ROOM_TYPE_STATUS_ACTIVE = "Đang áp dụng";
     private static final String ROOM_TYPE_STATUS_INACTIVE = "Ngừng áp dụng";
+    private static final String DISPLAY_STATUS_READY = "Sẵn sàng";
+    private static final String DISPLAY_STATUS_BOOKED = "Đã đặt";
+    private static final String DISPLAY_STATUS_PENDING_CHECKIN = "Chờ check-in";
+    private static final String DISPLAY_STATUS_OCCUPIED = "Đang ở";
+    private static final String DISPLAY_STATUS_WAIT_PAYMENT = "Chờ thanh toán";
 
     private String lastErrorMessage = "";
+    private final DatPhongDAO datPhongDAO = new DatPhongDAO();
 
     public String getLastErrorMessage() {
         return lastErrorMessage;
@@ -58,7 +64,7 @@ public class PhongDAO {
         try (PreparedStatement stmt = con.prepareStatement(sql);
              ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
-                dsPhong.add(mapPhong(rs));
+                dsPhong.add(applyDisplayStatus(con, mapPhong(rs)));
             }
         } catch (SQLException e) {
             setLastError(e.getMessage());
@@ -80,7 +86,7 @@ public class PhongDAO {
             stmt.setInt(1, maPhong);
             try (ResultSet rs = stmt.executeQuery()) {
                 if (rs.next()) {
-                    return mapPhong(rs);
+                    return applyDisplayStatus(con, mapPhong(rs));
                 }
             }
         } catch (SQLException e) {
@@ -125,7 +131,7 @@ public class PhongDAO {
 
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
-                    dsPhong.add(mapPhong(rs));
+                    dsPhong.add(applyDisplayStatus(con, mapPhong(rs)));
                 }
             }
         } catch (SQLException e) {
@@ -174,6 +180,16 @@ public class PhongDAO {
         }
 
         Integer oldLoaiPhong = findLoaiPhongIdByRoom(con, phong.getMaPhong());
+        String currentRawStatus = loadCurrentRoomStatus(con, phong.getMaPhong());
+        String normalizedTargetStatus = resolveStoredStatusForUpdate(currentRawStatus, phong.getTrangThai());
+        if (!normalizedTargetStatus.equalsIgnoreCase(safeTrim(currentRawStatus))) {
+            String validationError = validateManualStatusChange(con, phong.getMaPhong(), currentRawStatus, normalizedTargetStatus);
+            if (!validationError.isEmpty()) {
+                setLastError(validationError);
+                return false;
+            }
+        }
+        phong.setTrangThai(normalizedTargetStatus);
         String sql = "UPDATE Phong SET maLoaiPhong = ?, soPhong = ?, tang = ?, khuVuc = ?, "
                 + "sucChuaChuan = ?, sucChuaToiDa = ?, trangThai = ? WHERE maPhong = ?";
 
@@ -204,9 +220,16 @@ public class PhongDAO {
         }
 
         Integer maLoaiPhong = findLoaiPhongIdByRoom(con, maPhong);
+        String currentRawStatus = loadCurrentRoomStatus(con, maPhong);
+        String normalizedTargetStatus = resolveStoredStatusForUpdate(currentRawStatus, trangThai);
+        String validationError = validateManualStatusChange(con, maPhong, currentRawStatus, normalizedTargetStatus);
+        if (!validationError.isEmpty()) {
+            setLastError(validationError);
+            return false;
+        }
         String sql = "UPDATE Phong SET trangThai = ? WHERE maPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
-            stmt.setString(1, safeTrim(trangThai));
+            stmt.setString(1, normalizedTargetStatus);
             stmt.setInt(2, maPhong);
             boolean updated = stmt.executeUpdate() > 0;
             if (updated && maLoaiPhong != null) {
@@ -406,6 +429,14 @@ public class PhongDAO {
         stmt.setString(7, phong.getTrangThai());
     }
 
+    private Phong applyDisplayStatus(Connection con, Phong phong) throws SQLException {
+        if (con == null || phong == null || phong.getMaPhong() <= 0) {
+            return phong;
+        }
+        phong.setTrangThai(datPhongDAO.resolveDisplayRoomStatus(con, phong.getMaPhong(), phong.getTrangThai()));
+        return phong;
+    }
+
     private Phong mapPhong(ResultSet rs) throws SQLException {
         return new Phong(
                 rs.getInt("maPhong"),
@@ -432,6 +463,102 @@ public class PhongDAO {
         } catch (SQLException ignored) {
         }
         return null;
+    }
+
+    private String loadCurrentRoomStatus(Connection con, int maPhong) {
+        if (con == null || maPhong <= 0) {
+            return "";
+        }
+        String sql = "SELECT trangThai FROM Phong WHERE maPhong = ?";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maPhong);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return safeTrim(rs.getString(1));
+                }
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+        }
+        return "";
+    }
+
+    private String resolveStoredStatusForUpdate(String currentRawStatus, String requestedStatus) {
+        String value = safeTrim(requestedStatus);
+        String current = safeTrim(currentRawStatus);
+        if (value.isEmpty()) {
+            return current;
+        }
+        if (ROOM_STATUS_ACTIVE.equalsIgnoreCase(value) || DISPLAY_STATUS_READY.equalsIgnoreCase(value)) {
+            return ROOM_STATUS_ACTIVE;
+        }
+        if (ROOM_STATUS_MAINTENANCE.equalsIgnoreCase(value)) {
+            return ROOM_STATUS_MAINTENANCE;
+        }
+        if (ROOM_STATUS_INACTIVE.equalsIgnoreCase(value)) {
+            return ROOM_STATUS_INACTIVE;
+        }
+        if (DISPLAY_STATUS_BOOKED.equalsIgnoreCase(value)
+                || DISPLAY_STATUS_PENDING_CHECKIN.equalsIgnoreCase(value)
+                || DISPLAY_STATUS_OCCUPIED.equalsIgnoreCase(value)
+                || DISPLAY_STATUS_WAIT_PAYMENT.equalsIgnoreCase(value)) {
+            return current;
+        }
+        if (datPhongDAO.isOperationallyBlockedRoomStatus(value)) {
+            return ROOM_STATUS_MAINTENANCE;
+        }
+        return value;
+    }
+
+    private String validateManualStatusChange(Connection con, int maPhong, String currentRawStatus, String targetRawStatus) {
+        String target = safeTrim(targetRawStatus);
+        if (target.isEmpty()) {
+            return "Vui lòng chọn trạng thái phòng hợp lệ.";
+        }
+        if (ROOM_STATUS_INACTIVE.equalsIgnoreCase(target)) {
+            return "Không cho phép chuyển phòng sang trạng thái Không hoạt động.";
+        }
+        try {
+            String displayStatus = datPhongDAO.resolveDisplayRoomStatus(con, maPhong, currentRawStatus);
+            if (isBusinessLockedDisplayStatus(displayStatus)) {
+                return "Phòng đang có đơn đặt / lưu trú / chờ thanh toán, không thể đổi trạng thái thủ công.";
+            }
+            if (isMaintenanceDisplayStatus(displayStatus)) {
+                if (!ROOM_STATUS_ACTIVE.equalsIgnoreCase(target)) {
+                    return "Chỉ được phép chuyển phòng bảo trì về Hoạt động / Sẵn sàng.";
+                }
+                return "";
+            }
+            if (isAvailableDisplayStatus(displayStatus)) {
+                if (!ROOM_STATUS_MAINTENANCE.equalsIgnoreCase(target)) {
+                    return "Chỉ được phép chuyển phòng sẵn sàng sang trạng thái Bảo trì.";
+                }
+                return "";
+            }
+        } catch (SQLException e) {
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return "Không thể kiểm tra trạng thái phòng hiện tại.";
+        }
+        return "Phòng đang có đơn đặt / lưu trú / chờ thanh toán, không thể đổi trạng thái thủ công.";
+    }
+
+    private boolean isBusinessLockedDisplayStatus(String status) {
+        String value = safeTrim(status);
+        return DISPLAY_STATUS_BOOKED.equalsIgnoreCase(value)
+                || DISPLAY_STATUS_PENDING_CHECKIN.equalsIgnoreCase(value)
+                || DISPLAY_STATUS_OCCUPIED.equalsIgnoreCase(value)
+                || DISPLAY_STATUS_WAIT_PAYMENT.equalsIgnoreCase(value);
+    }
+
+    private boolean isMaintenanceDisplayStatus(String status) {
+        return ROOM_STATUS_MAINTENANCE.equalsIgnoreCase(safeTrim(status));
+    }
+
+    private boolean isAvailableDisplayStatus(String status) {
+        String value = safeTrim(status);
+        return ROOM_STATUS_ACTIVE.equalsIgnoreCase(value) || DISPLAY_STATUS_READY.equalsIgnoreCase(value);
     }
 
     private Set<Integer> findDistinctLoaiPhongIdsByRooms(Connection con, List<Integer> roomIds) {

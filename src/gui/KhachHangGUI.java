@@ -120,6 +120,20 @@ public class KhachHangGUI extends JFrame {
         });
     }
 
+    public static Integer openCustomerCreateDialog(Frame owner, String username, String role) {
+        KhachHangGUI helper = new KhachHangGUI(username, role);
+        try {
+            CustomerFormDialog dialog = helper.new CustomerFormDialog(owner, null);
+            dialog.setVisible(true);
+            return dialog.getCreatedCustomerId();
+        } finally {
+            helper.dispose();
+            synchronized (OPEN_INSTANCES) {
+                OPEN_INSTANCES.remove(helper);
+            }
+        }
+    }
+
     private void initUI() {
         JPanel root = new JPanel(new BorderLayout(16, 0));
         root.setBackground(APP_BG);
@@ -1138,6 +1152,7 @@ public class KhachHangGUI extends JFrame {
         private JTextField txtNguoiTao;
         private JComboBox<String> cboTrangThaiDialog;
         private JTextArea txtGhiChuDialog;
+        private Integer createdCustomerId;
 
         private CustomerFormDialog(Frame owner, CustomerRecord customer) {
             super(owner, customer == null ? "Thêm khách hàng" : "Cập nhật khách hàng", 760, 700);
@@ -1264,6 +1279,7 @@ public class KhachHangGUI extends JFrame {
                 if (newId == null) {
                     return;
                 }
+                createdCustomerId = newId;
                 reloadSampleData(false);
                 selectCustomer(findCustomerByDbId(newId.intValue()));
                 refreshAllOpenInstances();
@@ -1312,6 +1328,10 @@ public class KhachHangGUI extends JFrame {
             refreshAllOpenInstances();
             showSuccess("Cập nhật khách hàng thành công.");
             dispose();
+        }
+
+        private Integer getCreatedCustomerId() {
+            return createdCustomerId;
         }
     }
 

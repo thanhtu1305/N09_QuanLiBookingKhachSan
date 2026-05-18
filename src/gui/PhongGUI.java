@@ -67,7 +67,7 @@ public class PhongGUI extends JFrame {
     // Demo khach san duoc chot co 5 tang de dong bo voi du lieu seed.
     private static final String[] FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
     private static final String[] CREATE_ROOM_FLOORS = {"Tầng 1", "Tầng 2", "Tầng 3", "Tầng 4", "Tầng 5"};
-    private static final String[] ROOM_STATUS_OPTIONS = {"Hoạt động", "Không hoạt động", "Bảo trì"};
+    private static final String[] ROOM_STATUS_OPTIONS = {"Hoạt động", "Bảo trì"};
     private static final String[] ZONES = {"Khu A", "Khu B", "Khu C", "Khu VIP"};
     private static final java.util.List<PhongGUI> OPEN_INSTANCES = new java.util.ArrayList<PhongGUI>();
     private final PhongDAO phongDAO = new PhongDAO();
@@ -212,7 +212,7 @@ public class PhongGUI extends JFrame {
 
         cboTang = createComboBox(new String[]{"Tất cả"});
         cboLoaiPhong = createComboBox(new String[]{"Tất cả"});
-        cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Đã đặt", "Đang ở", "Không hoạt động", "Bảo trì"});
+        cboTrangThai = createComboBox(new String[]{"Tất cả", "Hoạt động", "Đã đặt", "Đang ở", "Chờ thanh toán", "Bảo trì"});
         txtTuKhoa = createInputField("");
         ScreenUIHelper.applySearchFieldSize(txtTuKhoa);
         ScreenUIHelper.installLiveSearch(txtTuKhoa, () -> applyFilters(false));
@@ -504,7 +504,7 @@ public class PhongGUI extends JFrame {
         legend.add(createLegendItem("Hoạt động", resolveStatusColor("A")));
         legend.add(createLegendItem("Đã đặt", resolveStatusColor("B")));
         legend.add(createLegendItem("Đang ở", resolveStatusColor("O")));
-        legend.add(createLegendItem("Không hoạt động", resolveStatusColor("I")));
+        legend.add(createLegendItem("Chờ thanh toán", resolveStatusColor("P")));
         legend.add(createLegendItem("Bảo trì", resolveStatusColor("M")));
         return legend;
     }
@@ -1000,18 +1000,21 @@ public class PhongGUI extends JFrame {
 
     private Color resolveStatusColor(String code) {
         if ("A".equals(code)) {
-            return new Color(220, 252, 231);
+            return new Color(236, 253, 245);
         }
         if ("B".equals(code)) {
-            return new Color(254, 249, 195);
+            return new Color(255, 247, 237);
         }
         if ("O".equals(code)) {
-            return new Color(254, 226, 226);
+            return new Color(239, 246, 255);
         }
-        if ("I".equals(code)) {
-            return new Color(229, 231, 235);
+        if ("P".equals(code)) {
+            return new Color(254, 242, 242);
         }
-        return new Color(253, 230, 138);
+        if ("M".equals(code)) {
+            return new Color(243, 244, 246);
+        }
+        return new Color(236, 253, 245);
     }
 
     private String resolveStatusText(String code) {
@@ -1024,26 +1027,35 @@ public class PhongGUI extends JFrame {
         if ("O".equals(code)) {
             return "Đang ở";
         }
-        if ("I".equals(code)) {
-            return "Không hoạt động";
+        if ("P".equals(code)) {
+            return "Chờ thanh toán";
         }
-        return "Bảo trì";
+        if ("M".equals(code)) {
+            return "Bảo trì";
+        }
+        return "Hoạt động";
     }
 
     private String toStatusCode(String trangThai) {
-        if ("Hoạt động".equalsIgnoreCase(trangThai)) {
+        if ("Hoạt động".equalsIgnoreCase(trangThai) || "Sẵn sàng".equalsIgnoreCase(trangThai)) {
             return "A";
         }
-        if ("Đã đặt".equalsIgnoreCase(trangThai)) {
+        if ("Đã đặt".equalsIgnoreCase(trangThai) || "Chờ check-in".equalsIgnoreCase(trangThai)) {
             return "B";
         }
         if ("Đang ở".equalsIgnoreCase(trangThai)) {
             return "O";
         }
-        if ("Không hoạt động".equalsIgnoreCase(trangThai)) {
-            return "I";
+        if ("Chờ thanh toán".equalsIgnoreCase(trangThai) || "Đã check-out".equalsIgnoreCase(trangThai)) {
+            return "P";
         }
-        return "M";
+        if ("Bảo trì".equalsIgnoreCase(trangThai)
+                || "Không hoạt động".equalsIgnoreCase(trangThai)
+                || "Ngừng hoạt động".equalsIgnoreCase(trangThai)
+                || "Đang sửa".equalsIgnoreCase(trangThai)) {
+            return "M";
+        }
+        return "A";
     }
 
     private void openCreateRoomDialog() {
@@ -1053,14 +1065,30 @@ public class PhongGUI extends JFrame {
     private void openUpdateStatusDialog() {
         RoomRecord room = getSelectedRoom();
         if (room != null) {
-            new UpdateRoomStatusDialog(this, room).setVisible(true);
+            RoomRecord latestRoom = reloadRoomRecord(room.maPhong);
+            if (latestRoom == null) {
+                showError("Không thể tải lại trạng thái phòng hiện tại.");
+                return;
+            }
+            new UpdateRoomStatusDialog(this, latestRoom).setVisible(true);
         }
     }
 
     private void openDeactivateRoomDialog() {
         RoomRecord room = getSelectedRoom();
         if (room != null) {
-            new DeactivateRoomDialog(this, room).setVisible(true);
+            RoomRecord latestRoom = reloadRoomRecord(room.maPhong);
+            if (latestRoom == null) {
+                showError("Không thể tải lại trạng thái phòng hiện tại.");
+                return;
+            }
+            if (isManualStatusLocked(latestRoom.trangThai)) {
+                reloadRoomData(false, false);
+                selectRoomById(room.maPhong);
+                showWarning("Phòng đang có đơn đặt / lưu trú / chờ thanh toán, không thể đổi trạng thái thủ công.");
+                return;
+            }
+            new DeactivateRoomDialog(this, latestRoom).setVisible(true);
         }
     }
 
@@ -1100,7 +1128,54 @@ public class PhongGUI extends JFrame {
     private void refreshRoomViews(int maPhong, String message) {
         reloadRoomData(false, false);
         selectRoomById(maPhong);
+        CheckInOutGUI.refreshAllOpenInstances();
+        DatPhongGUI.refreshAllOpenInstances();
         showSuccess(message);
+    }
+
+    private RoomRecord reloadRoomRecord(int maPhong) {
+        Phong phong = phongDAO.findById(maPhong);
+        if (phong == null) {
+            return null;
+        }
+        return RoomRecord.fromPhong(phong, buildAmenitySummary(phong.getMaLoaiPhong(), phong.getTenLoaiPhong()));
+    }
+
+    private boolean isManualStatusLocked(String status) {
+        String value = safeValue(status, "");
+        return "Đã đặt".equalsIgnoreCase(value)
+                || "Chờ check-in".equalsIgnoreCase(value)
+                || "Đang ở".equalsIgnoreCase(value)
+                || "Chờ thanh toán".equalsIgnoreCase(value);
+    }
+
+    private boolean isMaintenanceDisplayStatus(String status) {
+        return "Bảo trì".equalsIgnoreCase(safeValue(status, ""));
+    }
+
+    private boolean isReadyDisplayStatus(String status) {
+        String value = safeValue(status, "");
+        return "Hoạt động".equalsIgnoreCase(value) || "Sẵn sàng".equalsIgnoreCase(value);
+    }
+
+    private String[] buildManualStatusOptions(RoomRecord room, boolean includeCurrentStatus) {
+        String currentStatus = room == null ? "" : safeValue(room.trangThai, "");
+        java.util.List<String> options = new ArrayList<String>();
+        if (includeCurrentStatus && !currentStatus.isEmpty()) {
+            options.add(currentStatus);
+        }
+        if (isMaintenanceDisplayStatus(currentStatus)) {
+            if (!options.contains("Hoạt động")) {
+                options.add("Hoạt động");
+            }
+        } else if (isReadyDisplayStatus(currentStatus)) {
+            if (!options.contains("Bảo trì")) {
+                options.add("Bảo trì");
+            }
+        } else if (!currentStatus.isEmpty() && options.isEmpty()) {
+            options.add(currentStatus);
+        }
+        return options.toArray(new String[0]);
     }
 
     private void selectRoomById(int maPhong) {
@@ -1660,8 +1735,12 @@ public class PhongGUI extends JFrame {
             txtKhuVucDialog = createInputField(room.khuVuc);
             txtSucChuaChuanDialog = createInputField(String.valueOf(room.sucChuaChuan));
             txtSucChuaToiDaDialog = createInputField(String.valueOf(room.sucChuaToiDa));
-            cboTrangThaiMoi = createComboBox(ROOM_STATUS_OPTIONS);
+            String[] statusOptions = isManualStatusLocked(room.trangThai)
+                    ? new String[]{room.trangThai}
+                    : buildManualStatusOptions(room, true);
+            cboTrangThaiMoi = createComboBox(statusOptions);
             cboTrangThaiMoi.setSelectedItem(room.trangThai);
+            cboTrangThaiMoi.setEnabled(!isManualStatusLocked(room.trangThai));
 
             addFormRow(form, gbc, 0, "Số phòng", txtSoPhongDialog);
             addFormRow(form, gbc, 1, "Loại phòng", cboLoaiPhongDialog);
@@ -1695,7 +1774,8 @@ public class PhongGUI extends JFrame {
                 return;
             }
             if (!phongDAO.update(phong)) {
-                showError("Không thể cập nhật phòng.");
+                String err = phongDAO.getLastErrorMessage();
+                showError("Không thể cập nhật phòng." + (err == null || err.trim().isEmpty() ? "" : " " + err));
                 return;
             }
 
@@ -1723,8 +1803,10 @@ public class PhongGUI extends JFrame {
             gbc.insets = new java.awt.Insets(6, 0, 6, 12);
             gbc.anchor = GridBagConstraints.WEST;
 
-            cboTrangThaiMoi = createComboBox(ROOM_STATUS_OPTIONS);
-            cboTrangThaiMoi.setSelectedItem(room.trangThai);
+            cboTrangThaiMoi = createComboBox(buildManualStatusOptions(room, false));
+            if (cboTrangThaiMoi.getItemCount() > 0) {
+                cboTrangThaiMoi.setSelectedIndex(0);
+            }
             txtLyDo = createDialogTextArea(4);
 
             addFormRow(form, gbc, 0, "Số phòng", createValueTag(room.soPhong));

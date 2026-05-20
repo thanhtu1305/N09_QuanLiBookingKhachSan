@@ -18,6 +18,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * DAO xử lý các thao tác liên quan đến bảng giá phòng.
+ * Lớp này chịu trách nhiệm:
+ * - Lấy danh sách bảng giá.
+ * - Thêm, cập nhật, xóa bảng giá.
+ * - Lưu bảng giá kèm chi tiết giá theo giao dịch.
+ * - Kiểm tra trùng khoảng thời gian áp dụng của bảng giá.
+ */
 public class BangGiaDAO {
     public static final String DEFAULT_LOAI_NGAY = ChiTietBangGia.DEFAULT_LOAI_NGAY;
 
@@ -30,12 +38,22 @@ public class BangGiaDAO {
     private String lastErrorMessage = "";
     private final Map<Integer, String> loaiNgayCache = new HashMap<Integer, String>();
 
+    /**
+     * Lấy thông báo lỗi gần nhất phát sinh trong DAO.
+     *
+     * @return nội dung lỗi gần nhất, rỗng nếu chưa có lỗi
+     */
     public String getLastErrorMessage() {
         return lastErrorMessage;
     }
-//banggia
+
+    /**
+     * Lấy toàn bộ danh sách bảng giá, sắp xếp bảng giá mới nhất lên trước.
+     * @return danh sách bảng giá
+     */
     public List<BangGia> getAll() {
         clearLastError();
+        // Xóa cache để bảo đảm dữ liệu loại ngày được lấy lại theo kết quả truy vấn mới.
         loaiNgayCache.clear();
         List<BangGia> dsBangGia = new ArrayList<BangGia>();
         Connection con = ConnectDB.getConnection();
@@ -48,6 +66,7 @@ public class BangGiaDAO {
         try (PreparedStatement stmt = con.prepareStatement(sql);
              ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
+                // Ánh xạ từng dòng dữ liệu trong ResultSet thành đối tượng BangGia.
                 dsBangGia.add(mapBangGia(rs));
             }
         } catch (SQLException e) {
@@ -58,6 +77,11 @@ public class BangGiaDAO {
         return dsBangGia;
     }
 
+    /**
+     * Tìm bảng giá theo mã bảng giá.
+     * @param maBangGia mã bảng giá cần tìm
+     * @return đối tượng BangGia nếu tìm thấy, ngược lại trả về null
+     */
     public BangGia findById(int maBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -82,8 +106,18 @@ public class BangGiaDAO {
         return null;
     }
 
+    /**
+     * Tìm kiếm bảng giá theo tên, loại phòng và khoảng ngày áp dụng.
+     * @param tenBangGia tên bảng giá cần tìm, có thể rỗng
+     * @param maLoaiPhong mã loại phòng cần lọc, có thể rỗng
+     * @param from ngày bắt đầu lọc, có thể null
+     * @param to ngày kết thúc lọc, có thể null
+     * @param loaiNgay loại ngày, hiện chưa dùng trực tiếp trong câu truy vấn
+     * @return danh sách bảng giá phù hợp với điều kiện tìm kiếm
+     */
     public List<BangGia> search(String tenBangGia, String maLoaiPhong, Date from, Date to, String loaiNgay) {
         clearLastError();
+        // Xóa cache để bảo đảm dữ liệu loại ngày được lấy lại theo kết quả truy vấn mới.
         loaiNgayCache.clear();
         List<BangGia> dsBangGia = new ArrayList<BangGia>();
         Connection con = ConnectDB.getConnection();
@@ -127,6 +161,12 @@ public class BangGiaDAO {
         return dsBangGia;
     }
 
+    /**
+     * Thêm mới một bảng giá vào cơ sở dữ liệu.
+     * @param bangGia thông tin bảng giá cần thêm
+     * @param loaiNgay loại ngày áp dụng cho bảng giá
+     * @return true nếu thêm thành công, false nếu thất bại
+     */
     public boolean insert(BangGia bangGia, String loaiNgay) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -134,6 +174,7 @@ public class BangGiaDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
             return false;
         }
+        // Chuẩn hóa loại ngày trước khi validate và lưu vào cơ sở dữ liệu.
         String normalizedLoaiNgay = normalizeLoaiNgay(loaiNgay);
         if (!validateBangGia(bangGia, normalizedLoaiNgay, false)) {
             return false;
@@ -167,6 +208,12 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Cập nhật thông tin bảng giá đã tồn tại.
+     * @param bangGia thông tin bảng giá cần cập nhật
+     * @param loaiNgay loại ngày áp dụng cho bảng giá
+     * @return true nếu cập nhật thành công, false nếu thất bại
+     */
     public boolean update(BangGia bangGia, String loaiNgay) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -174,6 +221,7 @@ public class BangGiaDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
             return false;
         }
+        // Chuẩn hóa loại ngày trước khi validate và lưu vào cơ sở dữ liệu.
         String normalizedLoaiNgay = normalizeLoaiNgay(loaiNgay);
         if (!validateBangGia(bangGia, normalizedLoaiNgay, true)) {
             return false;
@@ -202,6 +250,14 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Kiểm tra khoảng thời gian áp dụng của bảng giá có bị trùng với bảng giá khác hay không.
+     * @param maLoaiPhong mã loại phòng cần kiểm tra
+     * @param ngayBatDau ngày bắt đầu của khoảng thời gian mới
+     * @param ngayKetThuc ngày kết thúc của khoảng thời gian mới
+     * @param excludeMaBangGia mã bảng giá cần bỏ qua khi cập nhật, null khi thêm mới
+     * @return thông tin bảng giá bị trùng nếu có, ngược lại trả về null
+     */
     public BangGiaConflictInfo findDateConflict(int maLoaiPhong, Date ngayBatDau, Date ngayKetThuc, Integer excludeMaBangGia) {
         clearLastError();
         if (maLoaiPhong <= 0 || ngayBatDau == null || ngayKetThuc == null) {
@@ -214,6 +270,7 @@ public class BangGiaDAO {
             return null;
         }
 
+        // Câu truy vấn tìm bảng giá có khoảng ngày giao nhau với khoảng ngày đang nhập.
         StringBuilder sql = new StringBuilder();
         sql.append("SELECT TOP 1 bg.maBangGia, bg.tenBangGia, bg.maLoaiPhong, lp.tenLoaiPhong, ")
                 .append("bg.ngayBatDau, bg.ngayKetThuc, bg.trangThai ")
@@ -258,6 +315,15 @@ public class BangGiaDAO {
         return null;
     }
 
+    /**
+     * Lưu bảng giá cùng danh sách chi tiết bảng giá trong cùng một giao dịch.
+     * Nếu bảng giá đã có mã, phương thức sẽ cập nhật bảng giá và xóa chi tiết cũ trước khi thêm chi tiết mới.
+     * Nếu bảng giá chưa có mã, phương thức sẽ thêm mới bảng giá rồi thêm các dòng chi tiết.
+     * @param bangGia thông tin bảng giá cần lưu
+     * @param loaiNgay loại ngày áp dụng
+     * @param chiTietBangGiaList danh sách chi tiết giá cần lưu
+     * @return true nếu toàn bộ giao dịch thành công, false nếu có lỗi và đã rollback
+     */
     public boolean saveWithDetails(BangGia bangGia, String loaiNgay, List<ChiTietBangGia> chiTietBangGiaList) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -265,6 +331,7 @@ public class BangGiaDAO {
             setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu bảng giá không hợp lệ.");
             return false;
         }
+        // Chuẩn hóa loại ngày trước khi validate và lưu vào cơ sở dữ liệu.
         String normalizedLoaiNgay = normalizeLoaiNgay(loaiNgay);
         if (!validateBangGia(bangGia, normalizedLoaiNgay, bangGia.getMaBangGia() > 0)) {
             return false;
@@ -286,6 +353,7 @@ public class BangGiaDAO {
 
         boolean previousAutoCommit = true;
         try {
+            // Tắt auto-commit để đảm bảo bảng giá và chi tiết bảng giá được lưu như một giao dịch duy nhất.
             previousAutoCommit = con.getAutoCommit();
             con.setAutoCommit(false);
 
@@ -314,6 +382,7 @@ public class BangGiaDAO {
                 }
             }
 
+            // Chỉ commit khi bảng giá và toàn bộ chi tiết đều được lưu thành công.
             con.commit();
             loaiNgayCache.put(bangGia.getMaBangGia(), normalizedLoaiNgay);
             return true;
@@ -336,6 +405,11 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Xóa bảng giá và các chi tiết bảng giá liên quan.
+     * @param maBangGia mã bảng giá cần xóa
+     * @return true nếu xóa thành công, false nếu thất bại
+     */
     public boolean delete(int maBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -356,6 +430,7 @@ public class BangGiaDAO {
                 loaiNgayCache.remove(maBangGia);
                 return deleted;
             } catch (SQLException e) {
+                // Nếu xóa chi tiết hoặc bảng giá lỗi thì rollback toàn bộ thao tác xóa.
                 con.rollback();
                 System.out.println("Loi xoa bang gia co ma: " + maBangGia);
                 e.printStackTrace();
@@ -372,11 +447,22 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Lấy danh sách loại phòng để phục vụ việc chọn loại phòng khi lập bảng giá.
+     * @return danh sách loại phòng
+     */
     public List<LoaiPhong> getAllLoaiPhong() {
         return new LoaiPhongDAO().getAll();
     }
 
+    /**
+     * Lấy loại ngày của bảng giá theo mã bảng giá.
+     * Dữ liệu được ưu tiên lấy từ cache để giảm số lần truy vấn cơ sở dữ liệu.
+     * @param maBangGia mã bảng giá cần lấy loại ngày
+     * @return loại ngày của bảng giá, hoặc giá trị mặc định nếu không tìm thấy
+     */
     public String getLoaiNgayByMaBangGia(int maBangGia) {
+        // Ưu tiên lấy từ cache nếu mã bảng giá đã từng được truy vấn trước đó.
         if (loaiNgayCache.containsKey(maBangGia)) {
             return loaiNgayCache.get(maBangGia);
         }
@@ -405,6 +491,11 @@ public class BangGiaDAO {
         return DEFAULT_LOAI_NGAY;
     }
 
+    /**
+     * Lấy danh sách chi tiết bảng giá theo mã bảng giá.
+     * @param maBangGia mã bảng giá cần lấy chi tiết
+     * @return danh sách chi tiết bảng giá
+     */
     public List<ChiTietBangGia> getChiTietBangGiaByMaBangGia(int maBangGia) {
         clearLastError();
         List<ChiTietBangGia> details = new ArrayList<ChiTietBangGia>();
@@ -431,10 +522,21 @@ public class BangGiaDAO {
         return details;
     }
 
+    /**
+     * Lấy chi tiết bảng giá đang áp dụng theo mã bảng giá.
+     * @param maBangGia mã bảng giá cần kiểm tra
+     * @return chi tiết bảng giá đang áp dụng, hoặc null nếu không có
+     */
     public ChiTietBangGia getChiTietBangGiaDangApDung(int maBangGia) {
         return getChiTietBangGiaDangApDung(maBangGia, null);
     }
 
+    /**
+     * Lấy chi tiết bảng giá đang áp dụng tại một ngày cụ thể.
+     * @param maBangGia mã bảng giá cần kiểm tra
+     * @param ngayApDung ngày cần kiểm tra, có thể null nếu không lọc theo ngày
+     * @return chi tiết bảng giá đang áp dụng, hoặc null nếu không có
+     */
     public ChiTietBangGia getChiTietBangGiaDangApDung(int maBangGia, LocalDate ngayApDung) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -473,8 +575,15 @@ public class BangGiaDAO {
         return null;
     }
 
+    /**
+     * Chuyển dữ liệu từ ResultSet thành đối tượng BangGia.
+     * @param rs ResultSet đang trỏ tới dòng dữ liệu bảng giá
+     * @return đối tượng BangGia sau khi ánh xạ dữ liệu
+     * @throws SQLException nếu lỗi khi đọc dữ liệu từ ResultSet
+     */
     private BangGia mapBangGia(ResultSet rs) throws SQLException {
         int maBangGia = rs.getInt("maBangGia");
+        // Lưu loại ngày vào cache vì BangGia hiện không nhận trực tiếp trường này trong constructor.
         loaiNgayCache.put(maBangGia, normalizeLoaiNgay(rs.getString("loaiNgay")));
         return new BangGia(
                 maBangGia,
@@ -488,6 +597,12 @@ public class BangGiaDAO {
         );
     }
 
+    /**
+     * Chuyển dữ liệu từ ResultSet thành đối tượng ChiTietBangGia.
+     * @param rs ResultSet đang trỏ tới dòng dữ liệu chi tiết bảng giá
+     * @return đối tượng ChiTietBangGia sau khi ánh xạ dữ liệu
+     * @throws SQLException nếu lỗi khi đọc dữ liệu từ ResultSet
+     */
     private ChiTietBangGia mapChiTietBangGia(ResultSet rs) throws SQLException {
         return new ChiTietBangGia(
                 rs.getInt("maChiTietBangGia"),
@@ -503,6 +618,13 @@ public class BangGiaDAO {
         );
     }
 
+    /**
+     * Kiểm tra dữ liệu bảng giá trước khi thêm hoặc cập nhật.
+     * @param bangGia bảng giá cần kiểm tra
+     * @param loaiNgay loại ngày đã được chuẩn hóa
+     * @param updating true nếu đang cập nhật, false nếu đang thêm mới
+     * @return true nếu dữ liệu hợp lệ, false nếu dữ liệu không hợp lệ
+     */
     private boolean validateBangGia(BangGia bangGia, String loaiNgay, boolean updating) {
         if (bangGia.getTenBangGia() == null || bangGia.getTenBangGia().trim().isEmpty()) {
             setLastError("Tên bảng giá không được rỗng.");
@@ -531,6 +653,11 @@ public class BangGiaDAO {
         return true;
     }
 
+    /**
+     * Kiểm tra danh sách chi tiết bảng giá trước khi lưu.
+     * @param chiTietBangGiaList danh sách chi tiết bảng giá cần kiểm tra
+     * @return true nếu toàn bộ danh sách hợp lệ, false nếu có dòng không hợp lệ
+     */
     private boolean validateChiTietList(List<ChiTietBangGia> chiTietBangGiaList) {
         if (chiTietBangGiaList == null || chiTietBangGiaList.isEmpty()) {
             setLastError("Bảng giá phải có ít nhất 1 dòng chi tiết.");
@@ -538,6 +665,7 @@ public class BangGiaDAO {
         }
 
         for (int i = 0; i < chiTietBangGiaList.size(); i++) {
+            // Kiểm tra từng dòng chi tiết để báo lỗi chính xác theo vị trí dòng.
             ChiTietBangGia chiTietBangGia = chiTietBangGiaList.get(i);
             String prefix = "Dòng chi tiết " + (i + 1) + ": ";
             if (chiTietBangGia == null) {
@@ -562,6 +690,14 @@ public class BangGiaDAO {
         return true;
     }
 
+    /**
+     * Thêm bảng giá trong giao dịch hiện tại.
+     * Phương thức này không tự commit hoặc rollback, việc quản lý giao dịch do phương thức gọi bên ngoài xử lý.
+     * @param con kết nối cơ sở dữ liệu đang nằm trong giao dịch
+     * @param bangGia bảng giá cần thêm
+     * @param loaiNgay loại ngày áp dụng
+     * @return true nếu thêm thành công, false nếu thất bại
+     */
     private boolean insertBangGiaTransaction(Connection con, BangGia bangGia, String loaiNgay) {
         String sql = "INSERT INTO BangGia(tenBangGia, maLoaiPhong, ngayBatDau, ngayKetThuc, loaiNgay, trangThai) "
                 + "VALUES (?, ?, ?, ?, ?, ?)";
@@ -592,6 +728,14 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Cập nhật bảng giá trong giao dịch hiện tại.
+     * Phương thức này không tự commit hoặc rollback, việc quản lý giao dịch do phương thức gọi bên ngoài xử lý.
+     * @param con kết nối cơ sở dữ liệu đang nằm trong giao dịch
+     * @param bangGia bảng giá cần cập nhật
+     * @param loaiNgay loại ngày áp dụng
+     * @return true nếu cập nhật thành công, false nếu thất bại
+     */
     private boolean updateBangGiaTransaction(Connection con, BangGia bangGia, String loaiNgay) {
         String sql = "UPDATE BangGia SET tenBangGia = ?, maLoaiPhong = ?, ngayBatDau = ?, ngayKetThuc = ?, "
                 + "loaiNgay = ?, trangThai = ? WHERE maBangGia = ?";
@@ -616,6 +760,12 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Xóa toàn bộ chi tiết bảng giá theo mã bảng giá trong giao dịch hiện tại.
+     * @param con kết nối cơ sở dữ liệu đang nằm trong giao dịch
+     * @param maBangGia mã bảng giá cần xóa chi tiết
+     * @return true nếu xóa thành công, false nếu thất bại
+     */
     private boolean deleteChiTietByMaBangGia(Connection con, int maBangGia) {
         String sql = "DELETE FROM ChiTietBangGia WHERE maBangGia = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -630,6 +780,12 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Thêm một dòng chi tiết bảng giá vào cơ sở dữ liệu.
+     * @param con kết nối cơ sở dữ liệu đang nằm trong giao dịch
+     * @param chiTietBangGia chi tiết bảng giá cần thêm
+     * @return true nếu thêm thành công, false nếu thất bại
+     */
     private boolean insertChiTietBangGia(Connection con, ChiTietBangGia chiTietBangGia) {
         String sql = "INSERT INTO ChiTietBangGia(maBangGia, loaiNgay, khungGio, giaTheoGio, giaQuaDem, giaTheoNgay, giaCuoiTuan, giaLe, phuThu) "
                 + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -652,6 +808,12 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Tạo bản sao của chi tiết bảng giá trước khi lưu.
+     * Việc tạo bản sao giúp tránh thay đổi trực tiếp đối tượng gốc đang được truyền từ giao diện hoặc lớp gọi.
+     * @param source chi tiết bảng giá gốc
+     * @return bản sao của chi tiết bảng giá
+     */
     private ChiTietBangGia copyChiTietBangGia(ChiTietBangGia source) {
         ChiTietBangGia copy = new ChiTietBangGia();
         copy.setMaChiTietBangGia(source.getMaChiTietBangGia());
@@ -667,6 +829,11 @@ public class BangGiaDAO {
         return copy;
     }
 
+    /**
+     * Tạo thông báo lỗi khi khoảng thời gian áp dụng bảng giá bị trùng.
+     * @param conflictInfo thông tin bảng giá đang bị trùng thời gian
+     * @return thông báo lỗi để hiển thị cho người dùng
+     */
     private String buildConflictErrorMessage(BangGiaConflictInfo conflictInfo) {
         if (conflictInfo == null) {
             return "Khoảng thời gian áp dụng đang bị trùng.";
@@ -678,6 +845,11 @@ public class BangGiaDAO {
                 + " (" + safeValue(conflictInfo.getTrangThai(), "-") + ").";
     }
 
+    /**
+     * Kiểm tra loại phòng có tồn tại trong cơ sở dữ liệu hay không.
+     * @param maLoaiPhong mã loại phòng cần kiểm tra
+     * @return true nếu loại phòng tồn tại, false nếu không tồn tại hoặc có lỗi
+     */
     private boolean isLoaiPhongExists(int maLoaiPhong) {
         Connection con = ConnectDB.getConnection();
         if (con == null) {
@@ -699,26 +871,57 @@ public class BangGiaDAO {
         }
     }
 
+    /**
+     * Kiểm tra giá trị số có lớn hơn hoặc bằng 0 hay không.
+     * @param value giá trị cần kiểm tra
+     * @return true nếu value >= 0
+     */
     private boolean isNonNegative(double value) {
         return value >= 0;
     }
 
+    /**
+     * Chuẩn hóa loại ngày, dùng giá trị mặc định nếu dữ liệu rỗng.
+     * @param loaiNgay loại ngày cần chuẩn hóa
+     * @return loại ngày hợp lệ sau khi chuẩn hóa
+     */
     private String normalizeLoaiNgay(String loaiNgay) {
         return loaiNgay == null || loaiNgay.trim().isEmpty() ? DEFAULT_LOAI_NGAY : loaiNgay.trim();
     }
 
+    /**
+     * Chuyển ngày SQL sang chuỗi theo định dạng LocalDate.
+     *
+     * @param date ngày cần chuyển đổi
+     * @return chuỗi ngày, hoặc rỗng nếu date null
+     */
     private String formatDate(Date date) {
         return date == null ? "" : date.toLocalDate().toString();
     }
 
+    /**
+     * Lấy giá trị chuỗi an toàn, dùng fallback nếu chuỗi null hoặc rỗng.
+     *
+     * @param value giá trị cần kiểm tra
+     * @param fallback giá trị thay thế khi value không hợp lệ
+     * @return value đã trim hoặc fallback
+     */
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
 
+    /**
+     * Xóa thông báo lỗi gần nhất trước khi thực hiện thao tác mới.
+     */
     private void clearLastError() {
         lastErrorMessage = "";
     }
 
+    /**
+     * Lưu thông báo lỗi gần nhất để lớp gọi có thể lấy ra hiển thị.
+     *
+     * @param message nội dung lỗi cần lưu
+     */
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
     }

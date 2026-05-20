@@ -21,8 +21,24 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * DAO xử lý các nghiệp vụ liên quan đến check-in, check-out và lưu trú.
+ *
+ * Lớp này chịu trách nhiệm:
+ * - Lấy danh sách lưu trú.
+ * - Thực hiện check-in từ đơn đặt phòng.
+ * - Thực hiện check-out.
+ * - Cập nhật trạng thái đặt phòng và trạng thái phòng.
+ * - Quản lý khách đại diện cho từng chi tiết đặt phòng.
+ * - Tìm phòng khả dụng khi đổi phòng.
+ */
 public class CheckInOutDAO {
     private static final DateTimeFormatter DISPLAY_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+    /**
+     * Câu truy vấn cơ sở dùng để lấy thông tin lưu trú kèm thông tin đặt phòng,
+     * khách hàng, phòng và loại phòng.
+     */
     private static final String SELECT_BASE =
             "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, lt.checkOut, lt.soNguoi, lt.giaPhong, lt.tienCoc, "
                     + "dp.trangThai AS trangThaiDatPhong, kh.hoTen AS tenKhachHang, kh.soDienThoai AS soDienThoaiKhach, "
@@ -37,36 +53,68 @@ public class CheckInOutDAO {
                     + "LEFT JOIN DatPhong dp2 ON ctdp.maDatPhong = dp2.maDatPhong "
                     + "LEFT JOIN BangGia bg ON dp2.maBangGia = bg.maBangGia "
                     + "LEFT JOIN LoaiPhong lp2 ON bg.maLoaiPhong = lp2.maLoaiPhong";
-    private static final String STATUS_BOOKED = "\u0110\u00e3 \u0111\u1eb7t";
-    private static final String STATUS_CONFIRMED = "\u0110\u00e3 x\u00e1c nh\u1eadn";
-    private static final String STATUS_DEPOSITED = "\u0110\u00e3 c\u1ecdc";
-    private static final String STATUS_PENDING_CHECKIN = "Ch\u1edd check-in";
-    private static final String STATUS_ACTIVE = "\u0110ang \u1edf";
-    private static final String STATUS_ACTIVE_STAY = "\u0110ang l\u01b0u tr\u00fa";
-    private static final String STATUS_PARTIAL_CHECKOUT = "Check-out m\u1ed9t ph\u1ea7n";
-    private static final String STATUS_WAIT_PAYMENT = "Ch\u1edd thanh to\u00e1n";
-    private static final String STATUS_PAID = "\u0110\u00e3 thanh to\u00e1n";
-    private static final String STATUS_CHECKED_IN = "\u0110\u00e3 check-in";
-    private static final String STATUS_CHECKED_OUT = "\u0110\u00e3 check-out";
-    private static final String STATUS_CANCELLED = "\u0110\u00e3 h\u1ee7y";
-    private static final String STATUS_CANCELLED_BOOKING = "H\u1ee7y booking";
-    private static final String STATUS_ROOM_ACTIVE = "Ho\u1ea1t \u0111\u1ed9ng";
-    private static final String STATUS_ROOM_EMPTY = "Tr\u1ed1ng";
-    private static final String STATUS_ROOM_READY = "S\u1eb5n s\u00e0ng";
-    private static final String STATUS_ROOM_OCCUPIED = "\u0110ang \u1edf";
+
+    // Các trạng thái của đơn đặt phòng.
+    private static final String STATUS_BOOKED = "Đã đặt";
+    private static final String STATUS_CONFIRMED = "Đã xác nhận";
+    private static final String STATUS_DEPOSITED = "Đã cọc";
+    private static final String STATUS_PENDING_CHECKIN = "Chờ check-in";
+    private static final String STATUS_ACTIVE = "Đang ở";
+    private static final String STATUS_ACTIVE_STAY = "Đang lưu trú";
+    private static final String STATUS_PARTIAL_CHECKOUT = "Check-out một phần";
+    private static final String STATUS_WAIT_PAYMENT = "Chờ thanh toán";
+    private static final String STATUS_PAID = "Đã thanh toán";
+    private static final String STATUS_CHECKED_IN = "Đã check-in";
+    private static final String STATUS_CHECKED_OUT = "Đã check-out";
+    private static final String STATUS_CANCELLED = "Đã hủy";
+    private static final String STATUS_CANCELLED_BOOKING = "Hủy booking";
+
+    // Các trạng thái của phòng.
+    private static final String STATUS_ROOM_ACTIVE = "Hoạt động";
+    private static final String STATUS_ROOM_EMPTY = "Trống";
+    private static final String STATUS_ROOM_READY = "Sẵn sàng";
+    private static final String STATUS_ROOM_OCCUPIED = "Đang ở";
+
+    /**
+     * Mốc giờ mặc định dùng cho các đơn cũ chỉ lưu ngày mà không có giờ.
+     */
     private static final LocalTime LEGACY_BOOKING_TIME_BOUNDARY = LocalTime.of(12, 0);
+
+    /**
+     * Biến đánh dấu bảng khách đại diện đã được kiểm tra/tạo hay chưa.
+     */
     private static boolean representativeGuestSchemaEnsured = false;
 
     private String lastErrorMessage = "";
 
+    /**
+     * Lấy thông báo lỗi gần nhất trong DAO.
+     *
+     * @return nội dung lỗi gần nhất, rỗng nếu chưa có lỗi.
+     */
     public String getLastErrorMessage() {
         return lastErrorMessage;
     }
 
+    /**
+     * Xác định trạng thái hiện tại của một đơn đặt phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần kiểm tra.
+     * @return trạng thái đặt phòng sau khi tính toán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public String resolveBookingStatusForBooking(Connection con, int maDatPhong) throws SQLException {
         return resolveBookingStatus(con, maDatPhong, null);
     }
 
+    /**
+     * Cập nhật lại trạng thái đặt phòng dựa trên tình trạng lưu trú hiện tại.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần cập nhật.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public void refreshBookingStatus(Connection con, int maDatPhong) throws SQLException {
         if (con == null || maDatPhong <= 0) {
             return;
@@ -74,11 +122,20 @@ public class CheckInOutDAO {
         updateBookingStatus(con, Integer.valueOf(maDatPhong), resolveBookingStatusForBooking(con, maDatPhong));
     }
 
+    /**
+     * Lấy danh sách mã lưu trú còn đang ở, dùng cho nghiệp vụ check-out.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần lấy danh sách lưu trú.
+     * @return danh sách mã lưu trú chưa check-out.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public List<Integer> loadActiveStayIdsForCheckout(Connection con, int maDatPhong) throws SQLException {
         List<Integer> stayIds = new ArrayList<Integer>();
         if (con == null || maDatPhong <= 0) {
             return stayIds;
         }
+
         String sql = "SELECT lt.maLuuTru FROM LuuTru lt "
                 + "WHERE lt.maDatPhong = ? AND lt.checkOut IS NULL "
                 + "ORDER BY lt.maLuuTru ASC";
@@ -93,12 +150,17 @@ public class CheckInOutDAO {
         return stayIds;
     }
 
+    /**
+     * Lấy toàn bộ danh sách lưu trú.
+     *
+     * @return danh sách lưu trú, rỗng nếu không có dữ liệu hoặc lỗi kết nối.
+     */
     public List<LuuTru> getAll() {
         clearLastError();
         List<LuuTru> result = new ArrayList<LuuTru>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
             return result;
         }
 
@@ -115,12 +177,20 @@ public class CheckInOutDAO {
         return result;
     }
 
+    /**
+     * Lấy danh sách lưu trú theo trạng thái đặt phòng.
+     *
+     * Nếu trạng thái truyền vào rỗng, phương thức sẽ lấy toàn bộ dữ liệu.
+     *
+     * @param trangThaiDatPhong trạng thái đặt phòng cần lọc.
+     * @return danh sách lưu trú phù hợp với trạng thái.
+     */
     public List<LuuTru> getByTrangThaiDatPhong(String trangThaiDatPhong) {
         clearLastError();
         List<LuuTru> result = new ArrayList<LuuTru>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
             return result;
         }
 
@@ -141,12 +211,18 @@ public class CheckInOutDAO {
         return result;
     }
 
+    /**
+     * Tìm thông tin lưu trú theo mã lưu trú.
+     *
+     * @param maLuuTru mã lưu trú dạng chuỗi.
+     * @return đối tượng LuuTru nếu tìm thấy, ngược lại trả về null.
+     */
     public LuuTru findById(String maLuuTru) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maLuuTru);
         if (con == null || id == null) {
-            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
             return null;
         }
 
@@ -165,25 +241,37 @@ public class CheckInOutDAO {
         return null;
     }
 
+    /**
+     * Thêm mới một bản ghi lưu trú.
+     *
+     * Sau khi thêm lưu trú, phương thức sẽ cập nhật trạng thái đặt phòng
+     * và đồng bộ lại trạng thái các phòng liên quan.
+     *
+     * @param luuTru thông tin lưu trú cần thêm.
+     * @return true nếu thêm thành công, false nếu thất bại.
+     */
     public boolean insert(LuuTru luuTru) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         if (con == null || luuTru == null) {
-            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "Dá»¯ liá»‡u lÆ°u trĂº khĂ´ng há»£p lá»‡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Dữ liệu lưu trú không hợp lệ.");
             return false;
         }
 
         String sql = "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try {
+            // Tắt auto-commit để thao tác thêm lưu trú và cập nhật trạng thái được xử lý trong cùng một giao dịch.
             con.setAutoCommit(false);
             try (PreparedStatement stmt = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
                 fillStatement(stmt, luuTru);
                 boolean inserted = stmt.executeUpdate() > 0;
                 if (!inserted) {
                     con.rollback();
-                    setLastError("KhĂ´ng thá»ƒ thĂªm lÆ°u trĂº.");
+                    setLastError("Không thể thêm lưu trú.");
                     return false;
                 }
+
+                // Lấy mã lưu trú vừa được tạo để cập nhật lại vào đối tượng.
                 try (ResultSet rs = stmt.getGeneratedKeys()) {
                     if (rs.next()) {
                         luuTru.setMaLuuTru(String.valueOf(rs.getInt(1)));
@@ -191,7 +279,11 @@ public class CheckInOutDAO {
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
+            updateBookingStatus(
+                    con,
+                    parseIntOrNull(luuTru.getMaDatPhong()),
+                    shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE
+            );
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -205,12 +297,20 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Cập nhật thông tin một bản ghi lưu trú.
+     *
+     * Sau khi cập nhật, phương thức đồng bộ lại trạng thái đặt phòng và trạng thái phòng.
+     *
+     * @param luuTru thông tin lưu trú cần cập nhật.
+     * @return true nếu cập nhật thành công, false nếu thất bại.
+     */
     public boolean update(LuuTru luuTru) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer id = luuTru == null ? null : parseIntOrNull(luuTru.getMaLuuTru());
         if (con == null || luuTru == null || id == null) {
-            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
             return false;
         }
 
@@ -222,12 +322,16 @@ public class CheckInOutDAO {
                 stmt.setInt(9, id.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
-                    setLastError("KhĂ´ng tĂ¬m tháº¥y lÆ°u trĂº Ä‘á»ƒ cáº­p nháº­t.");
+                    setLastError("Không tìm thấy lưu trú để cập nhật.");
                     return false;
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(luuTru.getMaDatPhong()), shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE);
+            updateBookingStatus(
+                    con,
+                    parseIntOrNull(luuTru.getMaDatPhong()),
+                    shouldMoveToCleaning(luuTru) ? STATUS_CHECKED_OUT : STATUS_ACTIVE
+            );
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -241,12 +345,20 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Xóa một bản ghi lưu trú theo mã lưu trú.
+     *
+     * Sau khi xóa, phương thức cập nhật lại trạng thái đặt phòng và đồng bộ trạng thái phòng.
+     *
+     * @param maLuuTru mã lưu trú cần xóa.
+     * @return true nếu xóa thành công, false nếu thất bại.
+     */
     public boolean delete(String maLuuTru) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer id = parseIntOrNull(maLuuTru);
         if (con == null || id == null) {
-            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
             return false;
         }
 
@@ -261,12 +373,12 @@ public class CheckInOutDAO {
                 stmt.setInt(1, id.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
-                    setLastError("KhĂ´ng tĂ¬m tháº¥y lÆ°u trĂº Ä‘á»ƒ xĂ³a.");
+                    setLastError("Không tìm thấy lưu trú để xóa.");
                     return false;
                 }
             }
 
-            updateBookingStatus(con, parseIntOrNull(existing.getMaDatPhong()), "ÄĂ£ xĂ¡c nháº­n");
+            updateBookingStatus(con, parseIntOrNull(existing.getMaDatPhong()), "Đã xác nhận");
             synchronizeOperationalStatuses(con);
             con.commit();
             return true;
@@ -279,21 +391,26 @@ public class CheckInOutDAO {
             resetAutoCommit(con);
         }
     }
-
+    /**
+     * Lấy danh sách phòng trống theo thứ tự tầng và số phòng.
+     *
+     * @param maLoaiPhong mã loại phòng cần lọc, có thể rỗng nếu muốn lấy tất cả phòng trống.
+     * @return danh sách phòng đang trống.
+     */
     public List<Phong> getPhongTrongTheoThuTuTang(String maLoaiPhong) {
         clearLastError();
         List<Phong> result = new ArrayList<Phong>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u.");
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
             return result;
         }
 
         String sql = "SELECT p.maPhong, p.maLoaiPhong, p.soPhong, p.tang, p.khuVuc, p.sucChuaChuan, p.sucChuaToiDa, p.trangThai, lp.tenLoaiPhong "
                 + "FROM Phong p "
                 + "LEFT JOIN LoaiPhong lp ON p.maLoaiPhong = lp.maLoaiPhong "
-                + "WHERE p.trangThai = N'Trá»‘ng' AND (? = '' OR CAST(p.maLoaiPhong AS NVARCHAR(20)) = ?) "
-                + "ORDER BY TRY_CAST(REPLACE(p.tang, N'Táº§ng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong ASC";
+                + "WHERE p.trangThai = N'Trống' AND (? = '' OR CAST(p.maLoaiPhong AS NVARCHAR(20)) = ?) "
+                + "ORDER BY TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong ASC";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             String loaiPhong = safeTrim(maLoaiPhong);
             stmt.setString(1, loaiPhong);
@@ -321,6 +438,21 @@ public class CheckInOutDAO {
         return result;
     }
 
+    /**
+     * Lấy danh sách phòng khả dụng để đổi phòng.
+     *
+     * Method này tự lấy connection từ ConnectDB, sau đó gọi method overload bên dưới
+     * để xử lý truy vấn chính.
+     *
+     * @param maDatPhong mã đặt phòng hiện tại.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng đang đổi phòng.
+     * @param maLuuTru mã lưu trú hiện tại.
+     * @param maPhongHienTai mã phòng hiện tại đang ở.
+     * @param maLoaiPhongUuTien mã loại phòng ưu tiên khi sắp xếp kết quả.
+     * @param thoiDiemDoi thời điểm thực hiện đổi phòng.
+     * @param thoiGianTraDuKien thời gian trả phòng dự kiến.
+     * @return danh sách phòng có thể đổi sang.
+     */
     public List<RoomChangeCandidate> getAvailableRoomsForRoomChange(int maDatPhong,
                                                                     int maChiTietDatPhong,
                                                                     int maLuuTru,
@@ -332,9 +464,11 @@ public class CheckInOutDAO {
         List<RoomChangeCandidate> result = new ArrayList<RoomChangeCandidate>();
         Connection con = ConnectDB.getConnection();
         if (con == null) {
-            setLastError("Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u.");
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
             return result;
         }
+
+        // Đảm bảo bảng ChiTietDatPhong có các cột lịch dự kiến trước khi truy vấn.
         ensureDetailScheduleSchema(con);
         try {
             return getAvailableRoomsForRoomChange(
@@ -354,6 +488,27 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Lấy danh sách phòng khả dụng để đổi phòng bằng connection có sẵn.
+     *
+     * Phòng được xem là khả dụng khi:
+     * - Không phải phòng hiện tại.
+     * - Đang ở trạng thái có thể sử dụng.
+     * - Không thuộc chi tiết đặt phòng khác trong cùng booking.
+     * - Không có lưu trú đang hoạt động.
+     * - Không bị giữ bởi booking khác có thời gian giao nhau.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng hiện tại.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng đang đổi phòng.
+     * @param maLuuTru mã lưu trú hiện tại.
+     * @param maPhongHienTai mã phòng hiện tại.
+     * @param maLoaiPhongUuTien mã loại phòng ưu tiên.
+     * @param thoiDiemDoi thời điểm đổi phòng.
+     * @param thoiGianTraDuKien thời gian trả phòng dự kiến.
+     * @return danh sách phòng khả dụng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public List<RoomChangeCandidate> getAvailableRoomsForRoomChange(Connection con,
                                                                     int maDatPhong,
                                                                     int maChiTietDatPhong,
@@ -374,9 +529,10 @@ public class CheckInOutDAO {
                 || !thoiGianTraDuKien.isAfter(thoiDiemDoi)) {
             return result;
         }
+
         ensureDetailScheduleSchema(con);
 
-        // DatPhong stores DATE only, so legacy midnight values are treated as the system's noon boundary.
+        // DatPhong cũ có thể chỉ lưu DATE, nên mốc 00:00 được hiểu là 12:00 theo quy ước hệ thống.
         LocalDateTime normalizedExpectedCheckOut = normalizeLegacyBookingBoundary(thoiGianTraDuKien);
         if (!normalizedExpectedCheckOut.isAfter(thoiDiemDoi)) {
             return result;
@@ -432,8 +588,8 @@ public class CheckInOutDAO {
                 + "      ) "
                 + ") "
                 + "ORDER BY CASE WHEN lp.maLoaiPhong = ? THEN 0 ELSE 1 END, "
-                + "CASE WHEN TRY_CAST(REPLACE(p.tang, N'T\u1ea7ng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, "
-                + "TRY_CAST(REPLACE(p.tang, N'T\u1ea7ng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
+                + "CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, "
+                + "TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT), TRY_CAST(p.soPhong AS INT), p.soPhong";
 
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             int index = 1;
@@ -464,6 +620,15 @@ public class CheckInOutDAO {
         return result;
     }
 
+    /**
+     * Chuẩn hóa thời gian của booking cũ.
+     *
+     * Nếu thời gian là 00:00, hệ thống hiểu là mốc 12:00 cùng ngày
+     * để phù hợp với dữ liệu đặt phòng cũ chỉ lưu ngày.
+     *
+     * @param value thời gian cần chuẩn hóa.
+     * @return thời gian sau khi chuẩn hóa.
+     */
     private LocalDateTime normalizeLegacyBookingBoundary(LocalDateTime value) {
         if (value == null) {
             return null;
@@ -474,27 +639,60 @@ public class CheckInOutDAO {
         return value;
     }
 
+    /**
+     * Đảm bảo cấu trúc dữ liệu lịch dự kiến của chi tiết đặt phòng đã tồn tại.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void ensureDetailScheduleSchema(Connection con) {
         new DatPhongDAO().ensureDetailScheduleSchema(con);
     }
 
+    /**
+     * Tạo biểu thức SQL lấy thời gian check-in dự kiến của chi tiết đặt phòng.
+     *
+     * Nếu chi tiết chưa có checkInDuKien, hệ thống dùng ngày nhận phòng ở DatPhong
+     * cộng với mốc giờ mặc định.
+     *
+     * @param detailAlias alias của bảng ChiTietDatPhong.
+     * @param headerAlias alias của bảng DatPhong.
+     * @return biểu thức SQL lấy check-in dự kiến.
+     */
     private String buildDetailCheckInExpr(String detailAlias, String headerAlias) {
         return "COALESCE(" + detailAlias + ".checkInDuKien, DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour()
                 + ", CAST(" + headerAlias + ".ngayNhanPhong AS DATETIME2)))";
     }
 
+    /**
+     * Tạo biểu thức SQL lấy thời gian check-out dự kiến của chi tiết đặt phòng.
+     *
+     * Nếu chi tiết chưa có checkOutDuKien, hệ thống dùng ngày trả phòng ở DatPhong
+     * cộng với mốc giờ mặc định.
+     *
+     * @param detailAlias alias của bảng ChiTietDatPhong.
+     * @param headerAlias alias của bảng DatPhong.
+     * @return biểu thức SQL lấy check-out dự kiến.
+     */
     private String buildDetailCheckOutExpr(String detailAlias, String headerAlias) {
         return "COALESCE(" + detailAlias + ".checkOutDuKien, DATEADD(HOUR, " + LEGACY_BOOKING_TIME_BOUNDARY.getHour()
                 + ", CAST(" + headerAlias + ".ngayTraPhong AS DATETIME2)))";
     }
-
+    /**
+     * Lấy danh sách các chi tiết đặt phòng cần hiển thị trên màn hình check-in.
+     *
+     * Method này lấy thông tin phòng, loại phòng, thời gian dự kiến,
+     * trạng thái check-in và thông tin khách đại diện của từng chi tiết đặt phòng.
+     *
+     * @param maDatPhong mã đặt phòng cần lấy danh sách chi tiết.
+     * @return danh sách chi tiết đặt phòng phục vụ check-in.
+     */
     public List<CheckInBookingItem> getBookingCheckInItems(String maDatPhong) {
         clearLastError();
         List<CheckInBookingItem> items = new ArrayList<CheckInBookingItem>();
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
         if (con == null || bookingId == null) {
-            setLastError(con == null ? "KhÄ‚Â´ng thĂ¡Â»Æ’ kĂ¡ÂºÂ¿t nĂ¡Â»â€˜i cĂ†Â¡ sĂ¡Â»Å¸ dĂ¡Â»Â¯ liĂ¡Â»â€¡u." : "MÄ‚Â£ Ă„â€˜Ă¡ÂºÂ·t phÄ‚Â²ng khÄ‚Â´ng hĂ¡Â»Â£p lĂ¡Â»â€¡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
             return items;
         }
 
@@ -503,7 +701,7 @@ public class CheckInOutDAO {
         String detailCheckInExpr = buildDetailCheckInExpr("ctdp", "dp");
         String detailCheckOutExpr = buildDetailCheckOutExpr("ctdp", "dp");
         String sql = "SELECT ctdp.maChiTietDatPhong, ctdp.maPhong, ctdp.soNguoi, ctdp.giaPhong, dp.tienCoc, " +
-                "ISNULL(p.soPhong, N'ChĂ†Â°a gÄ‚Â¡n') AS soPhong, " +
+                "ISNULL(p.soPhong, N'Chưa gán') AS soPhong, " +
                 "COALESCE(lp.tenLoaiPhong, lp2.tenLoaiPhong, N'-') AS tenLoaiPhong, " +
                 detailCheckInExpr + " AS checkInDuKien, " +
                 detailCheckOutExpr + " AS checkOutDuKien, " +
@@ -551,13 +749,18 @@ public class CheckInOutDAO {
                     item.setTienCoc(rs.getDouble("tienCoc"));
                     item.setExpectedCheckIn(normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkInDuKien"))));
                     item.setExpectedCheckOut(normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkOutDuKien"))));
-                    Integer latestStayId = rs.getObject("maLuuTruGanNhat") == null ? null : Integer.valueOf(rs.getInt("maLuuTruGanNhat"));
+
+                    // Dựa vào lưu trú gần nhất để xác định chi tiết này đang chờ check-in, đã check-in hay đã check-out.
+                    Integer latestStayId = rs.getObject("maLuuTruGanNhat") == null
+                            ? null
+                            : Integer.valueOf(rs.getInt("maLuuTruGanNhat"));
                     item.setTrangThai(resolveCheckInItemStatus(
                             item.getMaPhong(),
                             safeTrim(rs.getString("trangThaiDatPhong")),
                             latestStayId,
                             rs.getTimestamp("checkOutGanNhat")
                     ));
+
                     fillCheckInItemCustomer(item, rs);
                     items.add(item);
                 }
@@ -569,6 +772,12 @@ public class CheckInOutDAO {
         return items;
     }
 
+    /**
+     * Tìm khách hàng theo CCCD/Passport.
+     *
+     * @param cccdPassport số CCCD hoặc Passport cần tìm.
+     * @return khách hàng nếu tìm thấy, ngược lại trả về null.
+     */
     public KhachHang findCustomerByCccdPassport(String cccdPassport) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -602,6 +811,12 @@ public class CheckInOutDAO {
         return null;
     }
 
+    /**
+     * Tìm khách hàng theo mã khách hàng.
+     *
+     * @param maKhachHang mã khách hàng cần tìm.
+     * @return khách hàng nếu tìm thấy, ngược lại trả về null.
+     */
     public KhachHang findCustomerById(int maKhachHang) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -625,6 +840,15 @@ public class CheckInOutDAO {
         return null;
     }
 
+    /**
+     * Lấy danh sách khách hàng còn hoạt động để chọn làm khách đại diện.
+     *
+     * Nếu khách hàng ưu tiên không nằm trong danh sách đang hoạt động,
+     * method sẽ cố gắng tìm và chèn khách hàng đó lên đầu danh sách.
+     *
+     * @param preferredCustomerId mã khách hàng ưu tiên, có thể null.
+     * @return danh sách khách hàng có thể chọn.
+     */
     public List<KhachHang> getAvailableCustomers(Integer preferredCustomerId) {
         clearLastError();
         List<KhachHang> customers = new ArrayList<KhachHang>();
@@ -659,10 +883,18 @@ public class CheckInOutDAO {
         return customers;
     }
 
+    /**
+     * Kiểm tra danh sách khách hàng đã chứa một mã khách hàng cụ thể hay chưa.
+     *
+     * @param customers danh sách khách hàng cần kiểm tra.
+     * @param maKhachHang mã khách hàng cần tìm.
+     * @return true nếu danh sách đã có khách hàng này, false nếu chưa có.
+     */
     private boolean containsCustomerId(List<KhachHang> customers, int maKhachHang) {
         if (customers == null || maKhachHang <= 0) {
             return false;
         }
+
         for (KhachHang customer : customers) {
             if (customer == null) {
                 continue;
@@ -675,6 +907,13 @@ public class CheckInOutDAO {
         return false;
     }
 
+    /**
+     * Ánh xạ dữ liệu khách hàng từ ResultSet sang đối tượng KhachHang.
+     *
+     * @param rs ResultSet đang trỏ tới dòng dữ liệu khách hàng.
+     * @return đối tượng KhachHang sau khi ánh xạ.
+     * @throws SQLException nếu lỗi khi đọc dữ liệu từ ResultSet.
+     */
     private KhachHang mapRepresentativeCustomer(ResultSet rs) throws SQLException {
         KhachHang khachHang = new KhachHang();
         khachHang.setMaKhachHang(String.valueOf(rs.getInt("maKhachHang")));
@@ -687,11 +926,38 @@ public class CheckInOutDAO {
         khachHang.setGhiChu(safeTrim(rs.getString("ghiChu")));
         return khachHang;
     }
-
-    public int checkInBookingDetails(String maDatPhong, List<Integer> maChiTietDatPhongIds, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
-        return checkInBookingDetails(maDatPhong, maChiTietDatPhongIds, buildUniformCheckInTimings(maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien), null);
+    /**
+     * Check-in nhiều chi tiết đặt phòng với cùng một thời gian check-in và check-out dự kiến.
+     *
+     * @param maDatPhong mã đặt phòng.
+     * @param maChiTietDatPhongIds danh sách mã chi tiết đặt phòng cần check-in.
+     * @param thoiGianCheckIn thời gian check-in thực tế.
+     * @param thoiGianCheckOutDuKien thời gian check-out dự kiến.
+     * @return số dòng lưu trú được tạo thành công.
+     */
+    public int checkInBookingDetails(String maDatPhong,
+                                     List<Integer> maChiTietDatPhongIds,
+                                     LocalDateTime thoiGianCheckIn,
+                                     LocalDateTime thoiGianCheckOutDuKien) {
+        return checkInBookingDetails(
+                maDatPhong,
+                maChiTietDatPhongIds,
+                buildUniformCheckInTimings(maChiTietDatPhongIds, thoiGianCheckIn, thoiGianCheckOutDuKien),
+                null
+        );
     }
 
+    /**
+     * Check-in nhiều chi tiết đặt phòng với cùng một thời gian,
+     * đồng thời lưu thông tin khách đại diện cho từng phòng nếu có.
+     *
+     * @param maDatPhong mã đặt phòng.
+     * @param maChiTietDatPhongIds danh sách mã chi tiết đặt phòng cần check-in.
+     * @param thoiGianCheckIn thời gian check-in thực tế.
+     * @param thoiGianCheckOutDuKien thời gian check-out dự kiến.
+     * @param customerByDetailId map khách đại diện theo mã chi tiết đặt phòng.
+     * @return số dòng lưu trú được tạo thành công.
+     */
     public int checkInBookingDetails(String maDatPhong,
                                      List<Integer> maChiTietDatPhongIds,
                                      LocalDateTime thoiGianCheckIn,
@@ -705,6 +971,24 @@ public class CheckInOutDAO {
         );
     }
 
+    /**
+     * Check-in các chi tiết đặt phòng theo lịch riêng của từng phòng.
+     *
+     * Phương thức này thực hiện trong một giao dịch:
+     * - Kiểm tra booking và danh sách chi tiết hợp lệ.
+     * - Kiểm tra khách đại diện không bị trùng CCCD/Passport trong cùng booking.
+     * - Tạo bản ghi lưu trú cho từng chi tiết đặt phòng.
+     * - Cập nhật lịch dự kiến của chi tiết đặt phòng.
+     * - Cập nhật trạng thái phòng sang đang ở.
+     * - Lưu khách đại diện nếu có.
+     * - Cập nhật trạng thái booking và đồng bộ trạng thái phòng.
+     *
+     * @param maDatPhong mã đặt phòng.
+     * @param maChiTietDatPhongIds danh sách mã chi tiết đặt phòng cần check-in.
+     * @param scheduleByDetailId lịch check-in/check-out dự kiến theo từng chi tiết đặt phòng.
+     * @param customerByDetailId khách đại diện theo từng chi tiết đặt phòng.
+     * @return số phòng được check-in thành công.
+     */
     public int checkInBookingDetails(String maDatPhong,
                                      List<Integer> maChiTietDatPhongIds,
                                      Map<Integer, CheckInTiming> scheduleByDetailId,
@@ -713,12 +997,13 @@ public class CheckInOutDAO {
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
         if (con == null || bookingId == null) {
-            setLastError(con == null ? "KhÄ‚Â´ng thĂ¡Â»Æ’ kĂ¡ÂºÂ¿t nĂ¡Â»â€˜i cĂ†Â¡ sĂ¡Â»Å¸ dĂ¡Â»Â¯ liĂ¡Â»â€¡u." : "MÄ‚Â£ Ă„â€˜Ă¡ÂºÂ·t phÄ‚Â²ng khÄ‚Â´ng hĂ¡Â»Â£p lĂ¡Â»â€¡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã đặt phòng không hợp lệ.");
             return 0;
         }
+
         List<Integer> detailIds = sanitizeDetailIds(maChiTietDatPhongIds);
         if (detailIds.isEmpty()) {
-            setLastError("KhÄ‚Â´ng cÄ‚Â³ phÄ‚Â²ng nÄ‚Â o Ă„â€˜Ă†Â°Ă¡Â»Â£c chĂ¡Â»Ân Ă„â€˜Ă¡Â»Æ’ check-in.");
+            setLastError("Không có phòng nào được chọn để check-in.");
             return 0;
         }
 
@@ -735,6 +1020,8 @@ public class CheckInOutDAO {
                 .append("WHERE ctdp.maDatPhong = ? ")
                 .append("AND NOT EXISTS (SELECT 1 FROM LuuTru lt WHERE lt.maChiTietDatPhong = ctdp.maChiTietDatPhong) ")
                 .append("AND ctdp.maChiTietDatPhong IN (");
+
+        // Tạo danh sách dấu ? tương ứng với số lượng chi tiết đặt phòng cần check-in.
         for (int i = 0; i < detailIds.size(); i++) {
             if (i > 0) {
                 sql.append(", ");
@@ -747,36 +1034,42 @@ public class CheckInOutDAO {
             con.setAutoCommit(false);
             ensureDetailScheduleSchema(con);
             ensureRepresentativeGuestSchema(con);
+
+            // Kiểm tra CCCD/Passport của khách đại diện không bị trùng giữa các phòng trong cùng booking.
             if (!validateRepresentativeGuestsForBooking(con, bookingId.intValue(), detailIds, customerByDetailId)) {
                 con.rollback();
                 return 0;
             }
+
             DatPhongDAO roomStatusDAO = new DatPhongDAO();
             int affected = 0;
             try (PreparedStatement selectStmt = con.prepareStatement(sql.toString());
                  PreparedStatement insertStmt = con.prepareStatement(
-                          "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                         "INSERT INTO LuuTru(maChiTietDatPhong, maDatPhong, maPhong, checkIn, checkOut, soNguoi, giaPhong, tienCoc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                  PreparedStatement detailScheduleStmt = con.prepareStatement(
-                          "UPDATE ChiTietDatPhong SET checkInDuKien = ?, checkOutDuKien = ? WHERE maChiTietDatPhong = ?");
+                         "UPDATE ChiTietDatPhong SET checkInDuKien = ?, checkOutDuKien = ? WHERE maChiTietDatPhong = ?");
                  PreparedStatement roomStmt = con.prepareStatement(
-                         "UPDATE Phong SET trangThai = N'\u0110ang \u1edf' WHERE maPhong = ? "
-                                 + "AND ISNULL(trangThai, N'') NOT IN (N'B\u1ea3o tr\u00ec', N'Kh\u00f4ng ho\u1ea1t \u0111\u1ed9ng', N'Ng\u1eebng ho\u1ea1t \u0111\u1ed9ng', N'\u0110ang s\u1eeda')")) {
+                         "UPDATE Phong SET trangThai = N'Đang ở' WHERE maPhong = ? "
+                                 + "AND ISNULL(trangThai, N'') NOT IN (N'Bảo trì', N'Không hoạt động', N'Ngừng hoạt động', N'Đang sửa')")) {
                 int index = 1;
                 selectStmt.setInt(index++, bookingId.intValue());
                 for (Integer detailId : detailIds) {
                     selectStmt.setInt(index++, detailId.intValue());
                 }
+
                 try (ResultSet rs = selectStmt.executeQuery()) {
                     while (rs.next()) {
+                        // Bỏ qua chi tiết đặt phòng chưa được gán phòng.
                         if (rs.getObject("maPhong") == null) {
                             continue;
                         }
+
                         int maPhong = rs.getInt("maPhong");
                         String blockedStatus = roomStatusDAO.getOperationalBlockStatus(con, maPhong);
                         if (!blockedStatus.isEmpty()) {
                             con.rollback();
-                            setLastError("Ph\u00f2ng " + safeTrim(rs.getString("soPhong"))
-                                    + " \u0111ang \u1edf tr\u1ea1ng th\u00e1i " + blockedStatus + ", kh\u00f4ng th\u1ec3 check-in.");
+                            setLastError("Phòng " + safeTrim(rs.getString("soPhong"))
+                                    + " đang ở trạng thái " + blockedStatus + ", không thể check-in.");
                             return 0;
                         }
 
@@ -787,11 +1080,15 @@ public class CheckInOutDAO {
                                 normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkInDuKien"))),
                                 normalizeLegacyBookingBoundary(toLocalDateTime(rs.getTimestamp("checkOutDuKien")))
                         );
+
                         if (timing == null || !timing.isValid()) {
                             con.rollback();
-                            setLastError("Thời gian check-in / check-out dự kiến của chi tiết đặt phòng CTDP" + maChiTietDatPhong + " không hợp lệ.");
+                            setLastError("Thời gian check-in / check-out dự kiến của chi tiết đặt phòng CTDP"
+                                    + maChiTietDatPhong + " không hợp lệ.");
                             return 0;
                         }
+
+                        // Tạo bản ghi lưu trú cho phòng được check-in.
                         insertStmt.setInt(1, maChiTietDatPhong);
                         insertStmt.setInt(2, bookingId.intValue());
                         insertStmt.setInt(3, maPhong);
@@ -802,13 +1099,17 @@ public class CheckInOutDAO {
                         insertStmt.setDouble(8, rs.getDouble("tienCoc"));
                         affected += insertStmt.executeUpdate();
 
+                        // Cập nhật lại lịch dự kiến cho chi tiết đặt phòng.
                         detailScheduleStmt.setTimestamp(1, toTimestamp(timing.getCheckIn()));
                         detailScheduleStmt.setTimestamp(2, toTimestamp(timing.getExpectedCheckOut()));
                         detailScheduleStmt.setInt(3, maChiTietDatPhong);
                         detailScheduleStmt.executeUpdate();
 
+                        // Cập nhật trạng thái phòng sang đang ở.
                         roomStmt.setInt(1, maPhong);
                         roomStmt.executeUpdate();
+
+                        // Lưu khách đại diện cho phòng nếu người dùng có nhập/chọn.
                         persistRepresentativeGuest(
                                 con,
                                 maChiTietDatPhong,
@@ -820,7 +1121,7 @@ public class CheckInOutDAO {
 
             if (affected <= 0) {
                 con.rollback();
-                setLastError("KhÄ‚Â´ng cÄ‚Â³ phÄ‚Â²ng nÄ‚Â o sĂ¡ÂºÂµn sÄ‚Â ng Ă„â€˜Ă¡Â»Æ’ check-in.");
+                setLastError("Không có phòng nào sẵn sàng để check-in.");
                 return 0;
             }
 
@@ -839,13 +1140,30 @@ public class CheckInOutDAO {
         }
     }
 
-        public boolean checkInFromBooking(String maDatPhong, String maPhong, LocalDateTime thoiGianCheckIn, LocalDateTime thoiGianCheckOutDuKien) {
+    /**
+     * Check-in một phòng cụ thể từ một đơn đặt phòng.
+     *
+     * Phương thức này tìm chi tiết đặt phòng tương ứng với mã đặt phòng và mã phòng,
+     * sau đó gọi lại phương thức check-in nhiều chi tiết đặt phòng.
+     *
+     * @param maDatPhong mã đặt phòng.
+     * @param maPhong mã phòng cần check-in.
+     * @param thoiGianCheckIn thời gian check-in thực tế.
+     * @param thoiGianCheckOutDuKien thời gian check-out dự kiến.
+     * @return true nếu check-in thành công, false nếu thất bại.
+     */
+    public boolean checkInFromBooking(String maDatPhong,
+                                      String maPhong,
+                                      LocalDateTime thoiGianCheckIn,
+                                      LocalDateTime thoiGianCheckOutDuKien) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
         Integer roomId = parseIntOrNull(maPhong);
         if (con == null || bookingId == null || roomId == null) {
-            setLastError(con == null ? "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u." : "M\u00e3 \u0111\u1eb7t ph\u00f2ng ho\u1eb7c m\u00e3 ph\u00f2ng kh\u00f4ng h\u1ee3p l\u1ec7.");
+            setLastError(con == null
+                    ? "Không thể kết nối cơ sở dữ liệu."
+                    : "Mã đặt phòng hoặc mã phòng không hợp lệ.");
             return false;
         }
 
@@ -860,9 +1178,10 @@ public class CheckInOutDAO {
             stmt.setInt(2, roomId.intValue());
             try (ResultSet rs = stmt.executeQuery()) {
                 if (!rs.next()) {
-                    setLastError("Ph\u00f2ng \u0111\u01b0\u1ee3c ch\u1ecdn kh\u00f4ng c\u00f2n s\u1eb5n s\u00e0ng check-in.");
+                    setLastError("Phòng được chọn không còn sẵn sàng check-in.");
                     return false;
                 }
+
                 List<Integer> detailIds = new ArrayList<Integer>();
                 detailIds.add(Integer.valueOf(rs.getInt("maChiTietDatPhong")));
                 return checkInBookingDetails(maDatPhong, detailIds, thoiGianCheckIn, thoiGianCheckOutDuKien) > 0;
@@ -874,18 +1193,28 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Check-out một bản ghi lưu trú.
+     *
+     * Phương thức cập nhật thời gian check-out thực tế, sau đó cập nhật lại trạng thái booking
+     * và trạng thái phòng liên quan.
+     *
+     * @param maLuuTru mã lưu trú cần check-out.
+     * @param thoiGianCheckOutThucTe thời gian check-out thực tế.
+     * @return true nếu check-out thành công, false nếu thất bại.
+     */
     public boolean checkOut(String maLuuTru, LocalDateTime thoiGianCheckOutThucTe) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer stayId = parseIntOrNull(maLuuTru);
         if (con == null || stayId == null) {
-            setLastError(con == null ? "KhĂ´ng thá»ƒ káº¿t ná»‘i cÆ¡ sá»Ÿ dá»¯ liá»‡u." : "MĂ£ lÆ°u trĂº khĂ´ng há»£p lá»‡.");
+            setLastError(con == null ? "Không thể kết nối cơ sở dữ liệu." : "Mã lưu trú không hợp lệ.");
             return false;
         }
 
         LuuTru current = findById(maLuuTru);
         if (current == null) {
-            setLastError("KhĂ´ng tĂ¬m tháº¥y há»“ sÆ¡ lÆ°u trĂº.");
+            setLastError("Không tìm thấy hồ sơ lưu trú.");
             return false;
         }
 
@@ -896,7 +1225,7 @@ public class CheckInOutDAO {
                 stmt.setInt(2, stayId.intValue());
                 if (stmt.executeUpdate() <= 0) {
                     con.rollback();
-                    setLastError("KhĂ´ng thá»ƒ cáº­p nháº­t thá»i gian check-out.");
+                    setLastError("Không thể cập nhật thời gian check-out.");
                     return false;
                 }
             }
@@ -918,7 +1247,12 @@ public class CheckInOutDAO {
             resetAutoCommit(con);
         }
     }
-
+    /**
+     * Đồng bộ trạng thái vận hành sau các thao tác check-in/check-out.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void synchronizeOperationalStatuses(Connection con) throws SQLException {
         if (con == null) {
             return;
@@ -926,10 +1260,24 @@ public class CheckInOutDAO {
         refreshAllRoomStatuses(con);
     }
 
+    /**
+     * Đồng bộ trạng thái vận hành nhưng không xử lý trạng thái dọn phòng.
+     *
+     * Hiện tại method này vẫn gọi refreshAllRoomStatuses giống method đồng bộ chính.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void synchronizeOperationalStatusesWithoutCleaning(Connection con) throws SQLException {
         refreshAllRoomStatuses(con);
     }
 
+    /**
+     * Làm mới trạng thái của toàn bộ phòng trong hệ thống.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void refreshAllRoomStatuses(Connection con) throws SQLException {
         List<Integer> roomIds = new ArrayList<Integer>();
         try (PreparedStatement ps = con.prepareStatement("SELECT maPhong FROM Phong");
@@ -941,6 +1289,15 @@ public class CheckInOutDAO {
         new DatPhongDAO().refreshRoomStatuses(con, roomIds);
     }
 
+    /**
+     * Gán dữ liệu của đối tượng LuuTru vào PreparedStatement.
+     *
+     * Method này dùng chung cho thao tác insert và update lưu trú.
+     *
+     * @param stmt PreparedStatement cần gán tham số.
+     * @param luuTru dữ liệu lưu trú cần gán.
+     * @throws SQLException nếu xảy ra lỗi khi gán tham số.
+     */
     private void fillStatement(PreparedStatement stmt, LuuTru luuTru) throws SQLException {
         setNullableInt(stmt, 1, luuTru.getMaChiTietDatPhong());
         setNullableInt(stmt, 2, luuTru.getMaDatPhong());
@@ -952,19 +1309,36 @@ public class CheckInOutDAO {
         stmt.setDouble(8, luuTru.getTienCoc());
     }
 
+    /**
+     * Chuyển một dòng ResultSet thành đối tượng LuuTru.
+     *
+     * @param rs ResultSet đang trỏ tới dòng dữ liệu lưu trú.
+     * @return đối tượng LuuTru sau khi ánh xạ dữ liệu.
+     * @throws SQLException nếu xảy ra lỗi khi đọc ResultSet.
+     */
     private LuuTru mapLuuTru(ResultSet rs) throws SQLException {
         LuuTru luuTru = new LuuTru();
         luuTru.setMaLuuTru(String.valueOf(rs.getInt("maLuuTru")));
-        luuTru.setMaChiTietDatPhong(rs.getObject("maChiTietDatPhong") == null ? "" : String.valueOf(rs.getInt("maChiTietDatPhong")));
-        luuTru.setMaDatPhong(rs.getObject("maDatPhong") == null ? "" : String.valueOf(rs.getInt("maDatPhong")));
-        luuTru.setMaPhong(rs.getObject("maPhong") == null ? "" : String.valueOf(rs.getInt("maPhong")));
+        luuTru.setMaChiTietDatPhong(
+                rs.getObject("maChiTietDatPhong") == null ? "" : String.valueOf(rs.getInt("maChiTietDatPhong"))
+        );
+        luuTru.setMaDatPhong(
+                rs.getObject("maDatPhong") == null ? "" : String.valueOf(rs.getInt("maDatPhong"))
+        );
+        luuTru.setMaPhong(
+                rs.getObject("maPhong") == null ? "" : String.valueOf(rs.getInt("maPhong"))
+        );
         luuTru.setCheckIn(toLocalDateTime(rs.getTimestamp("checkIn")));
         luuTru.setCheckOut(toLocalDateTime(rs.getTimestamp("checkOut")));
         luuTru.setSoNguoi(rs.getInt("soNguoi"));
         luuTru.setGiaPhong(rs.getDouble("giaPhong"));
         luuTru.setTienCoc(rs.getDouble("tienCoc"));
         luuTru.setTrangThaiDatPhong(safeTrim(rs.getString("trangThaiDatPhong")));
-        luuTru.setTrangThai(resolveStayStatus(luuTru.getTrangThaiDatPhong(), luuTru.getCheckIn(), luuTru.getCheckOut()));
+        luuTru.setTrangThai(resolveStayStatus(
+                luuTru.getTrangThaiDatPhong(),
+                luuTru.getCheckIn(),
+                luuTru.getCheckOut()
+        ));
         luuTru.setTenKhachHang(safeTrim(rs.getString("tenKhachHang")));
         luuTru.setSoDienThoaiKhach(safeTrim(rs.getString("soDienThoaiKhach")));
         luuTru.setSoPhong(safeTrim(rs.getString("soPhong")));
@@ -973,6 +1347,14 @@ public class CheckInOutDAO {
         return luuTru;
     }
 
+    /**
+     * Cập nhật trạng thái phòng nếu phòng không nằm trong các trạng thái bị khóa vận hành.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần cập nhật.
+     * @param trangThai trạng thái mới.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void updateRoomStatus(Connection con, Integer maPhong, String trangThai) throws SQLException {
         if (maPhong == null) {
             return;
@@ -986,6 +1368,14 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Cập nhật trạng thái của đơn đặt phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần cập nhật.
+     * @param trangThai trạng thái mới.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void updateBookingStatus(Connection con, Integer maDatPhong, String trangThai) throws SQLException {
         if (maDatPhong == null) {
             return;
@@ -997,11 +1387,25 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Làm mới trạng thái booking sau khi check-in.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void refreshBookingStatusAfterCheckIn(Connection con, int maDatPhong) throws SQLException {
         String resolvedStatus = resolveBookingStatus(con, maDatPhong, null);
         updateBookingStatus(con, Integer.valueOf(maDatPhong), resolvedStatus);
     }
 
+    /**
+     * Làm mới trạng thái booking sau khi check-out.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng, có thể null.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void refreshBookingStatusAfterCheckout(Connection con, Integer maDatPhong) throws SQLException {
         if (maDatPhong == null) {
             return;
@@ -1010,6 +1414,13 @@ public class CheckInOutDAO {
         updateBookingStatus(con, maDatPhong, resolvedStatus);
     }
 
+    /**
+     * Cập nhật ngày nhận/trả phòng tổng quát của booking dựa trên lịch của các chi tiết đặt phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần cập nhật.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void updateBookingScheduleSummaryFromDetails(Connection con, int maDatPhong) throws SQLException {
         if (con == null || maDatPhong <= 0) {
             return;
@@ -1041,6 +1452,14 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Kiểm tra booking có lưu trú nào đang hoạt động hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @return true nếu còn lưu trú chưa check-out.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasActiveStay(Connection con, Integer maDatPhong) throws SQLException {
         if (maDatPhong == null) {
             return false;
@@ -1057,6 +1476,14 @@ public class CheckInOutDAO {
         return false;
     }
 
+    /**
+     * Kiểm tra booking còn chi tiết đặt phòng nào chưa phát sinh lưu trú hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @return true nếu còn chi tiết đặt phòng đang chờ check-in.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasPendingCheckInDetails(Connection con, int maDatPhong) throws SQLException {
         String sql = "SELECT COUNT(1) "
                 + "FROM ChiTietDatPhong ctdp "
@@ -1071,7 +1498,22 @@ public class CheckInOutDAO {
             }
         }
     }
-
+    /**
+     * Xác định trạng thái hiện tại của đơn đặt phòng dựa trên dữ liệu lưu trú và thanh toán.
+     *
+     * Quy tắc chính:
+     * - Nếu booking đã hủy thì giữ trạng thái hủy.
+     * - Nếu booking đã thanh toán đủ thì trả về trạng thái đã thanh toán.
+     * - Nếu còn phòng đang ở thì booking ở trạng thái đang ở.
+     * - Nếu tất cả chi tiết đã check-out thì chuyển sang chờ thanh toán.
+     * - Nếu chưa phát sinh lưu trú thì chuyển sang chờ check-in.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần xác định trạng thái.
+     * @param currentStatus trạng thái hiện tại, có thể null.
+     * @return trạng thái booking sau khi tính toán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private String resolveBookingStatus(Connection con, int maDatPhong, String currentStatus) throws SQLException {
         String status = safeTrim(currentStatus);
         if (STATUS_CANCELLED.equalsIgnoreCase(status) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(status)) {
@@ -1098,6 +1540,7 @@ public class CheckInOutDAO {
                 if (!rs.next()) {
                     return status.isEmpty() ? STATUS_PENDING_CHECKIN : status;
                 }
+
                 int soChiTiet = rs.getInt("soChiTiet");
                 int soChiTietDangO = rs.getInt("soChiTietDangO");
                 int soChiTietDaCheckOut = rs.getInt("soChiTietDaCheckOut");
@@ -1123,15 +1566,38 @@ public class CheckInOutDAO {
         return status.isEmpty() ? STATUS_PENDING_CHECKIN : status;
     }
 
+    /**
+     * Kiểm tra booking đã được thanh toán đầy đủ hay chưa.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @return true nếu booking đã thanh toán đủ, false nếu chưa.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
         return new DatPhongDAO().isBookingFullyPaid(con, maDatPhong);
     }
 
+    /**
+     * Kiểm tra lưu trú có cần chuyển sang trạng thái đã check-out hay không.
+     *
+     * @param luuTru thông tin lưu trú cần kiểm tra.
+     * @return true nếu trạng thái là đã check-out hoặc check-out.
+     */
     private boolean shouldMoveToCleaning(LuuTru luuTru) {
         String status = safeTrim(luuTru.getTrangThai());
         return STATUS_CHECKED_OUT.equalsIgnoreCase(status) || "Check-out".equalsIgnoreCase(status);
     }
 
+    /**
+     * Xác định trạng thái hiển thị của lưu trú dựa trên trạng thái booking,
+     * thời gian check-in và thời gian check-out.
+     *
+     * @param trangThaiDatPhong trạng thái của đơn đặt phòng.
+     * @param checkIn thời gian check-in.
+     * @param checkOut thời gian check-out.
+     * @return trạng thái lưu trú dùng để hiển thị.
+     */
     private String resolveStayStatus(String trangThaiDatPhong, LocalDateTime checkIn, LocalDateTime checkOut) {
         String bookingStatus = safeTrim(trangThaiDatPhong);
         if (!bookingStatus.isEmpty()) {
@@ -1153,6 +1619,7 @@ public class CheckInOutDAO {
             }
             return bookingStatus;
         }
+
         if (checkIn == null) {
             return STATUS_PENDING_CHECKIN;
         }
@@ -1162,7 +1629,19 @@ public class CheckInOutDAO {
         return STATUS_CHECKED_OUT;
     }
 
-    private String resolveCheckInItemStatus(int maPhong, String bookingStatus, Integer latestStayId, Timestamp latestCheckOut) {
+    /**
+     * Xác định trạng thái của một dòng chi tiết trên màn hình check-in.
+     *
+     * @param maPhong mã phòng của chi tiết đặt phòng.
+     * @param bookingStatus trạng thái booking.
+     * @param latestStayId mã lưu trú gần nhất nếu có.
+     * @param latestCheckOut thời gian check-out gần nhất nếu có.
+     * @return trạng thái check-in của chi tiết đặt phòng.
+     */
+    private String resolveCheckInItemStatus(int maPhong,
+                                            String bookingStatus,
+                                            Integer latestStayId,
+                                            Timestamp latestCheckOut) {
         if (STATUS_CANCELLED.equalsIgnoreCase(bookingStatus) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(bookingStatus)) {
             return STATUS_CANCELLED;
         }
@@ -1175,10 +1654,20 @@ public class CheckInOutDAO {
         return STATUS_PENDING_CHECKIN;
     }
 
+    /**
+     * Gán thông tin khách đại diện từ ResultSet vào item check-in.
+     *
+     * Nếu chi tiết đặt phòng chưa có khách đại diện, method sẽ xóa thông tin khách trên item.
+     *
+     * @param item item check-in cần gán thông tin khách.
+     * @param rs ResultSet chứa dữ liệu khách đại diện.
+     * @throws SQLException nếu xảy ra lỗi khi đọc ResultSet.
+     */
     private void fillCheckInItemCustomer(CheckInBookingItem item, ResultSet rs) throws SQLException {
         if (item == null || rs == null) {
             return;
         }
+
         if (rs.getObject("maKhachHangDaiDien") != null) {
             item.setRepresentativeCustomerId(rs.getInt("maKhachHangDaiDien"));
             item.setCccdPassport(safeTrim(rs.getString("cccdPassportDaiDien")));
@@ -1190,9 +1679,15 @@ public class CheckInOutDAO {
             item.setGhiChu(safeTrim(rs.getString("ghiChuDaiDien")));
             return;
         }
+
         clearCheckInItemCustomer(item);
     }
 
+    /**
+     * Xóa thông tin khách đại diện trên item check-in.
+     *
+     * @param item item cần xóa thông tin khách.
+     */
     private void clearCheckInItemCustomer(CheckInBookingItem item) {
         if (item == null) {
             return;
@@ -1207,14 +1702,28 @@ public class CheckInOutDAO {
         item.setGhiChu("");
     }
 
+    /**
+     * Định dạng ngày theo dạng dd/MM/yyyy để hiển thị trên giao diện.
+     *
+     * @param value ngày cần định dạng.
+     * @return chuỗi ngày đã định dạng, hoặc chuỗi rỗng nếu value null.
+     */
     private String formatDisplayDate(Date value) {
         return value == null ? "" : DISPLAY_DATE_FORMAT.format(value.toLocalDate());
     }
 
+    /**
+     * Đảm bảo bảng lưu khách đại diện theo chi tiết đặt phòng đã tồn tại.
+     *
+     * Method này chỉ tạo bảng nếu bảng chưa tồn tại, và chỉ thực hiện một lần trong vòng đời chương trình.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void ensureRepresentativeGuestSchema(Connection con) {
         if (con == null || representativeGuestSchemaEnsured) {
             return;
         }
+
         synchronized (CheckInOutDAO.class) {
             if (representativeGuestSchemaEnsured) {
                 return;
@@ -1238,14 +1747,29 @@ public class CheckInOutDAO {
         }
     }
 
-    private void persistRepresentativeGuest(Connection con, int maChiTietDatPhong, KhachHang khachHang) throws SQLException {
+    /**
+     * Lưu thông tin khách đại diện cho một chi tiết đặt phòng.
+     *
+     * Nếu khách chưa tồn tại thì tạo mới khách hàng.
+     * Nếu chi tiết đã có khách đại diện thì cập nhật, ngược lại thì thêm mới.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng.
+     * @param khachHang thông tin khách đại diện.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
+    private void persistRepresentativeGuest(Connection con,
+                                            int maChiTietDatPhong,
+                                            KhachHang khachHang) throws SQLException {
         if (con == null || maChiTietDatPhong <= 0 || khachHang == null) {
             return;
         }
+
         Integer maKhachHang = upsertRepresentativeCustomer(con, khachHang);
         if (maKhachHang == null || maKhachHang.intValue() <= 0) {
             return;
         }
+
         try (PreparedStatement update = con.prepareStatement(
                 "UPDATE ChiTietDatPhongKhachDaiDien SET maKhachHang = ? WHERE maChiTietDatPhong = ?")) {
             update.setInt(1, maKhachHang.intValue());
@@ -1254,6 +1778,7 @@ public class CheckInOutDAO {
                 return;
             }
         }
+
         try (PreparedStatement insert = con.prepareStatement(
                 "INSERT INTO ChiTietDatPhongKhachDaiDien(maChiTietDatPhong, maKhachHang) VALUES (?, ?)")) {
             insert.setInt(1, maChiTietDatPhong);
@@ -1261,11 +1786,22 @@ public class CheckInOutDAO {
             insert.executeUpdate();
         }
     }
-
+    /**
+     * Thêm mới hoặc cập nhật khách hàng đại diện.
+     *
+     * Nếu khách hàng đã tồn tại theo mã khách hàng hoặc CCCD/Passport,
+     * method sẽ cập nhật thông tin khách hàng đó. Nếu chưa tồn tại thì tạo mới.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param khachHang thông tin khách hàng đại diện.
+     * @return mã khách hàng sau khi thêm/cập nhật, hoặc null nếu dữ liệu không hợp lệ.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private Integer upsertRepresentativeCustomer(Connection con, KhachHang khachHang) throws SQLException {
         if (con == null || khachHang == null) {
             return null;
         }
+
         String cccdPassport = safeTrim(khachHang.getCccdPassport());
         String hoTen = safeTrim(khachHang.getHoTen());
         if (cccdPassport.isEmpty() || hoTen.isEmpty()) {
@@ -1276,6 +1812,7 @@ public class CheckInOutDAO {
         Integer existingId = isExistingCustomerId(con, requestedCustomerId)
                 ? requestedCustomerId
                 : findCustomerIdByPassport(con, cccdPassport);
+
         if (existingId != null) {
             try (PreparedStatement update = con.prepareStatement(
                     "UPDATE KhachHang SET hoTen = ?, cccdPassport = ?, " +
@@ -1289,6 +1826,7 @@ public class CheckInOutDAO {
                 String email = safeTrim(khachHang.getEmail());
                 String diaChi = safeTrim(khachHang.getDiaChi());
                 String ghiChu = safeTrim(khachHang.getGhiChu());
+
                 update.setString(1, hoTen);
                 update.setString(2, cccdPassport);
                 update.setString(3, soDienThoai);
@@ -1306,8 +1844,8 @@ public class CheckInOutDAO {
             return existingId;
         }
 
-        String sql = "INSERT INTO KhachHang(hoTen, gioiTinh, ngaySinh, soDienThoai, email, cccdPassport, diaChi, quocTich, loaiKhach, hangKhach, trangThai, nguoiTao, ghiChu) " +
-                "VALUES (?, N'Kh\u00e1c', ?, ?, ?, ?, ?, N'Vi\u1ec7t Nam', N'C\u00e1 nh\u00e2n', N'Th\u01b0\u1eddng', N'Ho\u1ea1t \u0111\u1ed9ng', N'H\u1ec7 th\u1ed1ng', ?)";
+        String sql = "INSERT INTO KhachHang(hoTen, gioiTinh, ngaySinh, soDienThoai, email, cccdPassport, diaChi, quocTich, loaiKhach, hangKhach, trangThai, nguoiTao, ghiChu) "
+                + "VALUES (?, N'Khác', ?, ?, ?, ?, ?, N'Việt Nam', N'Cá nhân', N'Thường', N'Hoạt động', N'Hệ thống', ?)";
         try (PreparedStatement insert = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             insert.setString(1, hoTen);
             setNullableDateFromText(insert, 2, khachHang.getNgaySinh());
@@ -1315,8 +1853,14 @@ public class CheckInOutDAO {
             insert.setString(4, safeTrim(khachHang.getEmail()));
             insert.setString(5, cccdPassport);
             insert.setString(6, safeTrim(khachHang.getDiaChi()));
-            insert.setString(7, nullIfEmpty(khachHang.getGhiChu()) == null ? "T\u1ea1o t\u1eeb m\u00e0n h\u00ecnh check-in" : safeTrim(khachHang.getGhiChu()));
+            insert.setString(
+                    7,
+                    nullIfEmpty(khachHang.getGhiChu()) == null
+                            ? "Tạo từ màn hình check-in"
+                            : safeTrim(khachHang.getGhiChu())
+            );
             insert.executeUpdate();
+
             try (ResultSet rs = insert.getGeneratedKeys()) {
                 if (rs.next()) {
                     return Integer.valueOf(rs.getInt(1));
@@ -1326,34 +1870,52 @@ public class CheckInOutDAO {
         return null;
     }
 
-    public boolean saveRepresentativeGuestForBookingDetail(String maDatPhong, int maChiTietDatPhong, KhachHang khachHang) {
+    /**
+     * Lưu khách đại diện cho một chi tiết đặt phòng cụ thể.
+     *
+     * Method này dùng khi người dùng chọn hoặc nhập khách đại diện trước khi check-in.
+     *
+     * @param maDatPhong mã đặt phòng.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng.
+     * @param khachHang thông tin khách đại diện.
+     * @return true nếu lưu thành công, false nếu thất bại.
+     */
+    public boolean saveRepresentativeGuestForBookingDetail(String maDatPhong,
+                                                           int maChiTietDatPhong,
+                                                           KhachHang khachHang) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
         Integer bookingId = parseIntOrNull(maDatPhong);
         if (con == null || bookingId == null || maChiTietDatPhong <= 0) {
-            setLastError(con == null ? "Kh\u00f4ng th\u1ec3 k\u1ebft n\u1ed1i c\u01a1 s\u1edf d\u1eef li\u1ec7u." : "Th\u00f4ng tin booking ho\u1eb7c chi ti\u1ebft ph\u00f2ng kh\u00f4ng h\u1ee3p l\u1ec7.");
+            setLastError(con == null
+                    ? "Không thể kết nối cơ sở dữ liệu."
+                    : "Thông tin booking hoặc chi tiết phòng không hợp lệ.");
             return false;
         }
+
         if (khachHang == null
                 || safeTrim(khachHang.getHoTen()).isEmpty()
                 || safeTrim(khachHang.getCccdPassport()).isEmpty()) {
-            setLastError("Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7 H\u1ecd t\u00ean v\u00e0 CCCD/Passport cho kh\u00e1ch \u0111\u1ea1i di\u1ec7n.");
+            setLastError("Vui lòng nhập đầy đủ Họ tên và CCCD/Passport cho khách đại diện.");
             return false;
         }
 
         try {
             con.setAutoCommit(false);
             ensureRepresentativeGuestSchema(con);
+
             if (!belongsToBooking(con, bookingId.intValue(), maChiTietDatPhong)) {
                 con.rollback();
-                setLastError("Ph\u00f2ng \u0111\u01b0\u1ee3c ch\u1ecdn kh\u00f4ng thu\u1ed9c booking hi\u1ec7n t\u1ea1i.");
+                setLastError("Phòng được chọn không thuộc booking hiện tại.");
                 return false;
             }
 
             Map<Integer, KhachHang> customerByDetailId = new LinkedHashMap<Integer, KhachHang>();
             customerByDetailId.put(Integer.valueOf(maChiTietDatPhong), khachHang);
+
             List<Integer> targetDetailIds = new ArrayList<Integer>();
             targetDetailIds.add(Integer.valueOf(maChiTietDatPhong));
+
             if (!validateRepresentativeGuestsForBooking(con, bookingId.intValue(), targetDetailIds, customerByDetailId)) {
                 con.rollback();
                 return false;
@@ -1372,6 +1934,18 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Kiểm tra khách đại diện trong cùng một booking có bị trùng CCCD/Passport hay không.
+     *
+     * Method kiểm tra cả dữ liệu người dùng vừa nhập và dữ liệu khách đại diện đã lưu trong database.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @param targetDetailIds danh sách chi tiết đặt phòng đang được cập nhật.
+     * @param customerByDetailId map khách đại diện theo từng chi tiết đặt phòng.
+     * @return true nếu không bị trùng, false nếu phát hiện trùng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean validateRepresentativeGuestsForBooking(Connection con,
                                                            int maDatPhong,
                                                            List<Integer> targetDetailIds,
@@ -1390,9 +1964,11 @@ public class CheckInOutDAO {
             Integer detailId = entry.getKey();
             KhachHang khachHang = entry.getValue();
             String passport = normalizePassportKey(khachHang == null ? null : khachHang.getCccdPassport());
+
             if (detailId == null || detailId.intValue() <= 0 || passport.isEmpty()) {
                 continue;
             }
+
             Integer existingDetailId = passportToDetailId.get(passport);
             if (existingDetailId != null && existingDetailId.intValue() != detailId.intValue()) {
                 setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng chọn khách hàng khác.");
@@ -1411,13 +1987,17 @@ public class CheckInOutDAO {
             try (ResultSet rs = stmt.executeQuery()) {
                 while (rs.next()) {
                     int detailId = rs.getInt("maChiTietDatPhong");
+
+                    // Bỏ qua các chi tiết đang được cập nhật trong lần lưu hiện tại.
                     if (targetSet.contains(Integer.valueOf(detailId))) {
                         continue;
                     }
+
                     String passport = normalizePassportKey(rs.getString("cccdPassport"));
                     if (passport.isEmpty()) {
                         continue;
                     }
+
                     Integer inputDetailId = passportToDetailId.get(passport);
                     if (inputDetailId != null && inputDetailId.intValue() != detailId) {
                         setLastError("CCCD/Passport này đã được sử dụng cho phòng khác trong cùng đơn. Vui lòng chọn khách hàng khác.");
@@ -1429,10 +2009,20 @@ public class CheckInOutDAO {
         return true;
     }
 
+    /**
+     * Kiểm tra một chi tiết đặt phòng có thuộc booking hiện tại hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng.
+     * @return true nếu chi tiết đặt phòng thuộc booking, false nếu không.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean belongsToBooking(Connection con, int maDatPhong, int maChiTietDatPhong) throws SQLException {
         if (con == null || maDatPhong <= 0 || maChiTietDatPhong <= 0) {
             return false;
         }
+
         try (PreparedStatement stmt = con.prepareStatement(
                 "SELECT 1 FROM ChiTietDatPhong WHERE maDatPhong = ? AND maChiTietDatPhong = ?")) {
             stmt.setInt(1, maDatPhong);
@@ -1443,10 +2033,19 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Kiểm tra mã khách hàng có tồn tại hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maKhachHang mã khách hàng cần kiểm tra.
+     * @return true nếu khách hàng tồn tại, false nếu không.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean isExistingCustomerId(Connection con, Integer maKhachHang) throws SQLException {
         if (con == null || maKhachHang == null || maKhachHang.intValue() <= 0) {
             return false;
         }
+
         try (PreparedStatement stmt = con.prepareStatement(
                 "SELECT 1 FROM KhachHang WHERE maKhachHang = ?")) {
             stmt.setInt(1, maKhachHang.intValue());
@@ -1456,11 +2055,20 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Tìm mã khách hàng theo CCCD/Passport.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param cccdPassport CCCD/Passport cần tìm.
+     * @return mã khách hàng nếu tìm thấy, ngược lại trả về null.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private Integer findCustomerIdByPassport(Connection con, String cccdPassport) throws SQLException {
         String value = safeTrim(cccdPassport);
         if (con == null || value.isEmpty()) {
             return null;
         }
+
         try (PreparedStatement stmt = con.prepareStatement(
                 "SELECT TOP 1 maKhachHang FROM KhachHang WHERE cccdPassport = ?")) {
             stmt.setString(1, value);
@@ -1473,11 +2081,20 @@ public class CheckInOutDAO {
         return null;
     }
 
+    /**
+     * Tìm mã khách hàng theo số điện thoại.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param soDienThoai số điện thoại cần tìm.
+     * @return mã khách hàng nếu tìm thấy, ngược lại trả về null.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private Integer findCustomerIdByPhone(Connection con, String soDienThoai) throws SQLException {
         String value = safeTrim(soDienThoai);
         if (con == null || value.isEmpty()) {
             return null;
         }
+
         try (PreparedStatement stmt = con.prepareStatement(
                 "SELECT TOP 1 maKhachHang FROM KhachHang WHERE soDienThoai = ?")) {
             stmt.setString(1, value);
@@ -1490,10 +2107,26 @@ public class CheckInOutDAO {
         return null;
     }
 
+    /**
+     * Chuẩn hóa CCCD/Passport để so sánh chống trùng.
+     *
+     * @param value CCCD/Passport cần chuẩn hóa.
+     * @return chuỗi đã trim và chuyển sang chữ hoa.
+     */
     private String normalizePassportKey(String value) {
         return value == null ? "" : value.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
+    /**
+     * Gán giá trị ngày vào PreparedStatement từ chuỗi ngày nhập.
+     *
+     * Nếu chuỗi ngày không hợp lệ hoặc rỗng, method sẽ gán NULL.
+     *
+     * @param stmt PreparedStatement cần gán tham số.
+     * @param index vị trí tham số.
+     * @param value chuỗi ngày cần chuyển đổi.
+     * @throws SQLException nếu xảy ra lỗi khi gán tham số.
+     */
     private void setNullableDateFromText(PreparedStatement stmt, int index, String value) throws SQLException {
         LocalDate parsedDate = parseFlexibleDate(value);
         if (parsedDate == null) {
@@ -1503,15 +2136,27 @@ public class CheckInOutDAO {
         stmt.setDate(index, Date.valueOf(parsedDate));
     }
 
+    /**
+     * Chuyển chuỗi ngày sang LocalDate.
+     *
+     * Method hỗ trợ hai định dạng:
+     * - dd/MM/yyyy
+     * - yyyy-MM-dd
+     *
+     * @param value chuỗi ngày cần chuyển.
+     * @return LocalDate nếu parse được, ngược lại trả về null.
+     */
     private LocalDate parseFlexibleDate(String value) {
         String text = safeTrim(value);
         if (text.isEmpty()) {
             return null;
         }
+
         try {
             return LocalDate.parse(text, DISPLAY_DATE_FORMAT);
         } catch (Exception ignore) {
         }
+
         try {
             return LocalDate.parse(text);
         } catch (Exception ignore) {
@@ -1519,6 +2164,14 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Gán số nguyên có thể null vào PreparedStatement.
+     *
+     * @param stmt PreparedStatement cần gán tham số.
+     * @param index vị trí tham số.
+     * @param value chuỗi số nguyên cần chuyển đổi.
+     * @throws SQLException nếu xảy ra lỗi khi gán tham số.
+     */
     private void setNullableInt(PreparedStatement stmt, int index, String value) throws SQLException {
         Integer parsed = parseIntOrNull(value);
         if (parsed == null) {
@@ -1528,6 +2181,12 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Chuyển chuỗi sang Integer.
+     *
+     * @param value chuỗi cần chuyển.
+     * @return Integer nếu hợp lệ, ngược lại trả về null.
+     */
     private Integer parseIntOrNull(String value) {
         try {
             if (value == null || value.trim().isEmpty()) {
@@ -1539,23 +2198,52 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Chuyển LocalDateTime sang Timestamp để lưu database.
+     *
+     * @param value thời gian cần chuyển.
+     * @return Timestamp tương ứng, hoặc null nếu value null.
+     */
     private Timestamp toTimestamp(LocalDateTime value) {
         return value == null ? null : Timestamp.valueOf(value);
     }
 
+    /**
+     * Chuyển Timestamp sang LocalDateTime.
+     *
+     * @param value Timestamp cần chuyển.
+     * @return LocalDateTime tương ứng, hoặc null nếu value null.
+     */
     private LocalDateTime toLocalDateTime(Timestamp value) {
         return value == null ? null : value.toLocalDateTime();
     }
 
+    /**
+     * Cắt khoảng trắng đầu/cuối của chuỗi.
+     *
+     * @param value chuỗi cần xử lý.
+     * @return chuỗi đã trim, hoặc chuỗi rỗng nếu value null.
+     */
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Chuyển chuỗi rỗng thành null.
+     *
+     * @param value chuỗi cần xử lý.
+     * @return null nếu chuỗi rỗng, ngược lại trả về chuỗi đã trim.
+     */
     private String nullIfEmpty(String value) {
         String trimmed = safeTrim(value);
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    /**
+     * Rollback giao dịch, bỏ qua lỗi rollback nếu có.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void rollbackQuietly(Connection con) {
         try {
             if (con != null) {
@@ -1565,6 +2253,11 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Bật lại auto-commit cho connection, bỏ qua lỗi nếu có.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void resetAutoCommit(Connection con) {
         try {
             if (con != null) {
@@ -1574,19 +2267,36 @@ public class CheckInOutDAO {
         }
     }
 
+    /**
+     * Xóa thông báo lỗi gần nhất trước khi thực hiện thao tác mới.
+     */
     private void clearLastError() {
         lastErrorMessage = "";
     }
 
+    /**
+     * Lưu thông báo lỗi gần nhất.
+     *
+     * @param message nội dung lỗi cần lưu.
+     */
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
     }
 
+    /**
+     * Làm sạch danh sách mã chi tiết đặt phòng.
+     *
+     * Method loại bỏ giá trị null, giá trị <= 0 và mã bị trùng.
+     *
+     * @param maChiTietDatPhongIds danh sách mã chi tiết đặt phòng đầu vào.
+     * @return danh sách mã hợp lệ, không trùng.
+     */
     private List<Integer> sanitizeDetailIds(List<Integer> maChiTietDatPhongIds) {
         List<Integer> detailIds = new ArrayList<Integer>();
         if (maChiTietDatPhongIds == null) {
             return detailIds;
         }
+
         for (Integer value : maChiTietDatPhongIds) {
             if (value != null && value.intValue() > 0 && !detailIds.contains(value)) {
                 detailIds.add(value);
@@ -1595,6 +2305,14 @@ public class CheckInOutDAO {
         return detailIds;
     }
 
+    /**
+     * Tạo lịch check-in/check-out giống nhau cho nhiều chi tiết đặt phòng.
+     *
+     * @param maChiTietDatPhongIds danh sách mã chi tiết đặt phòng.
+     * @param thoiGianCheckIn thời gian check-in.
+     * @param thoiGianCheckOutDuKien thời gian check-out dự kiến.
+     * @return map lịch check-in theo từng mã chi tiết đặt phòng.
+     */
     private Map<Integer, CheckInTiming> buildUniformCheckInTimings(List<Integer> maChiTietDatPhongIds,
                                                                    LocalDateTime thoiGianCheckIn,
                                                                    LocalDateTime thoiGianCheckOutDuKien) {
@@ -1606,6 +2324,18 @@ public class CheckInOutDAO {
         return timings;
     }
 
+    /**
+     * Xác định lịch check-in/check-out cho một chi tiết đặt phòng.
+     *
+     * Ưu tiên lấy từ scheduleByDetailId. Nếu không có hoặc không hợp lệ,
+     * method dùng lịch fallback lấy từ database.
+     *
+     * @param maChiTietDatPhong mã chi tiết đặt phòng.
+     * @param scheduleByDetailId map lịch theo chi tiết đặt phòng.
+     * @param fallbackCheckIn thời gian check-in dự phòng.
+     * @param fallbackCheckOut thời gian check-out dự phòng.
+     * @return lịch hợp lệ, hoặc null nếu không có lịch hợp lệ.
+     */
     private CheckInTiming resolveCheckInTiming(int maChiTietDatPhong,
                                                Map<Integer, CheckInTiming> scheduleByDetailId,
                                                LocalDateTime fallbackCheckIn,
@@ -1614,14 +2344,24 @@ public class CheckInOutDAO {
         if (timing != null && timing.isValid()) {
             return timing;
         }
+
         CheckInTiming fallback = new CheckInTiming(fallbackCheckIn, fallbackCheckOut);
         return fallback.isValid() ? fallback : null;
     }
 
+    /**
+     * Lớp lưu thời gian check-in và check-out dự kiến của một chi tiết đặt phòng.
+     */
     public static final class CheckInTiming {
         private final LocalDateTime checkIn;
         private final LocalDateTime expectedCheckOut;
 
+        /**
+         * Khởi tạo lịch check-in/check-out.
+         *
+         * @param checkIn thời gian check-in.
+         * @param expectedCheckOut thời gian check-out dự kiến.
+         */
         public CheckInTiming(LocalDateTime checkIn, LocalDateTime expectedCheckOut) {
             this.checkIn = checkIn;
             this.expectedCheckOut = expectedCheckOut;
@@ -1635,11 +2375,19 @@ public class CheckInOutDAO {
             return expectedCheckOut;
         }
 
+        /**
+         * Kiểm tra lịch check-in/check-out có hợp lệ hay không.
+         *
+         * @return true nếu có đủ check-in, check-out và check-out sau check-in.
+         */
         public boolean isValid() {
             return checkIn != null && expectedCheckOut != null && expectedCheckOut.isAfter(checkIn);
         }
     }
 
+    /**
+     * DTO dùng để hiển thị một dòng chi tiết đặt phòng trên màn hình check-in.
+     */
     public static final class CheckInBookingItem {
         private int maChiTietDatPhong;
         private int maPhong;
@@ -1804,11 +2552,19 @@ public class CheckInOutDAO {
             this.representativeCustomerId = representativeCustomerId;
         }
 
+        /**
+         * Kiểm tra dòng chi tiết này có đủ điều kiện check-in hay không.
+         *
+         * @return true nếu đã có chi tiết đặt phòng, đã có phòng và đang chờ check-in.
+         */
         public boolean canCheckIn() {
-            return maChiTietDatPhong > 0 && maPhong > 0 && "Ch\u1edd check-in".equalsIgnoreCase(trangThai);
+            return maChiTietDatPhong > 0 && maPhong > 0 && "Chờ check-in".equalsIgnoreCase(trangThai);
         }
     }
 
+    /**
+     * DTO chứa thông tin phòng có thể chọn khi đổi phòng.
+     */
     public static final class RoomChangeCandidate {
         private int maPhong;
         private int maLoaiPhong;
@@ -1884,6 +2640,3 @@ public class CheckInOutDAO {
         }
     }
 }
-
-
-

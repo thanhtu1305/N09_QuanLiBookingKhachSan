@@ -11,7 +11,22 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * DAO xử lý các thao tác dữ liệu cho chi tiết bảng giá.
+ *
+ * Lớp này phụ trách:
+ * - Lấy danh sách chi tiết bảng giá theo mã bảng giá.
+ * - Tìm chi tiết bảng giá theo mã chi tiết.
+ * - Thêm, cập nhật, xóa chi tiết bảng giá.
+ * - Kiểm tra dữ liệu chi tiết bảng giá trước khi lưu.
+ */
 public class ChiTietBangGiaDAO {
+    /**
+     * Câu SELECT cơ sở dùng chung cho các truy vấn chi tiết bảng giá.
+     *
+     * Các cột giá được CAST sang FLOAT để đảm bảo kiểu dữ liệu đọc ra phù hợp
+     * với các thuộc tính double trong entity ChiTietBangGia.
+     */
     private static final String SELECT_BASE =
             "SELECT maChiTietBangGia, maBangGia, loaiNgay, khungGio, "
                     + "CAST(giaTheoGio AS FLOAT) AS giaTheoGio, "
@@ -22,12 +37,26 @@ public class ChiTietBangGiaDAO {
                     + "CAST(phuThu AS FLOAT) AS phuThu "
                     + "FROM ChiTietBangGia";
 
+    /**
+     * Lưu thông báo lỗi gần nhất để lớp gọi có thể lấy ra hiển thị.
+     */
     private String lastErrorMessage = "";
 
+    /**
+     * Lấy thông báo lỗi gần nhất phát sinh trong DAO.
+     *
+     * @return nội dung lỗi gần nhất, rỗng nếu chưa có lỗi.
+     */
     public String getLastErrorMessage() {
         return lastErrorMessage;
     }
 
+    /**
+     * Lấy danh sách chi tiết bảng giá theo mã bảng giá.
+     *
+     * @param maBangGia mã bảng giá cần lấy danh sách chi tiết.
+     * @return danh sách chi tiết bảng giá, rỗng nếu không có dữ liệu hoặc có lỗi.
+     */
     public List<ChiTietBangGia> getByMaBangGia(int maBangGia) {
         clearLastError();
         List<ChiTietBangGia> dsChiTiet = new ArrayList<ChiTietBangGia>();
@@ -53,6 +82,12 @@ public class ChiTietBangGiaDAO {
         return dsChiTiet;
     }
 
+    /**
+     * Tìm chi tiết bảng giá theo mã chi tiết bảng giá.
+     *
+     * @param maChiTietBangGia mã chi tiết bảng giá cần tìm.
+     * @return đối tượng ChiTietBangGia nếu tìm thấy, ngược lại trả về null.
+     */
     public ChiTietBangGia findById(int maChiTietBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -77,6 +112,15 @@ public class ChiTietBangGiaDAO {
         return null;
     }
 
+    /**
+     * Thêm mới một chi tiết bảng giá.
+     *
+     * Trước khi thêm, dữ liệu sẽ được kiểm tra bằng validateChiTietBangGia().
+     * Nếu thêm thành công, mã chi tiết bảng giá vừa sinh sẽ được gán lại vào đối tượng.
+     *
+     * @param chiTietBangGia thông tin chi tiết bảng giá cần thêm.
+     * @return true nếu thêm thành công, false nếu thất bại.
+     */
     public boolean insert(ChiTietBangGia chiTietBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -109,6 +153,14 @@ public class ChiTietBangGiaDAO {
         }
     }
 
+    /**
+     * Cập nhật thông tin chi tiết bảng giá.
+     *
+     * Trước khi cập nhật, dữ liệu sẽ được kiểm tra bằng validateChiTietBangGia().
+     *
+     * @param chiTietBangGia thông tin chi tiết bảng giá cần cập nhật.
+     * @return true nếu cập nhật thành công, false nếu thất bại.
+     */
     public boolean update(ChiTietBangGia chiTietBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -134,6 +186,12 @@ public class ChiTietBangGiaDAO {
         }
     }
 
+    /**
+     * Xóa chi tiết bảng giá theo mã chi tiết bảng giá.
+     *
+     * @param maChiTietBangGia mã chi tiết bảng giá cần xóa.
+     * @return true nếu xóa thành công, false nếu thất bại.
+     */
     public boolean delete(int maChiTietBangGia) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -154,6 +212,17 @@ public class ChiTietBangGiaDAO {
         }
     }
 
+    /**
+     * Gán dữ liệu từ đối tượng ChiTietBangGia vào PreparedStatement.
+     *
+     * Method này dùng chung cho cả insert và update.
+     * Khi includeId = true, method sẽ gán thêm mã chi tiết bảng giá ở vị trí tham số thứ 10.
+     *
+     * @param stmt PreparedStatement cần gán dữ liệu.
+     * @param chiTietBangGia dữ liệu chi tiết bảng giá.
+     * @param includeId true nếu đang cập nhật và cần gán maChiTietBangGia.
+     * @throws SQLException nếu xảy ra lỗi khi gán tham số.
+     */
     private void fillStatement(PreparedStatement stmt, ChiTietBangGia chiTietBangGia, boolean includeId) throws SQLException {
         stmt.setInt(1, chiTietBangGia.getMaBangGia());
         stmt.setString(2, normalizeLoaiNgay(chiTietBangGia.getLoaiNgay()));
@@ -169,6 +238,13 @@ public class ChiTietBangGiaDAO {
         }
     }
 
+    /**
+     * Chuyển dữ liệu từ ResultSet thành đối tượng ChiTietBangGia.
+     *
+     * @param rs ResultSet đang trỏ tới dòng dữ liệu chi tiết bảng giá.
+     * @return đối tượng ChiTietBangGia sau khi ánh xạ.
+     * @throws SQLException nếu xảy ra lỗi khi đọc dữ liệu từ ResultSet.
+     */
     private ChiTietBangGia mapChiTietBangGia(ResultSet rs) throws SQLException {
         return new ChiTietBangGia(
                 rs.getInt("maChiTietBangGia"),
@@ -184,6 +260,20 @@ public class ChiTietBangGiaDAO {
         );
     }
 
+    /**
+     * Kiểm tra dữ liệu chi tiết bảng giá trước khi thêm hoặc cập nhật.
+     *
+     * Các điều kiện kiểm tra:
+     * - Khi cập nhật, mã chi tiết bảng giá phải hợp lệ.
+     * - Mã bảng giá phải hợp lệ.
+     * - Loại ngày được chuẩn hóa về giá trị mặc định nếu rỗng.
+     * - Khung giờ không được rỗng.
+     * - Các giá và phụ thu phải lớn hơn hoặc bằng 0.
+     *
+     * @param chiTietBangGia dữ liệu chi tiết bảng giá cần kiểm tra.
+     * @param updating true nếu đang cập nhật, false nếu đang thêm mới.
+     * @return true nếu dữ liệu hợp lệ, false nếu không hợp lệ.
+     */
     private boolean validateChiTietBangGia(ChiTietBangGia chiTietBangGia, boolean updating) {
         if (updating && chiTietBangGia.getMaChiTietBangGia() <= 0) {
             setLastError("Ma chi tiet bang gia khong hop le.");
@@ -210,18 +300,41 @@ public class ChiTietBangGiaDAO {
         return true;
     }
 
+    /**
+     * Kiểm tra giá trị số có lớn hơn hoặc bằng 0 hay không.
+     *
+     * @param value giá trị cần kiểm tra.
+     * @return true nếu value >= 0, false nếu value < 0.
+     */
     private boolean isNonNegative(double value) {
         return value >= 0;
     }
 
+    /**
+     * Chuẩn hóa loại ngày.
+     *
+     * Nếu loại ngày null hoặc rỗng, method sẽ dùng loại ngày mặc định
+     * được định nghĩa trong ChiTietBangGia.DEFAULT_LOAI_NGAY.
+     *
+     * @param loaiNgay loại ngày cần chuẩn hóa.
+     * @return loại ngày sau khi chuẩn hóa.
+     */
     private String normalizeLoaiNgay(String loaiNgay) {
         return loaiNgay == null || loaiNgay.trim().isEmpty() ? ChiTietBangGia.DEFAULT_LOAI_NGAY : loaiNgay.trim();
     }
 
+    /**
+     * Xóa thông báo lỗi gần nhất trước khi thực hiện thao tác mới.
+     */
     private void clearLastError() {
         lastErrorMessage = "";
     }
 
+    /**
+     * Lưu thông báo lỗi gần nhất.
+     *
+     * @param message nội dung lỗi cần lưu.
+     */
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
     }

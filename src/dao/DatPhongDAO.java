@@ -23,7 +23,19 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 
+/**
+ * DAO xử lý các thao tác liên quan đến đặt phòng.
+ *
+ * Lớp này phụ trách:
+ * - Thêm, cập nhật, xóa và tìm kiếm đặt phòng.
+ * - Quản lý chi tiết đặt phòng.
+ * - Kiểm tra phòng trống và xung đột đặt phòng.
+ * - Cập nhật trạng thái đặt phòng và trạng thái phòng.
+ * - Tính giá phòng theo bảng giá, ngày thường, cuối tuần, ngày lễ.
+ * - Kiểm tra trạng thái thanh toán của booking.
+ */
 public class DatPhongDAO {
+    // Các trạng thái chính của đặt phòng.
     public static final String STATUS_PENDING_CHECKIN = "Chờ check-in";
     public static final String STATUS_ACTIVE = "Đang ở";
     public static final String STATUS_PARTIAL_CHECKOUT = "Check-out một phần";
@@ -32,35 +44,74 @@ public class DatPhongDAO {
     public static final String STATUS_CHECKED_OUT = "Đã check-out";
     public static final String STATUS_CANCELLED = "Đã hủy";
     public static final String STATUS_CANCELLED_BOOKING = "Hủy booking";
+
+    // Các loại ngày dùng khi xác định giá phòng.
     private static final String LOAI_NGAY_THUONG = "Ngày thường";
     private static final String LOAI_NGAY_CUOI_TUAN = "Cuối tuần";
     private static final String LOAI_NGAY_LE = "Ngày lễ";
+
+    // Các loại giá dùng khi áp dụng bảng giá.
     private static final String LOAI_GIA_THEO_NGAY = "Theo ngày";
     private static final String LOAI_GIA_QUA_DEM = "Qua đêm";
     private static final String LOAI_GIA_THEO_GIO = "Theo giờ";
     private static final String LOAI_GIA_LE = "Giá lễ";
     private static final String LOAI_GIA_CUOI_TUAN = "Giá cuối tuần";
+
+    // Nhóm trạng thái phòng có thể dùng để gán phòng.
     private static final String ROOM_READY_STATUS_SQL = "(N'Hoạt động', N'Trống', N'Sẵn sàng', N'Dọn dẹp', N'Dọn phòng')";
+
+    // Nhóm trạng thái phòng bị khóa vận hành, không được tự động đổi trạng thái.
     private static final String ROOM_BLOCKED_STATUS_SQL = "(N'Bảo trì', N'Không hoạt động', N'Ngừng hoạt động', N'Đang sửa')";
+
+    // Nhóm trạng thái booking có khả năng giữ phòng, dùng khi kiểm tra trùng lịch.
     private static final String BOOKING_BLOCKING_STATUS_SQL =
             "(N'Đã đặt', N'Đã xác nhận', N'Đã cọc', N'Chờ check-in', N'Đang ở', N'Đã check-in', N'Check-out một phần', N'Chờ thanh toán')";
 
+    // Key nội bộ cho loại ngày.
     private static final String DAY_TYPE_NORMAL = "THUONG";
     private static final String DAY_TYPE_WEEKEND = "CUOI_TUAN";
     private static final String DAY_TYPE_HOLIDAY = "NGAY_LE";
+
+    // Key nội bộ cho loại lưu trú.
     private static final String STAY_TYPE_HOURLY = "THEO_GIO";
     private static final String STAY_TYPE_DAILY = "THEO_NGAY";
     private static final String STAY_TYPE_OVERNIGHT = "QUA_DEM";
+
+    // Chuỗi hiển thị cho loại ngày và loại giá.
     private static final String DISPLAY_LOAI_NGAY_THUONG = "Ng\u00e0y th\u01b0\u1eddng";
     private static final String DISPLAY_LOAI_NGAY_CUOI_TUAN = "Cu\u1ed1i tu\u1ea7n";
     private static final String DISPLAY_LOAI_NGAY_LE = "Ng\u00e0y l\u1ec5";
     private static final String DISPLAY_LOAI_GIA_THEO_NGAY = "Theo ng\u00e0y";
     private static final String DISPLAY_LOAI_GIA_QUA_DEM = "Qua \u0111\u00eam";
     private static final String DISPLAY_LOAI_GIA_THEO_GIO = "Theo gi\u1edd";
+
+    /**
+     * Mốc giờ mặc định dùng cho chi tiết đặt phòng.
+     *
+     * Vì một số dữ liệu đặt phòng chỉ lưu ngày, hệ thống dùng mốc 12:00
+     * để chuyển từ LocalDate sang LocalDateTime.
+     */
     private static final LocalTime DETAIL_BOOKING_BOUNDARY_TIME = LocalTime.of(12, 0);
+
+    /**
+     * Đánh dấu đã kiểm tra/tạo schema lịch dự kiến cho ChiTietDatPhong hay chưa.
+     */
     private static boolean detailScheduleSchemaEnsured = false;
+
+    /**
+     * Đánh dấu đã kiểm tra/tạo schema phạm vi hóa đơn theo chi tiết đặt phòng hay chưa.
+     */
     private static boolean invoiceScopeSchemaEnsured = false;
 
+    /**
+     * Chuẩn hóa trạng thái booking theo giai đoạn xử lý.
+     *
+     * Một số trạng thái như "Đã check-in" hoặc "Đang lưu trú" được quy về "Đang ở"
+     * để các màn hình xử lý trạng thái thống nhất hơn.
+     *
+     * @param status trạng thái cần chuẩn hóa.
+     * @return trạng thái sau khi chuẩn hóa.
+     */
     public static String normalizeStageStatus(String status) {
         String value = status == null ? "" : status.trim();
         if ("\u0110\u00e3 check-in".equalsIgnoreCase(value) || "\u0110ang l\u01b0u tr\u00fa".equalsIgnoreCase(value)) {
@@ -69,6 +120,12 @@ public class DatPhongDAO {
         return value;
     }
 
+    /**
+     * Kiểm tra trạng thái có thuộc giai đoạn đặt phòng ban đầu hay không.
+     *
+     * @param status trạng thái cần kiểm tra.
+     * @return true nếu trạng thái thuộc nhóm đã đặt/xác nhận/cọc/chờ check-in.
+     */
     public static boolean isBookingStageStatus(String status) {
         String value = normalizeStageStatus(status);
         return "\u0110\u00e3 \u0111\u1eb7t".equalsIgnoreCase(value)
@@ -77,6 +134,12 @@ public class DatPhongDAO {
                 || "Ch\u1edd check-in".equalsIgnoreCase(value);
     }
 
+    /**
+     * Kiểm tra trạng thái có thuộc giai đoạn vận hành/lưu trú hay không.
+     *
+     * @param status trạng thái cần kiểm tra.
+     * @return true nếu trạng thái thuộc nhóm chờ check-in, đang ở hoặc check-out một phần.
+     */
     public static boolean isOperationalStageStatus(String status) {
         String value = normalizeStageStatus(status);
         return "Ch\u1edd check-in".equalsIgnoreCase(value)
@@ -84,6 +147,12 @@ public class DatPhongDAO {
                 || "Check-out m\u1ed9t ph\u1ea7n".equalsIgnoreCase(value);
     }
 
+    /**
+     * Kiểm tra trạng thái có thuộc giai đoạn thanh toán hay không.
+     *
+     * @param status trạng thái cần kiểm tra.
+     * @return true nếu trạng thái thuộc nhóm đã check-out, chờ thanh toán hoặc đã thanh toán.
+     */
     public static boolean isPaymentStageStatus(String status) {
         String value = normalizeStageStatus(status);
         return "\u0110\u00e3 check-out".equalsIgnoreCase(value)
@@ -91,6 +160,11 @@ public class DatPhongDAO {
                 || "\u0110\u00e3 thanh to\u00e1n".equalsIgnoreCase(value);
     }
 
+    /**
+     * Câu SELECT cơ sở dùng để lấy thông tin header của đặt phòng.
+     *
+     * Dữ liệu được join thêm khách hàng để hiển thị tên, số điện thoại và CCCD/Passport.
+     */
     private static final String SELECT_HEADER_BASE =
             "SELECT dp.maDatPhong, dp.maKhachHang, dp.maNhanVien, dp.maBangGia, dp.ngayDat, dp.ngayNhanPhong, dp.ngayTraPhong, "
                     + "dp.soLuongPhong, dp.soNguoi, dp.tienCoc, dp.trangThai, "
@@ -98,14 +172,36 @@ public class DatPhongDAO {
                     + "FROM DatPhong dp "
                     + "LEFT JOIN KhachHang kh ON dp.maKhachHang = kh.maKhachHang";
 
+    /**
+     * Lưu thông báo lỗi gần nhất để giao diện hoặc lớp gọi có thể lấy ra hiển thị.
+     */
     private String lastErrorMessage = "";
+
+    /**
+     * DAO bảng giá dùng để lấy chi tiết giá đang áp dụng.
+     */
     private final BangGiaDAO bangGiaDAO = new BangGiaDAO();
+
+    /**
+     * DAO ngày lễ dùng để xác định ngày lễ khi tính loại ngày và phụ thu.
+     */
     private final NgayLeDAO ngayLeDAO = new NgayLeDAO();
 
+    /**
+     * Lấy thông báo lỗi gần nhất phát sinh trong DAO.
+     *
+     * @return nội dung lỗi gần nhất, rỗng nếu chưa có lỗi.
+     */
     public String getLastErrorMessage() {
         return lastErrorMessage;
     }
 
+    /**
+     * Kiểm tra trạng thái phòng có thuộc nhóm bị khóa vận hành hay không.
+     *
+     * @param status trạng thái phòng cần kiểm tra.
+     * @return true nếu phòng đang bảo trì, không hoạt động, ngừng hoạt động hoặc đang sửa.
+     */
     public boolean isOperationallyBlockedRoomStatus(String status) {
         String value = status == null ? "" : status.trim();
         return "Bảo trì".equalsIgnoreCase(value)
@@ -114,6 +210,16 @@ public class DatPhongDAO {
                 || "Đang sửa".equalsIgnoreCase(value);
     }
 
+    /**
+     * Lấy trạng thái khóa vận hành hiện tại của phòng.
+     *
+     * Nếu phòng không ở trạng thái bị khóa vận hành, method trả về chuỗi rỗng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần kiểm tra.
+     * @return trạng thái khóa vận hành nếu có, ngược lại trả về chuỗi rỗng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public String getOperationalBlockStatus(Connection con, int maPhong) throws SQLException {
         if (con == null || maPhong <= 0) {
             return "";
@@ -122,10 +228,28 @@ public class DatPhongDAO {
         return isOperationallyBlockedRoomStatus(currentStatus) ? currentStatus : "";
     }
 
+    /**
+     * Xác định trạng thái hiển thị của phòng dựa trên mã phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần xác định trạng thái.
+     * @return trạng thái hiển thị của phòng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public String resolveDisplayRoomStatus(Connection con, int maPhong) throws SQLException {
         return resolveDisplayRoomStatus(con, maPhong, null);
     }
 
+    /**
+     * Xác định trạng thái hiển thị của phòng dựa trên trạng thái hiện tại,
+     * tình trạng lưu trú, đặt phòng và thanh toán.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần xác định trạng thái.
+     * @param currentStatus trạng thái hiện tại của phòng, có thể null hoặc rỗng.
+     * @return trạng thái hiển thị sau khi xử lý.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public String resolveDisplayRoomStatus(Connection con, int maPhong, String currentStatus) throws SQLException {
         String normalizedCurrent = safeTrim(currentStatus);
         if (normalizedCurrent.isEmpty() && con != null && maPhong > 0) {
@@ -163,6 +287,14 @@ public class DatPhongDAO {
         return "Hoạt động";
     }
 
+    /**
+     * Đảm bảo bảng ChiTietDatPhong có đủ cột checkInDuKien và checkOutDuKien.
+     *
+     * Nếu cột chưa tồn tại, method sẽ tự thêm cột và cập nhật giá trị mặc định
+     * dựa trên ngày nhận/trả phòng của DatPhong.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     public void ensureDetailScheduleSchema(Connection con) {
         if (con == null) {
             return;
@@ -190,6 +322,14 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Đảm bảo bảng HoaDonChiTietDatPhongScope tồn tại.
+     *
+     * Bảng này dùng để lưu phạm vi chi tiết đặt phòng thuộc một hóa đơn,
+     * hỗ trợ kiểm tra thanh toán theo từng chi tiết phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void ensureInvoiceScopeSchema(Connection con) {
         if (con == null) {
             return;
@@ -218,6 +358,14 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Lấy toàn bộ danh sách đặt phòng.
+     *
+     * Mỗi đặt phòng sẽ được nạp thêm danh sách chi tiết đặt phòng,
+     * sau đó chuẩn hóa một số thông tin tổng hợp trước khi trả về.
+     *
+     * @return danh sách đặt phòng, rỗng nếu không có dữ liệu hoặc có lỗi.
+     */
     public List<DatPhong> getAll() {
         clearLastError();
         List<DatPhong> result = new ArrayList<DatPhong>();
@@ -244,6 +392,12 @@ public class DatPhongDAO {
         return result;
     }
 
+    /**
+     * Tìm đặt phòng theo mã đặt phòng.
+     *
+     * @param maDatPhong mã đặt phòng dạng chuỗi.
+     * @return đối tượng DatPhong nếu tìm thấy, ngược lại trả về null.
+     */
     public DatPhong findById(String maDatPhong) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -263,6 +417,14 @@ public class DatPhongDAO {
         return null;
     }
 
+    /**
+     * Tìm danh sách đặt phòng theo trạng thái.
+     *
+     * Nếu trạng thái truyền vào rỗng, method sẽ trả về toàn bộ danh sách đặt phòng.
+     *
+     * @param trangThai trạng thái đặt phòng cần lọc.
+     * @return danh sách đặt phòng phù hợp.
+     */
     public List<DatPhong> findByTrangThai(String trangThai) {
         clearLastError();
         List<DatPhong> result = new ArrayList<DatPhong>();
@@ -275,6 +437,17 @@ public class DatPhongDAO {
         return result;
     }
 
+    /**
+     * Thêm mới một đặt phòng cùng danh sách chi tiết đặt phòng.
+     *
+     * Toàn bộ thao tác được thực hiện trong một transaction:
+     * - Thêm header DatPhong.
+     * - Thêm danh sách ChiTietDatPhong.
+     * - Cập nhật trạng thái các phòng được gán.
+     *
+     * @param datPhong thông tin đặt phòng cần thêm.
+     * @return true nếu thêm thành công, false nếu thất bại.
+     */
     public boolean insert(DatPhong datPhong) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -319,6 +492,15 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Cập nhật thông tin đặt phòng.
+     *
+     * Nếu booking chưa phát sinh lưu trú, method sẽ đồng bộ lại danh sách chi tiết đặt phòng
+     * và làm mới trạng thái các phòng liên quan.
+     *
+     * @param datPhong thông tin đặt phòng cần cập nhật.
+     * @return true nếu cập nhật thành công, false nếu thất bại.
+     */
     public boolean update(DatPhong datPhong) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -365,6 +547,15 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Xóa một đặt phòng theo mã đặt phòng.
+     *
+     * Chỉ cho phép xóa khi booking chưa phát sinh lưu trú.
+     * Khi xóa thành công, các phòng liên quan sẽ được refresh lại trạng thái.
+     *
+     * @param maDatPhong mã đặt phòng cần xóa.
+     * @return true nếu xóa thành công, false nếu thất bại.
+     */
     public boolean delete(String maDatPhong) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -408,7 +599,12 @@ public class DatPhongDAO {
             resetAutoCommit(con);
         }
     }
-
+    /**
+     * Lấy danh sách chi tiết đặt phòng theo mã đặt phòng.
+     *
+     * @param maDatPhong mã đặt phòng cần lấy chi tiết.
+     * @return danh sách chi tiết đặt phòng, rỗng nếu mã không hợp lệ hoặc có lỗi kết nối.
+     */
     public List<ChiTietDatPhong> getChiTietByMaDatPhong(String maDatPhong) {
         clearLastError();
         Connection con = ConnectDB.getConnection();
@@ -423,6 +619,16 @@ public class DatPhongDAO {
         return getChiTietByMaDatPhongInternal(con, temp);
     }
 
+    /**
+     * Cập nhật trạng thái của một đặt phòng.
+     *
+     * Sau khi cập nhật trạng thái booking, method sẽ cập nhật lại trạng thái phòng liên quan
+     * theo trạng thái mới của booking.
+     *
+     * @param maDatPhong mã đặt phòng cần cập nhật.
+     * @param trangThai trạng thái mới.
+     * @return true nếu cập nhật thành công, false nếu thất bại.
+     */
     public boolean updateTrangThai(String maDatPhong, String trangThai) {
         clearLastError();
         Connection con = getReadyConnection();
@@ -464,6 +670,19 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Khôi phục một booking đã bị hủy.
+     *
+     * Trước khi khôi phục, method kiểm tra:
+     * - Booking có tồn tại hay không.
+     * - Booking hiện tại có đang ở trạng thái hủy hay không.
+     * - Booking đã phát sinh lưu trú hay chưa.
+     * - Các chi tiết phòng còn hợp lệ và không bị trùng lịch với booking khác.
+     *
+     * @param maDatPhong mã đặt phòng cần khôi phục.
+     * @param trangThaiKhoiPhuc trạng thái muốn khôi phục về, nếu rỗng sẽ dùng STATUS_PENDING_CHECKIN.
+     * @return true nếu khôi phục thành công, false nếu thất bại.
+     */
     public boolean restoreCancelledBooking(String maDatPhong, String trangThaiKhoiPhuc) {
         clearLastError();
         Connection con = getReadyConnection();
@@ -490,7 +709,7 @@ public class DatPhongDAO {
             String currentStatus = safeTrim(booking.getTrangThaiDatPhong());
             if (!STATUS_CANCELLED.equalsIgnoreCase(currentStatus) && !STATUS_CANCELLED_BOOKING.equalsIgnoreCase(currentStatus)) {
                 con.rollback();
-                setLastError("Booking nÃ y khÃ´ng á»Ÿ tráº¡ng thÃ¡i ÄÃ£ há»§y.");
+                setLastError("Booking nÃ y khÃ´ng á»Ÿ tráº¡ng thÃ¡i ÄÃ£ há»§y.");
                 return false;
             }
             if (hasLuuTruForBooking(con, id.intValue())) {
@@ -514,7 +733,7 @@ public class DatPhongDAO {
                 if (detail.getCheckInDuKien() == null || detail.getCheckOutDuKien() == null
                         || !detail.getCheckOutDuKien().isAfter(detail.getCheckInDuKien())) {
                     con.rollback();
-                    setLastError("Khoáº£ng ngÃ y cá»§a booking khÃ´ng há»£p lá»‡, khÃ´ng thá»ƒ khÃ´i phá»¥c.");
+                    setLastError("Khoáº£ng ngÃ y cá»§a booking khÃ´ng há»£p lá»‡, khÃ´ng thá»ƒ khÃ´i phá»¥c.");
                     return false;
                 }
 
@@ -561,6 +780,18 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Kiểm tra xung đột phòng theo ngày nhận và ngày trả dạng LocalDate.
+     *
+     * Method này chuyển LocalDate sang LocalDateTime bằng mốc giờ mặc định,
+     * sau đó gọi overload xử lý chính.
+     *
+     * @param maPhong mã phòng cần kiểm tra.
+     * @param ngayNhanPhong ngày nhận phòng.
+     * @param ngayTraPhong ngày trả phòng.
+     * @param excludeMaDatPhong mã đặt phòng cần bỏ qua khi kiểm tra, dùng khi cập nhật/khôi phục.
+     * @return thông tin xung đột nếu có, ngược lại trả về null.
+     */
     public DatPhongConflictInfo findRoomConflict(int maPhong, LocalDate ngayNhanPhong, LocalDate ngayTraPhong, Integer excludeMaDatPhong) {
         return findRoomConflict(
                 maPhong,
@@ -570,6 +801,18 @@ public class DatPhongDAO {
         );
     }
 
+    /**
+     * Kiểm tra xung đột phòng theo khoảng thời gian nhận/trả phòng.
+     *
+     * Phòng được xem là xung đột nếu có booking hoặc lưu trú khác
+     * giữ cùng phòng trong khoảng thời gian giao nhau.
+     *
+     * @param maPhong mã phòng cần kiểm tra.
+     * @param ngayNhanPhong thời gian nhận phòng.
+     * @param ngayTraPhong thời gian trả phòng.
+     * @param excludeMaDatPhong mã đặt phòng cần bỏ qua khi kiểm tra, có thể null.
+     * @return thông tin xung đột nếu có, ngược lại trả về null.
+     */
     public DatPhongConflictInfo findRoomConflict(int maPhong, LocalDateTime ngayNhanPhong, LocalDateTime ngayTraPhong, Integer excludeMaDatPhong) {
         clearLastError();
         Connection con = getReadyConnection();
@@ -653,7 +896,18 @@ public class DatPhongDAO {
         }
         return null;
     }
-
+    /**
+     * Lấy danh sách phòng còn khả dụng theo khoảng ngày dạng LocalDate.
+     *
+     * Method này chuyển LocalDate sang LocalDateTime bằng mốc giờ mặc định,
+     * sau đó gọi overload xử lý chính.
+     *
+     * @param ngayNhanPhong ngày nhận phòng.
+     * @param ngayTraPhong ngày trả phòng.
+     * @param excludeMaDatPhong mã đặt phòng cần bỏ qua khi kiểm tra, có thể null.
+     * @param includeMaPhong mã phòng cần luôn đưa vào điều kiện xem xét, có thể null.
+     * @return danh sách phòng còn khả dụng.
+     */
     public List<AvailableRoomInfo> getAvailableRooms(LocalDate ngayNhanPhong, LocalDate ngayTraPhong, Integer excludeMaDatPhong, Integer includeMaPhong) {
         return getAvailableRooms(
                 toDetailScheduleDateTime(ngayNhanPhong),
@@ -663,6 +917,20 @@ public class DatPhongDAO {
         );
     }
 
+    /**
+     * Lấy danh sách phòng còn khả dụng theo khoảng thời gian nhận/trả phòng.
+     *
+     * Phòng được đưa vào kết quả khi:
+     * - Phòng đang ở trạng thái có thể sử dụng hoặc là phòng được include.
+     * - Không có lưu trú đang hoạt động xung đột.
+     * - Không có booking khác đang giữ phòng trong khoảng thời gian giao nhau.
+     *
+     * @param ngayNhanPhong thời gian nhận phòng.
+     * @param ngayTraPhong thời gian trả phòng.
+     * @param excludeMaDatPhong mã đặt phòng cần bỏ qua khi kiểm tra, có thể null.
+     * @param includeMaPhong mã phòng cần đưa vào khi chỉnh sửa booking, có thể null.
+     * @return danh sách phòng còn khả dụng.
+     */
     public List<AvailableRoomInfo> getAvailableRooms(LocalDateTime ngayNhanPhong, LocalDateTime ngayTraPhong, Integer excludeMaDatPhong, Integer includeMaPhong) {
         clearLastError();
         List<AvailableRoomInfo> result = new ArrayList<AvailableRoomInfo>();
@@ -766,6 +1034,17 @@ public class DatPhongDAO {
         return result;
     }
 
+    /**
+     * Lấy danh sách chi tiết đặt phòng theo header đặt phòng.
+     *
+     * Method này được dùng nội bộ khi load một booking đầy đủ.
+     * Dữ liệu trả về bao gồm thông tin phòng, loại phòng, bảng giá,
+     * lịch check-in/check-out dự kiến và trạng thái từng chi tiết.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param header thông tin header của đặt phòng.
+     * @return danh sách chi tiết đặt phòng.
+     */
     private List<ChiTietDatPhong> getChiTietByMaDatPhongInternal(Connection con, DatPhong header) {
         List<ChiTietDatPhong> details = new ArrayList<ChiTietDatPhong>();
         Integer bookingId = parseIntOrNull(header.getMaDatPhong());
@@ -835,6 +1114,17 @@ public class DatPhongDAO {
         return details;
     }
 
+    /**
+     * Tìm đặt phòng theo mã bằng connection có sẵn.
+     *
+     * Method này load cả header và chi tiết đặt phòng,
+     * sau đó chuẩn hóa thông tin tổng hợp của booking.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @return đối tượng DatPhong nếu tìm thấy, ngược lại trả về null.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private DatPhong findByIdInternal(Connection con, int maDatPhong) throws SQLException {
         String sql = SELECT_HEADER_BASE + " WHERE dp.maDatPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -850,10 +1140,15 @@ public class DatPhongDAO {
         }
         return null;
     }
-
+    /**
+     * Tạo thông báo lỗi khi không thể khôi phục booking do bị trùng phòng.
+     *
+     * @param conflictInfo thông tin xung đột phòng.
+     * @return chuỗi thông báo lỗi.
+     */
     private String buildRestoreConflictMessage(DatPhongConflictInfo conflictInfo) {
         if (conflictInfo == null) {
-            return "Má»™t hoáº·c nhiá»u phÃ²ng trong booking Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng ngÃ y cÅ©. KhÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.";
+            return "Má»™t hoáº·c nhiá»u phÃ²ng trong booking Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng ngÃ y cÅ©. KhÃ´ng thá»ƒ khÃ´i phá»¥c tá»± Ä‘á»™ng.";
         }
         return "PhÃ²ng " + defaultIfEmpty(conflictInfo.getSoPhong(), "-")
                 + " Ä‘Ã£ khÃ´ng cÃ²n trá»‘ng trong khoáº£ng " + formatDateValue(conflictInfo.getNgayNhanPhong())
@@ -862,10 +1157,23 @@ public class DatPhongDAO {
                 + " (" + defaultIfEmpty(conflictInfo.getTrangThai(), "-") + ").";
     }
 
+    /**
+     * Chuyển LocalDate thành chuỗi hiển thị đơn giản.
+     *
+     * @param value ngày cần chuyển.
+     * @return chuỗi ngày hoặc "-" nếu value null.
+     */
     private String formatDateValue(LocalDate value) {
         return value == null ? "-" : value.toString();
     }
 
+    /**
+     * Ánh xạ dữ liệu header đặt phòng từ ResultSet sang đối tượng DatPhong.
+     *
+     * @param rs ResultSet đang trỏ tới dòng dữ liệu đặt phòng.
+     * @return đối tượng DatPhong sau khi ánh xạ.
+     * @throws SQLException nếu xảy ra lỗi khi đọc dữ liệu từ ResultSet.
+     */
     private DatPhong mapDatPhongHeader(ResultSet rs) throws SQLException {
         DatPhong datPhong = new DatPhong();
         datPhong.setMaDatPhong(String.valueOf(rs.getInt("maDatPhong")));
@@ -888,6 +1196,15 @@ public class DatPhongDAO {
         return datPhong;
     }
 
+    /**
+     * Gán dữ liệu header đặt phòng vào PreparedStatement.
+     *
+     * Method này dùng chung cho thêm mới và cập nhật DatPhong.
+     *
+     * @param stmt PreparedStatement cần gán tham số.
+     * @param datPhong dữ liệu đặt phòng.
+     * @throws SQLException nếu xảy ra lỗi khi gán tham số.
+     */
     private void fillHeaderStatement(PreparedStatement stmt, DatPhong datPhong) throws SQLException {
         setNullableInt(stmt, 1, datPhong.getMaKhachHang());
         setNullableInt(stmt, 2, datPhong.getMaNhanVien());
@@ -901,6 +1218,16 @@ public class DatPhongDAO {
         stmt.setString(10, defaultIfEmpty(datPhong.getTrangThaiDatPhong(), "Đã đặt"));
     }
 
+    /**
+     * Thêm danh sách chi tiết đặt phòng của một booking.
+     *
+     * Mỗi chi tiết sẽ được xác định bảng giá phù hợp, áp dụng giá phòng,
+     * tính thành tiền và lưu lịch check-in/check-out dự kiến.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param datPhong booking chứa danh sách chi tiết cần thêm.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void insertChiTietList(Connection con, DatPhong datPhong) throws SQLException {
         List<ChiTietDatPhong> details = datPhong.getChiTietDatPhongs();
         if (details == null || details.isEmpty()) {
@@ -932,6 +1259,18 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Đồng bộ danh sách chi tiết đặt phòng khi cập nhật booking.
+     *
+     * Method xử lý:
+     * - Cập nhật chi tiết đã tồn tại.
+     * - Thêm chi tiết mới.
+     * - Xóa chi tiết cũ không còn trong danh sách mới.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param datPhong booking chứa danh sách chi tiết cần đồng bộ.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void syncChiTietList(Connection con, DatPhong datPhong) throws SQLException {
         if (con == null || datPhong == null) {
             return;
@@ -1030,7 +1369,13 @@ public class DatPhongDAO {
             }
         }
     }
-
+    /**
+     * Xóa toàn bộ chi tiết đặt phòng theo mã đặt phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần xóa chi tiết.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void deleteAllChiTietByMaDatPhong(Connection con, int maDatPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement("DELETE FROM ChiTietDatPhong WHERE maDatPhong = ?")) {
             stmt.setInt(1, maDatPhong);
@@ -1038,6 +1383,17 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Cập nhật lại trạng thái các phòng được gán trong booking.
+     *
+     * Tham số roomStatus được giữ lại theo chữ ký method hiện tại,
+     * nhưng trạng thái thực tế được refresh bằng refreshRoomStatuses().
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param datPhong booking chứa danh sách phòng được gán.
+     * @param roomStatus trạng thái phòng theo booking.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void updateAssignedRoomStatuses(Connection con, DatPhong datPhong, String roomStatus) throws SQLException {
         if (datPhong.getChiTietDatPhongs() == null) {
             return;
@@ -1052,6 +1408,14 @@ public class DatPhongDAO {
         refreshRoomStatuses(con, roomIds);
     }
 
+    /**
+     * Lấy danh sách mã phòng đã được gán cho một booking.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @return danh sách mã phòng đã gán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private List<Integer> getAssignedRoomIds(Connection con, int maDatPhong) throws SQLException {
         List<Integer> roomIds = new ArrayList<Integer>();
         String sql = "SELECT maPhong FROM ChiTietDatPhong WHERE maDatPhong = ? AND maPhong IS NOT NULL";
@@ -1066,6 +1430,12 @@ public class DatPhongDAO {
         return roomIds;
     }
 
+    /**
+     * Thu thập danh sách mã phòng trong đối tượng DatPhong.
+     *
+     * @param datPhong booking cần lấy danh sách phòng.
+     * @return danh sách mã phòng hợp lệ.
+     */
     private List<Integer> collectAssignedRoomIds(DatPhong datPhong) {
         List<Integer> roomIds = new ArrayList<Integer>();
         if (datPhong == null || datPhong.getChiTietDatPhongs() == null) {
@@ -1083,6 +1453,13 @@ public class DatPhongDAO {
         return roomIds;
     }
 
+    /**
+     * Refresh lại trạng thái phòng sau khi booking bị xóa hoặc hủy gán phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param roomIds danh sách phòng cần refresh.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private void releaseRoomsIfBooked(Connection con, List<Integer> roomIds) throws SQLException {
         if (roomIds == null || roomIds.isEmpty()) {
             return;
@@ -1090,6 +1467,16 @@ public class DatPhongDAO {
         refreshRoomStatuses(con, roomIds);
     }
 
+    /**
+     * Refresh trạng thái của nhiều phòng.
+     *
+     * Trạng thái phòng được xác định lại dựa trên lưu trú, booking giữ phòng,
+     * hóa đơn chờ thanh toán và trạng thái hiện tại của phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param roomIds danh sách mã phòng cần refresh.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public void refreshRoomStatuses(Connection con, List<Integer> roomIds) throws SQLException {
         if (con == null || roomIds == null || roomIds.isEmpty()) {
             return;
@@ -1120,6 +1507,16 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Chuẩn hóa trạng thái phòng sau khi hệ thống tự xác định lại.
+     *
+     * Method giúp giữ trạng thái đặc biệt như bảo trì,
+     * đồng thời xử lý một số trường hợp chuyển trạng thái chờ thanh toán/dọn dẹp.
+     *
+     * @param resolvedStatus trạng thái vừa được hệ thống xác định.
+     * @param currentStatus trạng thái hiện tại của phòng trong database.
+     * @return trạng thái cuối cùng cần lưu.
+     */
     private String normalizeResolvedRoomStatus(String resolvedStatus, String currentStatus) {
         String normalizedResolved = safeTrim(resolvedStatus);
         String normalizedCurrent = safeTrim(currentStatus);
@@ -1133,6 +1530,13 @@ public class DatPhongDAO {
         return normalizedResolved;
     }
 
+    /**
+     * Refresh trạng thái của một phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần refresh.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public void refreshRoomStatus(Connection con, int maPhong) throws SQLException {
         if (maPhong <= 0) {
             return;
@@ -1142,6 +1546,16 @@ public class DatPhongDAO {
         refreshRoomStatuses(con, roomIds);
     }
 
+    /**
+     * Xác định trạng thái vận hành của phòng theo phiên bản cũ.
+     *
+     * Method này dựa trên trạng thái hiện tại, lưu trú đang ở và booking giữ phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần xác định trạng thái.
+     * @return trạng thái vận hành của phòng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private String resolveOperationalRoomStatus(Connection con, int maPhong) throws SQLException {
         String currentStatus = loadCurrentRoomStatus(con, maPhong);
         if (isOperationallyBlockedRoomStatus(currentStatus)) {
@@ -1159,6 +1573,16 @@ public class DatPhongDAO {
         return "Hoạt động";
     }
 
+    /**
+     * Xác định trạng thái vận hành của phòng theo phiên bản mới.
+     *
+     * Method này xét thêm trạng thái chờ thanh toán, dọn dẹp, sẵn sàng và trống.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần xác định trạng thái.
+     * @return trạng thái vận hành của phòng.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private String resolveOperationalRoomStatusV2(Connection con, int maPhong) throws SQLException {
         String currentStatus = loadCurrentRoomStatus(con, maPhong);
         if (isOperationallyBlockedRoomStatus(currentStatus)) {
@@ -1188,6 +1612,14 @@ public class DatPhongDAO {
         return "Hoạt động";
     }
 
+    /**
+     * Lấy trạng thái hiện tại của phòng từ database.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần lấy trạng thái.
+     * @return trạng thái phòng, hoặc chuỗi rỗng nếu không tìm thấy.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private String loadCurrentRoomStatus(Connection con, int maPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement("SELECT ISNULL(trangThai, N'') FROM Phong WHERE maPhong = ?")) {
             stmt.setInt(1, maPhong);
@@ -1199,7 +1631,14 @@ public class DatPhongDAO {
         }
         return "";
     }
-
+    /**
+     * Kiểm tra phòng có lưu trú đang hoạt động hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần kiểm tra.
+     * @return true nếu phòng đang có lưu trú chưa check-out.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasActiveStayForRoom(Connection con, int maPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement(
                 "SELECT COUNT(1) FROM dbo.LuuTru WHERE maPhong = ? AND checkOut IS NULL")) {
@@ -1210,6 +1649,14 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Kiểm tra phòng có đang được giữ bởi booking chưa phát sinh lưu trú hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần kiểm tra.
+     * @return true nếu phòng đang được gán cho booking chưa bị hủy và chưa có lưu trú.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasBookedAssignmentForRoom(Connection con, int maPhong) throws SQLException {
         String sql = "SELECT COUNT(1) "
                 + "FROM dbo.ChiTietDatPhong ctdp "
@@ -1225,6 +1672,14 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Kiểm tra phòng có hóa đơn/lưu trú mới nhất đang chờ thanh toán hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần kiểm tra.
+     * @return true nếu phòng có trạng thái liên quan đến chờ thanh toán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasPendingPaymentForRoom(Connection con, int maPhong) throws SQLException {
         if (con != null) {
             return hasUnpaidInvoiceForLatestClosedStay(con, maPhong);
@@ -1254,6 +1709,18 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Kiểm tra một booking đã được thanh toán đầy đủ hay chưa.
+     *
+     * Booking chỉ được xem là đã thanh toán đầy đủ khi:
+     * - Booking đã sẵn sàng thanh toán.
+     * - Tất cả chi tiết đặt phòng đều có hóa đơn đã thanh toán.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần kiểm tra.
+     * @return true nếu booking đã thanh toán đầy đủ.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     public boolean isBookingFullyPaid(Connection con, int maDatPhong) throws SQLException {
         if (con == null || maDatPhong <= 0 || !isBookingReadyForPayment(con, maDatPhong)) {
             return false;
@@ -1283,6 +1750,19 @@ public class DatPhongDAO {
         return true;
     }
 
+    /**
+     * Kiểm tra booking đã đủ điều kiện chuyển sang giai đoạn thanh toán hay chưa.
+     *
+     * Điều kiện:
+     * - Có ít nhất một chi tiết đặt phòng.
+     * - Không còn lưu trú nào đang ở.
+     * - Tất cả chi tiết đặt phòng đều đã có lưu trú check-out.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần kiểm tra.
+     * @return true nếu booking đã sẵn sàng thanh toán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean isBookingReadyForPayment(Connection con, int maDatPhong) throws SQLException {
         if (con == null || maDatPhong <= 0) {
             return false;
@@ -1310,6 +1790,20 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Kiểm tra một chi tiết đặt phòng đã có hóa đơn thanh toán hay chưa.
+     *
+     * Method hỗ trợ nhiều trường hợp:
+     * - Hóa đơn gắn trực tiếp với maChiTietDatPhong.
+     * - Hóa đơn gắn qua bảng scope.
+     * - Hóa đơn thanh toán toàn booking không có scope chi tiết.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng.
+     * @return true nếu chi tiết đã được thanh toán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasPaidInvoiceForDetail(Connection con, int maDatPhong, int maChiTietDatPhong) throws SQLException {
         if (con == null || maChiTietDatPhong <= 0) {
             return false;
@@ -1335,6 +1829,16 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Kiểm tra lưu trú đã đóng gần nhất của phòng có hóa đơn chưa thanh toán hay không.
+     *
+     * Method dùng để xác định phòng có nên hiển thị trạng thái chờ thanh toán hay không.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần kiểm tra.
+     * @return true nếu lưu trú đóng gần nhất còn hóa đơn chưa thanh toán.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasUnpaidInvoiceForLatestClosedStay(Connection con, int maPhong) throws SQLException {
         ensureInvoiceScopeSchema(con);
         String unpaidStatusClause = "ISNULL(hd.trangThai, N'Ch\u1edd thanh to\u00e1n') NOT IN (N'\u0110\u00e3 thanh to\u00e1n', N'\u0110\u00e3 ho\u00e0n c\u1ecdc')";
@@ -1374,7 +1878,14 @@ public class DatPhongDAO {
             }
         }
     }
-
+    /**
+     * Kiểm tra booking đã phát sinh lưu trú hay chưa.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần kiểm tra.
+     * @return true nếu booking đã có dữ liệu trong bảng LuuTru.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean hasLuuTruForBooking(Connection con, int maDatPhong) throws SQLException {
         String sql = "SELECT COUNT(1) FROM LuuTru WHERE maDatPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -1385,6 +1896,13 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Đếm số dòng chi tiết đặt phòng của một booking.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng cần đếm chi tiết.
+     * @return số lượng chi tiết đặt phòng.
+     */
     private int countDetails(Connection con, int maDatPhong) {
         String sql = "SELECT COUNT(1) FROM ChiTietDatPhong WHERE maDatPhong = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -1401,6 +1919,15 @@ public class DatPhongDAO {
         return 0;
     }
 
+    /**
+     * Chuẩn hóa thông tin tổng hợp của booking sau khi load từ database.
+     *
+     * Method bổ sung số lượng phòng, tiền cọc, số người và trạng thái booking
+     * nếu các giá trị này đang thiếu hoặc cần tính lại từ chi tiết đặt phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param datPhong booking cần chuẩn hóa.
+     */
     private void normalizeBooking(Connection con, DatPhong datPhong) {
         int detailCount = datPhong.getChiTietDatPhongs().size();
         if (datPhong.getSoLuongPhong() <= 0) {
@@ -1422,6 +1949,14 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Xác định số lượng phòng cần lưu cho booking.
+     *
+     * Nếu số lượng phòng trên header chưa có, method dùng số dòng chi tiết đặt phòng.
+     *
+     * @param datPhong booking cần xác định số lượng phòng.
+     * @return số lượng phòng hợp lệ.
+     */
     private int resolveSoLuongPhong(DatPhong datPhong) {
         if (datPhong.getSoLuongPhong() > 0) {
             return datPhong.getSoLuongPhong();
@@ -1430,6 +1965,14 @@ public class DatPhongDAO {
         return size <= 0 ? 1 : size;
     }
 
+    /**
+     * Xác định tổng số người của booking.
+     *
+     * Nếu header chưa có số người, method cộng số người từ các chi tiết đặt phòng.
+     *
+     * @param datPhong booking cần xác định số người.
+     * @return số người hợp lệ.
+     */
     private int resolveSoNguoi(DatPhong datPhong) {
         if (datPhong.getSoNguoi() > 0) {
             return datPhong.getSoNguoi();
@@ -1444,6 +1987,15 @@ public class DatPhongDAO {
         return total <= 0 ? 1 : total;
     }
 
+    /**
+     * Xác định tiền cọc của booking.
+     *
+     * Ưu tiên tiền cọc trên header, sau đó tổng tiền cọc,
+     * cuối cùng cộng từ các chi tiết đặt phòng.
+     *
+     * @param datPhong booking cần xác định tiền cọc.
+     * @return số tiền cọc.
+     */
     private double resolveTienCoc(DatPhong datPhong) {
         if (datPhong.getTienCoc() > 0) {
             return datPhong.getTienCoc();
@@ -1461,6 +2013,14 @@ public class DatPhongDAO {
         return total;
     }
 
+    /**
+     * Tính thành tiền của một chi tiết đặt phòng.
+     *
+     * Thành tiền được tính bằng giá áp dụng nhân với số đêm/ngày lưu trú tối thiểu là 1.
+     *
+     * @param detail chi tiết đặt phòng cần tính thành tiền.
+     * @return thành tiền của chi tiết.
+     */
     private double calculateThanhTien(ChiTietDatPhong detail) {
         LocalDate checkIn = detail.getCheckInDuKien();
         LocalDate checkOut = detail.getCheckOutDuKien();
@@ -1474,18 +2034,49 @@ public class DatPhongDAO {
         return detail.getGiaApDung() * nights;
     }
 
+    /**
+     * Xác định loại ngày hiển thị cho một ngày cụ thể.
+     *
+     * @param date ngày cần xác định.
+     * @return loại ngày hiển thị.
+     */
     public String determineLoaiNgay(LocalDate date) {
         return toDayTypeDisplay(resolveDayTypeKey(date));
     }
 
+    /**
+     * Xác định loại ngày hiển thị cho khoảng lưu trú.
+     *
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return loại ngày hiển thị.
+     */
     public String determineLoaiNgay(LocalDate checkIn, LocalDate checkOut) {
         return toDayTypeDisplay(resolveDayTypeKey(checkIn, checkOut));
     }
 
+    /**
+     * Xác định giá phòng áp dụng theo mã bảng giá và khoảng ngày.
+     *
+     * @param maBangGia mã bảng giá.
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return kết quả phân giải giá phòng.
+     */
     public RoomRateResolution resolveRoomRate(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
         return resolveRoomRateWithSurcharge(maBangGia, checkIn, checkOut);
     }
 
+    /**
+     * Áp dụng giá phòng đã phân giải vào chi tiết đặt phòng.
+     *
+     * Method cập nhật giá áp dụng, mã bảng giá, mã chi tiết bảng giá và ghi chú giá.
+     *
+     * @param detail chi tiết đặt phòng cần áp dụng giá.
+     * @param maBangGia mã bảng giá ưu tiên.
+     * @param defaultCheckIn ngày nhận phòng mặc định.
+     * @param defaultCheckOut ngày trả phòng mặc định.
+     */
     private void applyResolvedRoomRate(ChiTietDatPhong detail, String maBangGia, LocalDate defaultCheckIn, LocalDate defaultCheckOut) {
         if (detail == null) {
             return;
@@ -1499,6 +2090,18 @@ public class DatPhongDAO {
         detail.setGhiChu(buildRateNote(resolution));
     }
 
+    /**
+     * Xác định bảng giá phù hợp cho một chi tiết đặt phòng.
+     *
+     * Method ưu tiên bảng giá của booking, sau đó dựa vào loại phòng
+     * để tìm bảng giá đang áp dụng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param detail chi tiết đặt phòng cần xác định bảng giá.
+     * @param defaultMaBangGia mã bảng giá mặc định từ booking.
+     * @return mã bảng giá phù hợp.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private String resolveBangGiaForDetail(Connection con, ChiTietDatPhong detail, String defaultMaBangGia) throws SQLException {
         if (detail == null) {
             return defaultMaBangGia;
@@ -1520,7 +2123,14 @@ public class DatPhongDAO {
         }
         return defaultIfEmpty(detail.getMaBangGia(), defaultMaBangGia);
     }
-
+    /**
+     * Tìm mã loại phòng theo mã phòng.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maPhong mã phòng cần tìm loại phòng.
+     * @return mã loại phòng nếu tìm thấy, ngược lại trả về null.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private Integer findRoomTypeIdByRoom(Connection con, int maPhong) throws SQLException {
         try (PreparedStatement stmt = con.prepareStatement("SELECT TOP 1 maLoaiPhong FROM Phong WHERE maPhong = ?")) {
             stmt.setInt(1, maPhong);
@@ -1533,6 +2143,18 @@ public class DatPhongDAO {
         return null;
     }
 
+    /**
+     * Tìm bảng giá đang áp dụng theo loại phòng.
+     *
+     * Nếu có bảng giá ưu tiên, method sẽ ưu tiên bảng giá đó trước,
+     * sau đó mới xét các bảng giá đang áp dụng khác.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maLoaiPhong mã loại phòng.
+     * @param preferredBangGia mã bảng giá ưu tiên, có thể null.
+     * @return mã bảng giá đang áp dụng nếu tìm thấy, ngược lại trả về null.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private Integer findAppliedBangGiaByRoomType(Connection con, int maLoaiPhong, Integer preferredBangGia) throws SQLException {
         String sql = "SELECT TOP 1 maBangGia FROM BangGia WHERE maLoaiPhong = ? AND trangThai = N'Đang áp dụng' "
                 + "ORDER BY CASE WHEN ? IS NOT NULL AND maBangGia = ? THEN 0 ELSE 1 END, maBangGia DESC";
@@ -1554,6 +2176,14 @@ public class DatPhongDAO {
         return null;
     }
 
+    /**
+     * Tạo ghi chú mô tả cách áp dụng giá cho chi tiết đặt phòng.
+     *
+     * Ghi chú gồm loại ngày, loại giá, giá cơ bản, phụ thu và thành tiền nếu có.
+     *
+     * @param resolution kết quả phân giải giá phòng.
+     * @return chuỗi ghi chú giá.
+     */
     private String buildRateNote(RoomRateResolution resolution) {
         if (resolution == null) {
             return "";
@@ -1571,6 +2201,12 @@ public class DatPhongDAO {
         return note;
     }
 
+    /**
+     * Kiểm tra một ngày có phải cuối tuần hay không.
+     *
+     * @param date ngày cần kiểm tra.
+     * @return true nếu là thứ Bảy hoặc Chủ nhật.
+     */
     private boolean isWeekend(LocalDate date) {
         if (date == null) {
             return false;
@@ -1579,6 +2215,15 @@ public class DatPhongDAO {
         return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
     }
 
+    /**
+     * Chọn giá trị dương nhỏ hơn trong hai giá trị.
+     *
+     * Nếu một trong hai giá trị không dương, method trả về giá trị dương còn lại.
+     *
+     * @param first giá trị thứ nhất.
+     * @param second giá trị thứ hai.
+     * @return giá trị dương nhỏ hơn, hoặc 0 nếu cả hai không dương.
+     */
     private double chooseLowerPositive(double first, double second) {
         if (first <= 0d) {
             return Math.max(second, 0d);
@@ -1589,6 +2234,14 @@ public class DatPhongDAO {
         return Math.min(first, second);
     }
 
+    /**
+     * Chuẩn hóa loại ngày từ chuỗi nhập hoặc chuỗi đọc từ dữ liệu.
+     *
+     * Method xử lý cả trường hợp chuỗi tiếng Việt bình thường và chuỗi lỗi mã hóa.
+     *
+     * @param value chuỗi loại ngày cần chuẩn hóa.
+     * @return loại ngày chuẩn.
+     */
     private String normalizeLoaiNgay(String value) {
         String normalized = safeTrim(value);
         if (normalized.isEmpty()) {
@@ -1604,6 +2257,14 @@ public class DatPhongDAO {
         return LOAI_NGAY_THUONG;
     }
 
+    /**
+     * Chuẩn hóa loại giá từ chuỗi nhập hoặc chuỗi đọc từ dữ liệu.
+     *
+     * Method xử lý các loại giá theo ngày, qua đêm, giá lễ, giá cuối tuần và theo giờ.
+     *
+     * @param value chuỗi loại giá cần chuẩn hóa.
+     * @return loại giá chuẩn.
+     */
     private String normalizeLoaiGia(String value) {
         String normalized = safeTrim(value);
         if (normalized.isEmpty()) {
@@ -1625,6 +2286,21 @@ public class DatPhongDAO {
         return LOAI_GIA_THEO_NGAY;
     }
 
+    /**
+     * Phân giải giá phòng có tính phụ thu theo ngày lễ/cuối tuần.
+     *
+     * Method xác định:
+     * - Loại ngày trong khoảng lưu trú.
+     * - Loại lưu trú theo giờ/theo ngày/qua đêm.
+     * - Giá nền áp dụng.
+     * - Phụ thu áp dụng.
+     * - Giá áp dụng trung bình và tổng thành tiền.
+     *
+     * @param maBangGia mã bảng giá cần dùng.
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return kết quả phân giải giá phòng.
+     */
     public RoomRateResolution resolveRoomRateWithSurcharge(String maBangGia, LocalDate checkIn, LocalDate checkOut) {
         RoomRateResolution resolution = new RoomRateResolution();
         String dayType = resolveDayTypeKey(checkIn, checkOut);
@@ -1671,6 +2347,14 @@ public class DatPhongDAO {
         return resolution;
     }
 
+    /**
+     * Xác định key loại ngày cho một ngày cụ thể.
+     *
+     * Ưu tiên ngày lễ trước, sau đó mới xét cuối tuần.
+     *
+     * @param date ngày cần xác định loại.
+     * @return key loại ngày.
+     */
     private String resolveDayTypeKey(LocalDate date) {
         if (date == null) {
             return DAY_TYPE_NORMAL;
@@ -1681,6 +2365,16 @@ public class DatPhongDAO {
         return isWeekend(date) ? DAY_TYPE_WEEKEND : DAY_TYPE_NORMAL;
     }
 
+    /**
+     * Xác định key loại ngày cho cả khoảng lưu trú.
+     *
+     * Nếu trong khoảng có ngày lễ thì ưu tiên ngày lễ.
+     * Nếu không có ngày lễ nhưng có cuối tuần thì trả về cuối tuần.
+     *
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return key loại ngày của khoảng lưu trú.
+     */
     private String resolveDayTypeKey(LocalDate checkIn, LocalDate checkOut) {
         LocalDate start = checkIn != null ? checkIn : checkOut;
         LocalDate end = checkOut != null ? checkOut : checkIn;
@@ -1703,6 +2397,16 @@ public class DatPhongDAO {
         return hasWeekend ? DAY_TYPE_WEEKEND : DAY_TYPE_NORMAL;
     }
 
+    /**
+     * Tạo mô tả loại ngày cho khoảng lưu trú.
+     *
+     * Nếu khoảng lưu trú có nhiều loại ngày, method trả về mô tả tổng quát
+     * như có ngày lễ hoặc có cuối tuần trong khoảng lưu trú.
+     *
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return mô tả loại ngày.
+     */
     private String buildDayTypeSummary(LocalDate checkIn, LocalDate checkOut) {
         LocalDate start = checkIn != null ? checkIn : checkOut;
         LocalDate end = checkOut != null ? checkOut : checkIn;
@@ -1742,6 +2446,14 @@ public class DatPhongDAO {
         return "C\u00f3 cu\u1ed1i tu\u1ea7n trong kho\u1ea3ng l\u01b0u tr\u00fa";
     }
 
+    /**
+     * Tạo mô tả loại giá/lưu trú.
+     *
+     * @param stayType key loại lưu trú.
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return mô tả loại giá áp dụng.
+     */
     private String buildStayTypeSummary(String stayType, LocalDate checkIn, LocalDate checkOut) {
         if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
             return "Qua \u0111\u00eam - 1 \u0111\u00eam";
@@ -1752,7 +2464,17 @@ public class DatPhongDAO {
         long soNgay = resolvePricingUnits(STAY_TYPE_DAILY, checkIn, checkOut);
         return "Theo ng\u00e0y - " + Math.max(1L, soNgay) + " ng\u00e0y";
     }
-
+    /**
+     * Xác định key loại lưu trú dựa trên ngày nhận và ngày trả.
+     *
+     * Nếu không đủ dữ liệu hoặc ngày trả không sau ngày nhận, method xem như theo giờ.
+     * Nếu khoảng cách là 1 ngày, method xem như qua đêm.
+     * Các trường hợp còn lại xem như theo ngày.
+     *
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return key loại lưu trú.
+     */
     private String resolveStayTypeKey(LocalDate checkIn, LocalDate checkOut) {
         if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
             return STAY_TYPE_HOURLY;
@@ -1761,6 +2483,15 @@ public class DatPhongDAO {
         return soDem == 1L ? STAY_TYPE_OVERNIGHT : STAY_TYPE_DAILY;
     }
 
+    /**
+     * Tạo danh sách ngày cần tính giá trong khoảng lưu trú.
+     *
+     * Với đặt phòng nhiều ngày, danh sách bao gồm các ngày từ checkIn đến trước checkOut.
+     *
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return danh sách ngày dùng để tính giá/phụ thu.
+     */
     private List<LocalDate> resolvePricingDates(LocalDate checkIn, LocalDate checkOut) {
         List<LocalDate> pricingDates = new ArrayList<LocalDate>();
         LocalDate start = checkIn != null ? checkIn : checkOut;
@@ -1780,6 +2511,13 @@ public class DatPhongDAO {
         return pricingDates;
     }
 
+    /**
+     * Lấy giá cơ bản theo loại lưu trú.
+     *
+     * @param detail chi tiết bảng giá.
+     * @param stayType key loại lưu trú.
+     * @return giá cơ bản phù hợp.
+     */
     private double resolveBaseRate(ChiTietBangGia detail, String stayType) {
         if (detail == null) {
             return 0d;
@@ -1793,6 +2531,16 @@ public class DatPhongDAO {
         return detail.getGiaTheoNgay();
     }
 
+    /**
+     * Tính tổng giá cơ bản theo loại lưu trú và số đơn vị tính giá.
+     *
+     * @param detail chi tiết bảng giá.
+     * @param stayType key loại lưu trú.
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @param pricingUnits số đơn vị tính giá.
+     * @return tổng giá cơ bản.
+     */
     private double resolveBaseAmount(ChiTietBangGia detail, String stayType, LocalDate checkIn, LocalDate checkOut, long pricingUnits) {
         double baseRate = Math.max(resolveBaseRate(detail, stayType), 0d);
         if (STAY_TYPE_DAILY.equals(stayType)) {
@@ -1801,6 +2549,13 @@ public class DatPhongDAO {
         return baseRate * Math.max(pricingUnits, 1L);
     }
 
+    /**
+     * Lấy phụ thu theo loại ngày.
+     *
+     * @param detail chi tiết bảng giá.
+     * @param dayType key loại ngày.
+     * @return phụ thu tương ứng.
+     */
     private double resolveSurcharge(ChiTietBangGia detail, String dayType) {
         if (detail == null) {
             return 0d;
@@ -1814,6 +2569,18 @@ public class DatPhongDAO {
         return 0d;
     }
 
+    /**
+     * Tính tổng phụ thu cho khoảng lưu trú.
+     *
+     * Nếu lưu trú theo ngày, method cộng phụ thu từng ngày.
+     * Các loại lưu trú khác lấy phụ thu theo loại ngày của toàn khoảng.
+     *
+     * @param detail chi tiết bảng giá.
+     * @param stayType key loại lưu trú.
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return tổng phụ thu.
+     */
     private double resolveSurchargeAmount(ChiTietBangGia detail, String stayType, LocalDate checkIn, LocalDate checkOut) {
         if (detail == null) {
             return 0d;
@@ -1828,6 +2595,17 @@ public class DatPhongDAO {
         return Math.max(resolveSurcharge(detail, resolveDayTypeKey(checkIn, checkOut)), 0d);
     }
 
+    /**
+     * Xác định số đơn vị tính giá.
+     *
+     * Với lưu trú theo ngày, đơn vị là số ngày giữa checkIn và checkOut.
+     * Với các loại lưu trú khác, đơn vị mặc định là 1.
+     *
+     * @param stayType key loại lưu trú.
+     * @param checkIn ngày nhận phòng.
+     * @param checkOut ngày trả phòng.
+     * @return số đơn vị tính giá.
+     */
     private long resolvePricingUnits(String stayType, LocalDate checkIn, LocalDate checkOut) {
         if (!STAY_TYPE_DAILY.equals(stayType)) {
             return 1L;
@@ -1838,6 +2616,12 @@ public class DatPhongDAO {
         return Math.max(1L, ChronoUnit.DAYS.between(checkIn, checkOut));
     }
 
+    /**
+     * Lấy giá trị dương đầu tiên trong danh sách giá trị.
+     *
+     * @param values danh sách giá trị cần kiểm tra.
+     * @return giá trị dương đầu tiên, hoặc 0 nếu không có.
+     */
     private double firstPositive(double... values) {
         if (values == null) {
             return 0d;
@@ -1850,6 +2634,12 @@ public class DatPhongDAO {
         return 0d;
     }
 
+    /**
+     * Chuyển key loại ngày sang chuỗi hiển thị.
+     *
+     * @param dayType key loại ngày.
+     * @return chuỗi loại ngày hiển thị.
+     */
     private String toDayTypeDisplay(String dayType) {
         if (DAY_TYPE_HOLIDAY.equals(dayType)) {
             return DISPLAY_LOAI_NGAY_LE;
@@ -1860,6 +2650,12 @@ public class DatPhongDAO {
         return DISPLAY_LOAI_NGAY_THUONG;
     }
 
+    /**
+     * Chuyển key loại lưu trú sang chuỗi hiển thị.
+     *
+     * @param stayType key loại lưu trú.
+     * @return chuỗi loại giá/lưu trú hiển thị.
+     */
     private String toStayTypeDisplay(String stayType) {
         if (STAY_TYPE_OVERNIGHT.equals(stayType)) {
             return DISPLAY_LOAI_GIA_QUA_DEM;
@@ -1869,7 +2665,12 @@ public class DatPhongDAO {
         }
         return DISPLAY_LOAI_GIA_THEO_NGAY;
     }
-
+    /**
+     * Xác định trạng thái phòng tương ứng với trạng thái booking.
+     *
+     * @param bookingStatus trạng thái đặt phòng.
+     * @return trạng thái phòng tương ứng.
+     */
     private String resolveRoomStatusForBooking(String bookingStatus) {
         String status = safeTrim(bookingStatus);
         if (STATUS_ACTIVE.equalsIgnoreCase(status)
@@ -1893,6 +2694,18 @@ public class DatPhongDAO {
         return "Đã đặt";
     }
 
+    /**
+     * Xác định trạng thái của một chi tiết đặt phòng.
+     *
+     * Trạng thái chi tiết dựa trên trạng thái booking, thông tin phòng,
+     * lưu trú gần nhất và thời gian check-out gần nhất.
+     *
+     * @param bookingStatus trạng thái booking.
+     * @param soPhong số phòng của chi tiết.
+     * @param latestStayId mã lưu trú gần nhất nếu có.
+     * @param latestCheckOut thời gian check-out gần nhất nếu có.
+     * @return trạng thái chi tiết đặt phòng.
+     */
     private String resolveDetailStatus(String bookingStatus, String soPhong, Integer latestStayId, Timestamp latestCheckOut) {
         String status = safeTrim(bookingStatus);
         if (STATUS_CANCELLED.equalsIgnoreCase(status) || STATUS_CANCELLED_BOOKING.equalsIgnoreCase(status)) {
@@ -1923,6 +2736,20 @@ public class DatPhongDAO {
         return status.isEmpty() ? "Đã gán phòng" : status;
     }
 
+    /**
+     * Xác định trạng thái booking dựa trên dữ liệu chi tiết đặt phòng và lưu trú.
+     *
+     * Method ưu tiên:
+     * - Giữ trạng thái hủy nếu booking đã hủy.
+     * - Đã thanh toán nếu booking đã thanh toán đủ.
+     * - Đang ở nếu còn phòng đang lưu trú.
+     * - Chờ thanh toán nếu tất cả chi tiết đã check-out.
+     * - Chờ check-in nếu chưa phát sinh lưu trú.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param datPhong booking cần xác định trạng thái.
+     * @return trạng thái booking sau khi tính toán.
+     */
     private String resolveBookingStatus(Connection con, DatPhong datPhong) {
         if (con == null || datPhong == null) {
             return "";
@@ -1986,10 +2813,26 @@ public class DatPhongDAO {
         return currentStatus.isEmpty() ? STATUS_PENDING_CHECKIN : currentStatus;
     }
 
+    /**
+     * Kiểm tra booking đã thanh toán đầy đủ hay chưa.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maDatPhong mã đặt phòng.
+     * @return true nếu booking đã thanh toán đầy đủ.
+     * @throws SQLException nếu xảy ra lỗi truy vấn cơ sở dữ liệu.
+     */
     private boolean isBookingPaid(Connection con, int maDatPhong) throws SQLException {
         return isBookingFullyPaid(con, maDatPhong);
     }
 
+    /**
+     * Gán giá trị Integer có thể null vào PreparedStatement.
+     *
+     * @param stmt PreparedStatement cần gán tham số.
+     * @param index vị trí tham số.
+     * @param value chuỗi cần chuyển sang Integer.
+     * @throws SQLException nếu xảy ra lỗi khi gán tham số.
+     */
     private void setNullableInt(PreparedStatement stmt, int index, String value) throws SQLException {
         Integer parsed = parseIntOrNull(value);
         if (parsed == null) {
@@ -1999,6 +2842,12 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Chuyển chuỗi sang Integer.
+     *
+     * @param value chuỗi cần chuyển đổi.
+     * @return Integer nếu chuyển được, ngược lại trả về null.
+     */
     private Integer parseIntOrNull(String value) {
         try {
             if (value == null || value.trim().isEmpty()) {
@@ -2010,45 +2859,113 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Chuyển LocalDate sang java.sql.Date.
+     *
+     * @param value ngày cần chuyển.
+     * @return java.sql.Date tương ứng, hoặc null nếu value null.
+     */
     private Date toSqlDate(LocalDate value) {
         return value == null ? null : Date.valueOf(value);
     }
 
+    /**
+     * Chuyển LocalDate sang LocalDateTime theo mốc giờ mặc định của chi tiết đặt phòng.
+     *
+     * @param value ngày cần chuyển.
+     * @return LocalDateTime tại DETAIL_BOOKING_BOUNDARY_TIME, hoặc null nếu value null.
+     */
     private LocalDateTime toDetailScheduleDateTime(LocalDate value) {
         return value == null ? null : LocalDateTime.of(value, DETAIL_BOOKING_BOUNDARY_TIME);
     }
 
+    /**
+     * Chuyển LocalDate sang Timestamp theo mốc giờ mặc định của chi tiết đặt phòng.
+     *
+     * @param value ngày cần chuyển.
+     * @return Timestamp tương ứng, hoặc null nếu value null.
+     */
     private Timestamp toDetailScheduleTimestamp(LocalDate value) {
         return value == null ? null : Timestamp.valueOf(toDetailScheduleDateTime(value));
     }
 
+    /**
+     * Chuyển Timestamp sang LocalDateTime.
+     *
+     * @param value Timestamp cần chuyển.
+     * @return LocalDateTime tương ứng, hoặc null nếu value null.
+     */
     private LocalDateTime toLocalDateTime(Timestamp value) {
         return value == null ? null : value.toLocalDateTime();
     }
 
+    /**
+     * Tạo biểu thức SQL lấy thời gian check-in dự kiến của chi tiết đặt phòng.
+     *
+     * Nếu chi tiết chưa có checkInDuKien, hệ thống lấy ngày nhận phòng của DatPhong
+     * cộng với mốc giờ mặc định.
+     *
+     * @param detailAlias alias của bảng ChiTietDatPhong.
+     * @param headerAlias alias của bảng DatPhong.
+     * @return biểu thức SQL lấy check-in dự kiến.
+     */
     private String buildDetailCheckInExpr(String detailAlias, String headerAlias) {
         return "COALESCE(" + detailAlias + ".checkInDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour()
                 + ", CAST(" + headerAlias + ".ngayNhanPhong AS DATETIME2)))";
     }
 
+    /**
+     * Tạo biểu thức SQL lấy thời gian check-out dự kiến của chi tiết đặt phòng.
+     *
+     * Nếu chi tiết chưa có checkOutDuKien, hệ thống lấy ngày trả phòng của DatPhong
+     * cộng với mốc giờ mặc định.
+     *
+     * @param detailAlias alias của bảng ChiTietDatPhong.
+     * @param headerAlias alias của bảng DatPhong.
+     * @return biểu thức SQL lấy check-out dự kiến.
+     */
     private String buildDetailCheckOutExpr(String detailAlias, String headerAlias) {
         return "COALESCE(" + detailAlias + ".checkOutDuKien, DATEADD(HOUR, " + DETAIL_BOOKING_BOUNDARY_TIME.getHour()
                 + ", CAST(" + headerAlias + ".ngayTraPhong AS DATETIME2)))";
     }
 
+    /**
+     * Chuyển java.sql.Date sang LocalDate.
+     *
+     * @param value ngày SQL cần chuyển.
+     * @return LocalDate tương ứng, hoặc null nếu value null.
+     */
     private LocalDate toLocalDate(Date value) {
         return value == null ? null : value.toLocalDate();
     }
 
+    /**
+     * Cắt khoảng trắng đầu/cuối của chuỗi.
+     *
+     * @param value chuỗi cần xử lý.
+     * @return chuỗi đã trim, hoặc chuỗi rỗng nếu value null.
+     */
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Trả về fallback nếu chuỗi value rỗng.
+     *
+     * @param value giá trị cần kiểm tra.
+     * @param fallback giá trị thay thế khi value rỗng.
+     * @return value đã trim hoặc fallback.
+     */
     private String defaultIfEmpty(String value, String fallback) {
         String trimmed = safeTrim(value);
         return trimmed.isEmpty() ? fallback : trimmed;
     }
 
+    /**
+     * Rollback transaction, bỏ qua lỗi nếu rollback thất bại.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void rollbackQuietly(Connection con) {
         try {
             if (con != null) {
@@ -2058,6 +2975,11 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * Bật lại auto-commit cho connection, bỏ qua lỗi nếu thao tác thất bại.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     */
     private void resetAutoCommit(Connection con) {
         try {
             if (con != null) {
@@ -2068,18 +2990,34 @@ public class DatPhongDAO {
     }
 
 
+    /**
+     * Lấy connection hiện tại từ ConnectDB.
+     *
+     * @return connection hiện tại, hoặc null nếu chưa kết nối.
+     */
     private Connection getReadyConnection() {
         return ConnectDB.getConnection();
     }
 
+    /**
+     * Xóa thông báo lỗi gần nhất trước khi thực hiện thao tác mới.
+     */
     private void clearLastError() {
         lastErrorMessage = "";
     }
 
+    /**
+     * Lưu thông báo lỗi gần nhất.
+     *
+     * @param message nội dung lỗi cần lưu.
+     */
     private void setLastError(String message) {
         lastErrorMessage = message == null ? "" : message;
     }
 
+    /**
+     * DTO chứa thông tin phòng khả dụng khi chọn phòng cho đặt phòng.
+     */
     public static final class AvailableRoomInfo {
         private int maPhong;
         private int maLoaiPhong;
@@ -2155,6 +3093,18 @@ public class DatPhongDAO {
         }
     }
 
+    /**
+     * DTO chứa kết quả phân giải giá phòng.
+     *
+     * Đối tượng này lưu:
+     * - Loại ngày.
+     * - Loại lưu trú.
+     * - Giá nền.
+     * - Phụ thu.
+     * - Giá áp dụng.
+     * - Thành tiền.
+     * - Mã chi tiết bảng giá được dùng.
+     */
     public static final class RoomRateResolution {
         private String loaiNgayKey;
         private String loaiLuuTruKey;
@@ -2248,4 +3198,3 @@ public class DatPhongDAO {
         }
     }
 }
-

@@ -22,7 +22,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * DAO xử lý dữ liệu cho màn hình Dashboard.
+ *
+ * Lớp này phụ trách:
+ * - Lấy số liệu tổng quan về phòng, đặt phòng, thanh toán.
+ * - Lấy dữ liệu biểu đồ doanh thu và số lượng đặt phòng.
+ * - Lấy danh sách công việc cần xử lý trong ngày.
+ * - Lấy dữ liệu sơ đồ Gantt theo phòng.
+ */
 public class DashboardDAO {
+    // Các trạng thái phòng dùng để thống kê và hiển thị trên Dashboard.
     private static final String ROOM_STATUS_OPERATIONAL = "Ho\u1ea1t \u0111\u1ed9ng";
     private static final String ROOM_STATUS_EMPTY = "Tr\u1ed1ng";
     private static final String ROOM_STATUS_OCCUPIED = "\u0110ang \u1edf";
@@ -31,6 +41,7 @@ public class DashboardDAO {
     private static final String ROOM_STATUS_MAINTENANCE = "B\u1ea3o tr\u00ec";
     private static final String GANTT_STATUS_TEXT_BOOKED = "\u0110\u1eb7t";
 
+    // Các trạng thái đặt phòng dùng để lọc dữ liệu booking.
     private static final String BOOKING_STATUS_BOOKED = "\u0110\u00e3 \u0111\u1eb7t";
     private static final String BOOKING_STATUS_CONFIRMED = "\u0110\u00e3 x\u00e1c nh\u1eadn";
     private static final String BOOKING_STATUS_DEPOSITED = "\u0110\u00e3 c\u1ecdc";
@@ -42,6 +53,7 @@ public class DashboardDAO {
     private static final String BOOKING_STATUS_CHECKED_OUT = "\u0110\u00e3 check-out";
     private static final String BOOKING_STATUS_PAID = "\u0110\u00e3 thanh to\u00e1n";
 
+    // Các hằng số phục vụ thống kê thanh toán và trạng thái ô trong sơ đồ Gantt.
     private static final String INVOICE_STATUS_PENDING = "Ch\u1edd thanh to\u00e1n";
     private static final String PAYMENT_TYPE_DEFAULT = "THANH_TOAN";
     private static final String GANTT_STATUS_EMPTY = "E";
@@ -49,21 +61,50 @@ public class DashboardDAO {
     private static final String GANTT_STATUS_PENDING_CHECKIN = "C";
     private static final String GANTT_STATUS_OCCUPIED = "O";
     private static final String GANTT_STATUS_MAINTENANCE = "M";
+
+    // Độ ưu tiên của trạng thái khi nhiều nguồn dữ liệu cùng tác động lên một ô Gantt.
     private static final int GANTT_PRIORITY_EMPTY = 1;
     private static final int GANTT_PRIORITY_BOOKED = 2;
     private static final int GANTT_PRIORITY_PENDING_CHECKIN = 3;
     private static final int GANTT_PRIORITY_OCCUPIED = 4;
     private static final int GANTT_PRIORITY_MAINTENANCE = 5;
+
+    // Định dạng ngày giờ dùng cho biểu đồ và danh sách công việc.
     private static final DateTimeFormatter CHART_LABEL_FORMAT = DateTimeFormatter.ofPattern("dd/MM");
     private static final DateTimeFormatter TASK_TIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter TASK_DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
+    /**
+     * Lưu thông báo lỗi gần nhất để lớp gọi có thể hiển thị nếu cần.
+     */
     private String lastErrorMessage = "";
 
+    /**
+     * Lấy thông báo lỗi gần nhất phát sinh trong DAO.
+     *
+     * @return nội dung lỗi gần nhất, rỗng nếu chưa có lỗi.
+     */
     public String getLastErrorMessage() {
         return lastErrorMessage;
     }
 
+    /**
+     * Lấy toàn bộ số liệu tổng quan cho Dashboard.
+     *
+     * Các số liệu gồm:
+     * - Số phòng hoạt động.
+     * - Số phòng đang ở.
+     * - Số phòng đã đặt.
+     * - Số phòng bảo trì.
+     * - Số booking hôm nay.
+     * - Số booking chờ check-in hôm nay.
+     * - Số hóa đơn chờ thanh toán.
+     * - Số booking cần check-out hôm nay.
+     * - Doanh thu hôm nay.
+     * - Doanh thu tháng hiện tại.
+     *
+     * @return đối tượng DashboardSummary chứa các số liệu tổng quan.
+     */
     public DashboardSummary getDashboardSummary() {
         clearLastError();
         DashboardSummary summary = new DashboardSummary();
@@ -85,6 +126,11 @@ public class DashboardDAO {
         return summary;
     }
 
+    /**
+     * Thống kê số lượng phòng theo từng trạng thái chính.
+     *
+     * @return map có key là trạng thái phòng, value là số lượng phòng theo trạng thái đó.
+     */
     public Map<String, Integer> getRoomStatusSummary() {
         Map<String, Integer> result = new LinkedHashMap<String, Integer>();
         result.put(ROOM_STATUS_OPERATIONAL, Integer.valueOf(0));
@@ -127,6 +173,11 @@ public class DashboardDAO {
         return result;
     }
 
+    /**
+     * Thống kê số lượng booking theo một số nhóm trạng thái dùng trên Dashboard.
+     *
+     * @return map chứa số lượng booking hôm nay, chờ check-in, đang lưu trú và đã thanh toán.
+     */
     public Map<String, Integer> getBookingStatusSummary() {
         Map<String, Integer> result = new LinkedHashMap<String, Integer>();
         result.put("bookingHomNay", Integer.valueOf(0));
@@ -167,11 +218,21 @@ public class DashboardDAO {
         return result;
     }
 
+    /**
+     * Đếm số booking được tạo trong ngày hiện tại.
+     *
+     * @return số booking hôm nay.
+     */
     public int getTodayBookingCount() {
         String sql = "SELECT COUNT(1) FROM DatPhong WHERE CAST(ngayDat AS DATE) = CAST(GETDATE() AS DATE)";
         return queryForCount(sql);
     }
 
+    /**
+     * Đếm số booking có ngày nhận phòng là hôm nay và đang chờ check-in.
+     *
+     * @return số booking chờ check-in hôm nay.
+     */
     public int getPendingCheckinTodayCount() {
         String sql = "SELECT COUNT(1) "
                 + "FROM DatPhong "
@@ -196,6 +257,11 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Đếm số booking đến hạn check-out trong ngày hiện tại.
+     *
+     * @return số booking cần check-out hôm nay.
+     */
     public int getCheckoutDueTodayCount() {
         String sql = "SELECT COUNT(DISTINCT dp.maDatPhong) "
                 + "FROM DatPhong dp "
@@ -218,6 +284,14 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Đếm số hóa đơn đang chờ thanh toán.
+     *
+     * Method có kiểm tra sự tồn tại của cột trangThai trong bảng HoaDon
+     * để tránh lỗi nếu database chưa có cột này.
+     *
+     * @return số hóa đơn chờ thanh toán.
+     */
     public int getPendingPaymentCount() {
         try (Connection con = getReadyConnection()) {
             if (con == null || !hasColumn(con, "HoaDon", "trangThai")) {
@@ -237,16 +311,33 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Tính doanh thu trong ngày hiện tại.
+     *
+     * @return doanh thu hôm nay.
+     */
     public double getRevenueToday() {
         LocalDate today = LocalDate.now();
         return queryRevenueBetween(today, today.plusDays(1L));
     }
 
+    /**
+     * Tính doanh thu trong tháng hiện tại.
+     *
+     * @return doanh thu tháng hiện tại.
+     */
     public double getRevenueThisMonth() {
         LocalDate firstDay = YearMonth.now().atDay(1);
         return queryRevenueBetween(firstDay, firstDay.plusMonths(1L));
     }
-
+    /**
+     * Lấy dữ liệu doanh thu trong 7 ngày gần nhất để vẽ biểu đồ.
+     *
+     * Nếu ngày nào không có doanh thu, giá trị ngày đó vẫn được giữ là 0
+     * để biểu đồ luôn đủ 7 điểm dữ liệu.
+     *
+     * @return danh sách điểm dữ liệu doanh thu 7 ngày gần nhất.
+     */
     public List<DashboardChartPoint> getRevenueLast7Days() {
         clearLastError();
         LocalDate endDate = LocalDate.now();
@@ -294,6 +385,14 @@ public class DashboardDAO {
         return result;
     }
 
+    /**
+     * Lấy dữ liệu số lượng đặt phòng trong 7 ngày gần nhất để vẽ biểu đồ.
+     *
+     * Nếu ngày nào không có booking, giá trị ngày đó vẫn được giữ là 0
+     * để biểu đồ luôn đủ 7 điểm dữ liệu.
+     *
+     * @return danh sách điểm dữ liệu booking 7 ngày gần nhất.
+     */
     public List<DashboardChartPoint> getBookingLast7Days() {
         clearLastError();
         LocalDate endDate = LocalDate.now();
@@ -329,6 +428,19 @@ public class DashboardDAO {
         return result;
     }
 
+    /**
+     * Lấy danh sách công việc cần xử lý trong ngày.
+     *
+     * Danh sách gồm:
+     * - Booking chờ check-in.
+     * - Booking đến hạn check-out.
+     * - Hóa đơn chờ thanh toán.
+     *
+     * Kết quả được sắp xếp theo độ ưu tiên và thời gian,
+     * sau đó giới hạn tối đa 12 dòng để hiển thị trên Dashboard.
+     *
+     * @return danh sách công việc trong ngày.
+     */
     public List<DashboardTaskRow> getTodayTasks() {
         clearLastError();
         List<DashboardTaskRow> rows = new ArrayList<DashboardTaskRow>();
@@ -354,6 +466,16 @@ public class DashboardDAO {
         return rows;
     }
 
+    /**
+     * Lấy dữ liệu Gantt theo phòng trong một khoảng ngày.
+     *
+     * Mỗi phòng sẽ có một dòng, mỗi ngày là một ô trạng thái.
+     * Sau khi tạo dữ liệu nền, method sẽ áp dụng thêm trạng thái đang ở và đã đặt.
+     *
+     * @param startDate ngày bắt đầu hiển thị.
+     * @param dayCount số ngày cần hiển thị.
+     * @return danh sách dòng Gantt theo phòng.
+     */
     public List<DashboardGanttRow> getRoomGanttRows(LocalDate startDate, int dayCount) {
         clearLastError();
         List<DashboardGanttRow> rows = new ArrayList<DashboardGanttRow>();
@@ -373,6 +495,11 @@ public class DashboardDAO {
         return rows;
     }
 
+    /**
+     * Lấy danh sách booking chờ check-in trong ngày để hiển thị ở khu vực công việc.
+     *
+     * @return danh sách công việc check-in.
+     */
     private List<DashboardTaskRow> getPendingCheckinTasks() {
         List<DashboardTaskRow> rows = new ArrayList<DashboardTaskRow>();
         String sql = "SELECT TOP 6 dp.maDatPhong, kh.hoTen, dp.ngayNhanPhong, dp.trangThai, "
@@ -421,7 +548,11 @@ public class DashboardDAO {
         }
         return rows;
     }
-
+    /**
+     * Lấy danh sách booking đến hạn check-out trong ngày để hiển thị ở khu vực công việc.
+     *
+     * @return danh sách công việc check-out.
+     */
     private List<DashboardTaskRow> getCheckoutDueTodayTasks() {
         List<DashboardTaskRow> rows = new ArrayList<DashboardTaskRow>();
         String sql = "SELECT TOP 6 dp.maDatPhong, kh.hoTen, dp.ngayTraPhong AS checkOutDue, dp.trangThai, "
@@ -471,6 +602,14 @@ public class DashboardDAO {
         return rows;
     }
 
+    /**
+     * Lấy danh sách hóa đơn đang chờ thanh toán để hiển thị ở khu vực công việc.
+     *
+     * Method có kiểm tra cột trangThai của bảng HoaDon trước khi truy vấn,
+     * giúp tránh lỗi nếu database chưa có cột này.
+     *
+     * @return danh sách công việc thanh toán.
+     */
     private List<DashboardTaskRow> getPendingPaymentTasks() {
         List<DashboardTaskRow> rows = new ArrayList<DashboardTaskRow>();
         try (Connection con = getReadyConnection()) {
@@ -521,6 +660,17 @@ public class DashboardDAO {
         return rows;
     }
 
+    /**
+     * Tạo dữ liệu nền cho sơ đồ Gantt theo phòng.
+     *
+     * Mỗi phòng được tạo thành một DashboardGanttRow.
+     * Mỗi ngày trong khoảng hiển thị được tạo thành một DashboardGanttCell.
+     * Trạng thái ban đầu của ô là trống hoặc bảo trì tùy theo trạng thái phòng.
+     *
+     * @param startDate ngày bắt đầu hiển thị.
+     * @param dayCount số ngày cần tạo ô Gantt.
+     * @return map các dòng Gantt, key là mã phòng.
+     */
     private Map<Integer, DashboardGanttRow> loadBaseGanttRows(LocalDate startDate, int dayCount) {
         Map<Integer, DashboardGanttRow> rows = new LinkedHashMap<Integer, DashboardGanttRow>();
         String sql = "SELECT p.maPhong, p.soPhong, p.tang, p.khuVuc, p.sucChuaChuan, p.sucChuaToiDa, p.trangThai, "
@@ -556,6 +706,8 @@ public class DashboardDAO {
                         cell.setLoaiPhong(row.getLoaiPhong());
                         cell.setKhuVuc(row.getKhuVuc());
                         cell.setPhongTrangThai(row.getTrangThaiPhong());
+
+                        // Nếu phòng đang bảo trì hoặc không hoạt động, ô Gantt mặc định là trạng thái bảo trì.
                         if (isMaintenanceLike(row.getTrangThaiPhong())) {
                             cell.setStatusCode(GANTT_STATUS_MAINTENANCE);
                             cell.setStatusText(row.getTrangThaiPhong().isEmpty() ? ROOM_STATUS_MAINTENANCE : row.getTrangThaiPhong());
@@ -576,8 +728,16 @@ public class DashboardDAO {
             setLastError(ex.getMessage());
         }
         return rows;
-    }
-
+    }    /**
+     * Áp dụng trạng thái đang ở cho các ô Gantt dựa trên dữ liệu lưu trú đang hoạt động.
+     *
+     * Chỉ các lưu trú chưa check-out và có thời gian nằm trong khoảng hiển thị
+     * mới được áp dụng lên ô Gantt.
+     *
+     * @param rowByRoomId map dòng Gantt theo mã phòng.
+     * @param startDate ngày bắt đầu khoảng hiển thị.
+     * @param endDate ngày kết thúc khoảng hiển thị.
+     */
     private void applyOccupiedCells(Map<Integer, DashboardGanttRow> rowByRoomId, LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, "
                 + "ISNULL(kh.hoTen, N'-') AS hoTen, CAST(lt.checkIn AS DATE) AS stayFrom, "
@@ -637,6 +797,16 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Áp dụng trạng thái đã đặt/chờ check-in cho các ô Gantt dựa trên chi tiết đặt phòng.
+     *
+     * Chỉ các chi tiết đặt phòng chưa phát sinh lưu trú và có thời gian nằm trong khoảng hiển thị
+     * mới được áp dụng lên ô Gantt.
+     *
+     * @param rowByRoomId map dòng Gantt theo mã phòng.
+     * @param startDate ngày bắt đầu khoảng hiển thị.
+     * @param endDate ngày kết thúc khoảng hiển thị.
+     */
     private void applyBookedCells(Map<Integer, DashboardGanttRow> rowByRoomId, LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT dp.maDatPhong, ctdp.maChiTietDatPhong, ctdp.maPhong, "
                 + "ISNULL(kh.hoTen, N'-') AS hoTen, ISNULL(dp.trangThai, N'') AS trangThai, "
@@ -710,6 +880,12 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Chuyển trạng thái booking thành mã trạng thái hiển thị trên ô Gantt.
+     *
+     * @param bookingStatus trạng thái booking cần xử lý.
+     * @return mã trạng thái Gantt, hoặc null nếu trạng thái không cần hiển thị.
+     */
     private String resolveBookingCellStatusCode(String bookingStatus) {
         String status = safeTrim(bookingStatus);
         if (BOOKING_STATUS_BOOKED.equalsIgnoreCase(status)) {
@@ -727,6 +903,13 @@ public class DashboardDAO {
         return null;
     }
 
+    /**
+     * Xác định nội dung trạng thái hiển thị trên ô Gantt từ mã trạng thái.
+     *
+     * @param statusCode mã trạng thái Gantt.
+     * @param bookingStatus trạng thái booking gốc.
+     * @return nội dung trạng thái hiển thị.
+     */
     private String resolveBookingCellStatusText(String statusCode, String bookingStatus) {
         if (GANTT_STATUS_PENDING_CHECKIN.equalsIgnoreCase(statusCode)) {
             return ROOM_STATUS_PENDING_CHECKIN;
@@ -737,6 +920,14 @@ public class DashboardDAO {
         return safeTrim(bookingStatus);
     }
 
+    /**
+     * Lấy độ ưu tiên của một mã trạng thái Gantt.
+     *
+     * Trạng thái có độ ưu tiên cao hơn sẽ được phép ghi đè trạng thái có độ ưu tiên thấp hơn.
+     *
+     * @param statusCode mã trạng thái Gantt.
+     * @return độ ưu tiên tương ứng.
+     */
     private int resolveGanttPriority(String statusCode) {
         if (GANTT_STATUS_MAINTENANCE.equalsIgnoreCase(statusCode)) {
             return GANTT_PRIORITY_MAINTENANCE;
@@ -753,6 +944,24 @@ public class DashboardDAO {
         return GANTT_PRIORITY_EMPTY;
     }
 
+    /**
+     * Gán trạng thái và thông tin nguồn dữ liệu cho một ô Gantt.
+     *
+     * Nếu trạng thái mới có độ ưu tiên thấp hơn trạng thái hiện tại của ô,
+     * method sẽ bỏ qua để không làm mất trạng thái quan trọng hơn.
+     *
+     * @param cell ô Gantt cần cập nhật.
+     * @param statusCode mã trạng thái.
+     * @param statusText nội dung trạng thái hiển thị.
+     * @param sourceType loại nguồn dữ liệu tạo trạng thái.
+     * @param priority độ ưu tiên của trạng thái.
+     * @param maDatPhong mã đặt phòng liên quan.
+     * @param maLuuTru mã lưu trú liên quan.
+     * @param maChiTietDatPhong mã chi tiết đặt phòng liên quan.
+     * @param customerName tên khách hàng liên quan.
+     * @param fromDate ngày bắt đầu hiệu lực.
+     * @param toDate ngày kết thúc hiệu lực.
+     */
     private void applyCellState(DashboardGanttCell cell, String statusCode, String statusText, String sourceType,
                                 int priority, int maDatPhong, int maLuuTru, int maChiTietDatPhong,
                                 String customerName, LocalDate fromDate, LocalDate toDate) {
@@ -771,6 +980,14 @@ public class DashboardDAO {
         cell.setToDate(toDate);
     }
 
+    /**
+     * Kiểm tra một ngày có nằm trong khoảng từ ngày bắt đầu đến ngày kết thúc hay không.
+     *
+     * @param targetDate ngày cần kiểm tra.
+     * @param fromDate ngày bắt đầu.
+     * @param toDate ngày kết thúc, nếu null sẽ dùng fromDate.
+     * @return true nếu targetDate nằm trong khoảng [fromDate, toDate].
+     */
     private boolean isDateInside(LocalDate targetDate, LocalDate fromDate, LocalDate toDate) {
         if (targetDate == null || fromDate == null) {
             return false;
@@ -779,16 +996,40 @@ public class DashboardDAO {
         return !targetDate.isBefore(fromDate) && !targetDate.isAfter(normalizedToDate);
     }
 
+    /**
+     * Chuyển java.sql.Date sang LocalDate.
+     *
+     * @param value ngày SQL cần chuyển.
+     * @return LocalDate tương ứng, hoặc null nếu value null.
+     */
     private LocalDate toLocalDate(Date value) {
         return value == null ? null : value.toLocalDate();
     }
 
+    /**
+     * Kiểm tra trạng thái phòng có thuộc nhóm bảo trì hoặc không hoạt động hay không.
+     *
+     * @param trangThai trạng thái phòng cần kiểm tra.
+     * @return true nếu phòng thuộc nhóm không thể sử dụng.
+     */
     private boolean isMaintenanceLike(String trangThai) {
         String normalized = safeTrim(trangThai);
         return ROOM_STATUS_MAINTENANCE.equalsIgnoreCase(normalized)
                 || "Không hoạt động".equalsIgnoreCase(normalized);
     }
-
+    /**
+     * Tính tổng doanh thu trong khoảng thời gian truyền vào.
+     *
+     * Khoảng thời gian được tính theo dạng [startInclusive, endExclusive),
+     * nghĩa là lấy từ ngày bắt đầu và không bao gồm ngày kết thúc.
+     *
+     * Nếu bảng ThanhToan có cột loaiGiaoDich, method chỉ lấy giao dịch
+     * có loại mặc định PAYMENT_TYPE_DEFAULT.
+     *
+     * @param startInclusive ngày bắt đầu tính doanh thu.
+     * @param endExclusive ngày kết thúc, không bao gồm ngày này.
+     * @return tổng doanh thu trong khoảng thời gian.
+     */
     private double queryRevenueBetween(LocalDate startInclusive, LocalDate endExclusive) {
         try (Connection con = getReadyConnection()) {
             if (con == null) {
@@ -820,6 +1061,12 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Thực hiện câu truy vấn đếm đơn giản và trả về kết quả COUNT.
+     *
+     * @param sql câu SQL trả về một giá trị COUNT.
+     * @return số lượng đếm được, hoặc 0 nếu có lỗi.
+     */
     private int queryForCount(String sql) {
         try (Connection con = getReadyConnection();
              PreparedStatement stmt = con == null ? null : con.prepareStatement(sql)) {
@@ -835,6 +1082,15 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Khởi tạo danh sách điểm biểu đồ theo từng ngày trong khoảng truyền vào.
+     *
+     * Mỗi điểm ban đầu có giá trị 0 để đảm bảo biểu đồ không bị thiếu ngày.
+     *
+     * @param startDate ngày bắt đầu.
+     * @param endDate ngày kết thúc.
+     * @return danh sách điểm biểu đồ theo ngày.
+     */
     private List<DashboardChartPoint> initDateSeries(LocalDate startDate, LocalDate endDate) {
         List<DashboardChartPoint> points = new ArrayList<DashboardChartPoint>();
         LocalDate cursor = startDate;
@@ -845,6 +1101,15 @@ public class DashboardDAO {
         return points;
     }
 
+    /**
+     * Gán giá trị thực tế vào danh sách điểm biểu đồ đã khởi tạo.
+     *
+     * Method này dựa trên thứ tự ngày trong 7 ngày gần nhất để cập nhật value
+     * cho từng DashboardChartPoint.
+     *
+     * @param points danh sách điểm biểu đồ cần cập nhật.
+     * @param valuesByDate map chứa giá trị thực tế theo ngày.
+     */
     private void applySeriesValues(List<DashboardChartPoint> points, Map<LocalDate, Double> valuesByDate) {
         LocalDate cursor = LocalDate.now().minusDays(points.size() - 1L);
         for (DashboardChartPoint point : points) {
@@ -855,6 +1120,17 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Kiểm tra một bảng có tồn tại cột cụ thể hay không.
+     *
+     * Method này thường dùng để tránh lỗi khi database ở các phiên bản khác nhau
+     * có thể thiếu một số cột mới.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param tableName tên bảng cần kiểm tra.
+     * @param columnName tên cột cần kiểm tra.
+     * @return true nếu cột tồn tại, false nếu không tồn tại hoặc có lỗi.
+     */
     private boolean hasColumn(Connection con, String tableName, String columnName) {
         String sql = "SELECT COUNT(1) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ? AND COLUMN_NAME = ?";
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
@@ -868,15 +1144,34 @@ public class DashboardDAO {
         }
     }
 
+    /**
+     * Lấy connection hiện tại từ lớp ConnectDB.
+     *
+     * @return connection tới cơ sở dữ liệu, hoặc null nếu chưa kết nối.
+     */
     private Connection getReadyConnection() {
         return ConnectDB.getConnection();
     }
 
+    /**
+     * Lấy giá trị số nguyên trong map theo key.
+     *
+     * @param map map chứa dữ liệu thống kê.
+     * @param key khóa cần lấy.
+     * @return giá trị tương ứng với key, hoặc 0 nếu key không tồn tại.
+     */
     private int valueOf(Map<String, Integer> map, String key) {
         Integer value = map.get(key);
         return value == null ? 0 : value.intValue();
     }
 
+    /**
+     * Tính tổng nhiều giá trị trong map theo danh sách key.
+     *
+     * @param map map chứa dữ liệu thống kê.
+     * @param keys danh sách key cần cộng.
+     * @return tổng giá trị của các key.
+     */
     private int sum(Map<String, Integer> map, String... keys) {
         int total = 0;
         for (String key : keys) {
@@ -885,6 +1180,13 @@ public class DashboardDAO {
         return total;
     }
 
+    /**
+     * Tạo chuỗi mô tả đối tượng công việc gồm tên khách hàng và phòng.
+     *
+     * @param customerName tên khách hàng.
+     * @param roomSummary danh sách/tóm tắt phòng.
+     * @return chuỗi mô tả dùng để hiển thị trên Dashboard.
+     */
     private String buildTarget(String customerName, String roomSummary) {
         String customer = safeTrim(customerName);
         String room = safeTrim(roomSummary);
@@ -897,6 +1199,12 @@ public class DashboardDAO {
         return customer + " - Phong " + room;
     }
 
+    /**
+     * Định dạng java.sql.Date thành chuỗi ngày để hiển thị.
+     *
+     * @param value ngày cần định dạng.
+     * @return chuỗi ngày đã định dạng, hoặc "-" nếu value null.
+     */
     private String formatDate(Date value) {
         if (value == null) {
             return "-";
@@ -904,6 +1212,12 @@ public class DashboardDAO {
         return TASK_DATE_FORMAT.format(value.toLocalDate());
     }
 
+    /**
+     * Định dạng Timestamp thành chuỗi ngày giờ để hiển thị.
+     *
+     * @param value thời gian cần định dạng.
+     * @return chuỗi ngày giờ đã định dạng, hoặc "-" nếu value null.
+     */
     private String formatTimestamp(Timestamp value) {
         if (value == null) {
             return "-";
@@ -911,6 +1225,12 @@ public class DashboardDAO {
         return TASK_TIME_FORMAT.format(value.toLocalDateTime());
     }
 
+    /**
+     * Chuyển java.sql.Date sang Timestamp tại thời điểm bắt đầu ngày.
+     *
+     * @param value ngày cần chuyển.
+     * @return Timestamp tương ứng, hoặc null nếu value null.
+     */
     private Timestamp toTimestamp(Date value) {
         if (value == null) {
             return null;
@@ -918,14 +1238,30 @@ public class DashboardDAO {
         return Timestamp.valueOf(value.toLocalDate().atStartOfDay());
     }
 
+    /**
+     * Cắt khoảng trắng đầu/cuối của chuỗi.
+     *
+     * @param value chuỗi cần xử lý.
+     * @return chuỗi đã trim, hoặc chuỗi rỗng nếu value null.
+     */
     private String safeTrim(String value) {
         return value == null ? "" : value.trim();
     }
 
+    /**
+     * Xóa thông báo lỗi gần nhất trước khi thực hiện thao tác mới.
+     */
     private void clearLastError() {
         lastErrorMessage = "";
     }
 
+    /**
+     * Lưu thông báo lỗi gần nhất.
+     *
+     * Chỉ cập nhật khi message khác null và không rỗng.
+     *
+     * @param message nội dung lỗi cần lưu.
+     */
     private void setLastError(String message) {
         if (message != null && !message.trim().isEmpty()) {
             lastErrorMessage = message.trim();

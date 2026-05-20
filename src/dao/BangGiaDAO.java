@@ -33,7 +33,7 @@ public class BangGiaDAO {
     public String getLastErrorMessage() {
         return lastErrorMessage;
     }
-
+//banggia
     public List<BangGia> getAll() {
         clearLastError();
         loaiNgayCache.clear();

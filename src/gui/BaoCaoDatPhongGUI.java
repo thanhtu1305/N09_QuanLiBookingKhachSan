@@ -1,5 +1,6 @@
 package gui;
 
+import dao.BaoCaoDAO;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
@@ -31,6 +32,9 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,10 +53,11 @@ public class BaoCaoDatPhongGUI extends JFrame {
     private static final Font SECTION_FONT = new Font("Segoe UI", Font.BOLD, 16);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final String username;
     private final String role;
-    private final List<BookingReportRecord> bookingRecords = createSampleData();
+    private final BaoCaoDAO baoCaoDAO = new BaoCaoDAO();
 
     private JPanel rootPanel;
     private JComboBox<String> cboCheDoLoc;
@@ -93,6 +98,7 @@ public class BaoCaoDatPhongGUI extends JFrame {
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
         initUI();
+        resetDateInputsToCurrentMonth();
         loadBookingData(false);
         registerShortcuts();
     }
@@ -176,8 +182,8 @@ public class BaoCaoDatPhongGUI extends JFrame {
         cboCheDoLoc = createComboBox(new String[]{"Theo khoảng thời gian", "Theo ngày", "Theo tháng", "Theo năm"});
         cboThang = createComboBox(new String[]{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"});
         cboNam = createComboBox(new String[]{"2026", "2025", "2024"});
-        txtTuNgay = new AppDatePickerField("01/04/2026", true);
-        txtDenNgay = new AppDatePickerField("30/04/2026", true);
+        txtTuNgay = new AppDatePickerField("", true);
+        txtDenNgay = new AppDatePickerField("", true);
 
         left.add(createFieldGroup("Chế độ lọc", cboCheDoLoc));
         left.add(createFieldGroup("Tháng", cboThang));
@@ -304,7 +310,7 @@ public class BaoCaoDatPhongGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Chi tiết booking theo thời gian để đối chiếu nhanh khi demo.");
+        JLabel lblSub = new JLabel("Chi tiết booking theo thời gian để đối chiếu nhanh.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -349,20 +355,44 @@ public class BaoCaoDatPhongGUI extends JFrame {
     }
 
     private void loadBookingData(boolean showMessage) {
-        List<BookingReportRecord> filtered = filterRecords();
-        updateSummary(filtered);
+        ReportDateRange range = resolveSelectedDateRange(showMessage);
+        if (range == null) {
+            clearReportData();
+            return;
+        }
+
+        BaoCaoDAO.BookingSummary summary = baoCaoDAO.getBookingSummary(range.fromDate, range.toDate);
+        List<BookingReportRecord> filtered = filterRecords(loadBookingRecords(range));
+        updateSummary(summary, filtered);
         updateStatusPanel(filtered);
         reloadTable(filtered);
         chartPanel.setRecords(filtered);
         if (showMessage) {
-            showInfo("Đã cập nhật báo cáo đặt phòng.");
+            String error = baoCaoDAO.getLastErrorMessage();
+            showInfo(error.isEmpty() ? "Đã cập nhật báo cáo đặt phòng." : "Không thể tải báo cáo đặt phòng: " + error);
         }
     }
 
-    private List<BookingReportRecord> filterRecords() {
+    private List<BookingReportRecord> loadBookingRecords(ReportDateRange range) {
+        List<BookingReportRecord> records = new ArrayList<BookingReportRecord>();
+        List<BaoCaoDAO.BookingDateStat> stats = baoCaoDAO.getBookingByDate(range.fromDate, range.toDate);
+        for (BaoCaoDAO.BookingDateStat stat : stats) {
+            records.add(new BookingReportRecord(
+                    formatDate(stat.getDate()),
+                    stat.getTotalBookings(),
+                    stat.getConfirmedBookings(),
+                    stat.getPendingCheckinBookings(),
+                    stat.getCancelledBookings(),
+                    stat.getWalkInBookings()
+            ));
+        }
+        return records;
+    }
+
+    private List<BookingReportRecord> filterRecords(List<BookingReportRecord> records) {
         List<BookingReportRecord> filtered = new ArrayList<BookingReportRecord>();
         String keyword = txtTuKhoa == null ? "" : txtTuKhoa.getText().trim().toLowerCase();
-        for (BookingReportRecord record : bookingRecords) {
+        for (BookingReportRecord record : records) {
             if (!keyword.isEmpty() && !record.label.toLowerCase().contains(keyword)) {
                 continue;
             }
@@ -371,18 +401,11 @@ public class BaoCaoDatPhongGUI extends JFrame {
         return filtered;
     }
 
-    private void updateSummary(List<BookingReportRecord> records) {
-        int tongBooking = 0;
-        int daXacNhan = 0;
-        int choCheckIn = 0;
-        int daHuy = 0;
-
-        for (BookingReportRecord record : records) {
-            tongBooking += record.tongBooking;
-            daXacNhan += record.daXacNhan;
-            choCheckIn += record.choCheckIn;
-            daHuy += record.daHuy;
-        }
+    private void updateSummary(BaoCaoDAO.BookingSummary summary, List<BookingReportRecord> records) {
+        int tongBooking = summary.getTotalBookings();
+        int daXacNhan = summary.getConfirmedBookings();
+        int choCheckIn = summary.getPendingCheckinBookings();
+        int daHuy = summary.getCancelledBookings();
 
         lblTongBooking.setText(String.valueOf(tongBooking));
         lblDaXacNhan.setText(String.valueOf(daXacNhan));
@@ -418,6 +441,11 @@ public class BaoCaoDatPhongGUI extends JFrame {
 
     private void reloadTable(List<BookingReportRecord> records) {
         tableModel.setRowCount(0);
+        if (records.isEmpty()) {
+            tableModel.addRow(new Object[]{"Không có dữ liệu trong khoảng thời gian này.", 0, 0, 0, 0, 0});
+            tblBooking.setRowSelectionInterval(0, 0);
+            return;
+        }
         for (BookingReportRecord record : records) {
             tableModel.addRow(new Object[]{
                     record.label,
@@ -435,10 +463,7 @@ public class BaoCaoDatPhongGUI extends JFrame {
 
     private void resetFilters() {
         cboCheDoLoc.setSelectedIndex(0);
-        cboThang.setSelectedIndex(3);
-        cboNam.setSelectedIndex(0);
-        txtTuNgay.setText("01/04/2026");
-        txtDenNgay.setText("30/04/2026");
+        resetDateInputsToCurrentMonth();
         txtTuKhoa.setText("");
         loadBookingData(false);
     }
@@ -611,6 +636,10 @@ public class BaoCaoDatPhongGUI extends JFrame {
         return String.format("%.1f%%", percent);
     }
 
+    private String formatDate(LocalDate date) {
+        return date == null ? "-" : date.format(DATE_FORMAT);
+    }
+
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
@@ -619,16 +648,102 @@ public class BaoCaoDatPhongGUI extends JFrame {
         JOptionPane.showMessageDialog(this, message, "Báo cáo đặt phòng", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private List<BookingReportRecord> createSampleData() {
-        List<BookingReportRecord> data = new ArrayList<BookingReportRecord>();
-        data.add(new BookingReportRecord("01/04/2026", 36, 29, 5, 2, 7));
-        data.add(new BookingReportRecord("02/04/2026", 42, 34, 6, 2, 9));
-        data.add(new BookingReportRecord("03/04/2026", 38, 31, 5, 2, 8));
-        data.add(new BookingReportRecord("04/04/2026", 51, 42, 6, 3, 11));
-        data.add(new BookingReportRecord("05/04/2026", 56, 45, 7, 4, 12));
-        data.add(new BookingReportRecord("06/04/2026", 48, 38, 7, 3, 10));
-        data.add(new BookingReportRecord("07/04/2026", 60, 49, 8, 3, 14));
-        return data;
+    private void clearReportData() {
+        updateSummary(new BaoCaoDAO.BookingSummary(), new ArrayList<BookingReportRecord>());
+        updateStatusPanel(new ArrayList<BookingReportRecord>());
+        reloadTable(new ArrayList<BookingReportRecord>());
+        chartPanel.setRecords(new ArrayList<BookingReportRecord>());
+    }
+
+    private void resetDateInputsToCurrentMonth() {
+        LocalDate today = LocalDate.now();
+        setComboValue(cboThang, String.format("%02d", today.getMonthValue()));
+        setComboValue(cboNam, String.valueOf(today.getYear()));
+        txtTuNgay.setDateValue(today.withDayOfMonth(1));
+        txtDenNgay.setDateValue(today);
+    }
+
+    private void setComboValue(JComboBox<String> comboBox, String value) {
+        if (comboBox == null || value == null) {
+            return;
+        }
+        for (int i = 0; i < comboBox.getItemCount(); i++) {
+            if (value.equals(String.valueOf(comboBox.getItemAt(i)))) {
+                comboBox.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private ReportDateRange resolveSelectedDateRange(boolean showMessage) {
+        LocalDate today = LocalDate.now();
+        int mode = cboCheDoLoc == null ? 0 : cboCheDoLoc.getSelectedIndex();
+        LocalDate fromDate;
+        LocalDate toDate;
+
+        if (mode == 1) {
+            fromDate = txtTuNgay.getDateValue();
+            if (fromDate == null) {
+                fromDate = today;
+            }
+            toDate = fromDate;
+        } else if (mode == 2) {
+            int month = parseInt(String.valueOf(cboThang.getSelectedItem()), today.getMonthValue());
+            int year = parseInt(String.valueOf(cboNam.getSelectedItem()), today.getYear());
+            YearMonth selectedMonth = YearMonth.of(year, month);
+            fromDate = selectedMonth.atDay(1);
+            toDate = selectedMonth.atEndOfMonth();
+        } else if (mode == 3) {
+            int year = parseInt(String.valueOf(cboNam.getSelectedItem()), today.getYear());
+            fromDate = LocalDate.of(year, 1, 1);
+            toDate = LocalDate.of(year, 12, 31);
+        } else {
+            if (hasInvalidDateText(txtTuNgay) || hasInvalidDateText(txtDenNgay)) {
+                if (showMessage) {
+                    showInfo("Ngày lọc không hợp lệ. Định dạng đúng là dd/MM/yyyy.");
+                }
+                return null;
+            }
+            fromDate = txtTuNgay.getDateValue();
+            toDate = txtDenNgay.getDateValue();
+            if (fromDate == null) {
+                fromDate = today.withDayOfMonth(1);
+            }
+            if (toDate == null) {
+                toDate = today;
+            }
+        }
+
+        if (fromDate.isAfter(toDate)) {
+            if (showMessage) {
+                showInfo("Từ ngày không được lớn hơn đến ngày.");
+            }
+            return null;
+        }
+        return new ReportDateRange(fromDate, toDate);
+    }
+
+    private boolean hasInvalidDateText(AppDatePickerField field) {
+        return field != null && field.getDateValue() == null
+                && field.getText() != null && !field.getText().trim().isEmpty();
+    }
+
+    private int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (Exception ex) {
+            return fallback;
+        }
+    }
+
+    private static final class ReportDateRange {
+        private final LocalDate fromDate;
+        private final LocalDate toDate;
+
+        private ReportDateRange(LocalDate fromDate, LocalDate toDate) {
+            this.fromDate = fromDate;
+            this.toDate = toDate;
+        }
     }
 
     public JPanel buildPanel() {

@@ -1,7 +1,6 @@
 package gui;
 
-import dao.KhachHangDAO;
-import entity.KhachHang;
+import dao.BaoCaoDAO;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
@@ -64,7 +63,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
 
     private final String username;
     private final String role;
-    private final List<CustomerProfile> sourceData;
+    private final BaoCaoDAO baoCaoDAO = new BaoCaoDAO();
 
     private JPanel rootPanel;
     private JComboBox<String> cboCheDoLoc;
@@ -97,13 +96,13 @@ public class BaoCaoKhachHangGUI extends JFrame {
     public BaoCaoKhachHangGUI(String username, String role) {
         this.username = safeValue(username, "guest");
         this.role = safeValue(role, "Quản lý");
-        this.sourceData = loadCustomerProfiles();
 
         setTitle("Báo cáo khách hàng - " + AppBranding.APP_DISPLAY_NAME);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
         initUI();
+        resetDateInputsToCurrentMonth();
         loadCustomerReport(false);
         registerShortcuts();
     }
@@ -188,8 +187,8 @@ public class BaoCaoKhachHangGUI extends JFrame {
         cboThang = createComboBox(new String[]{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"});
         cboNam = createComboBox(new String[]{"2026", "2025", "2024", "2023"});
         cboNhomKhach = createComboBox(new String[]{"Tất cả", "VIP", "Thường", "Nước ngoài", "Nội địa", "Doanh nghiệp"});
-        txtTuNgay = new AppDatePickerField("01/04/2026", true);
-        txtDenNgay = new AppDatePickerField("30/04/2026", true);
+        txtTuNgay = new AppDatePickerField("", true);
+        txtDenNgay = new AppDatePickerField("", true);
 
         left.add(createFieldGroup("Chế độ lọc", cboCheDoLoc));
         left.add(createFieldGroup("Tháng", cboThang));
@@ -292,7 +291,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Tổng hợp theo nhóm để đối chiếu khi demo và dễ thay DAO thật.");
+        JLabel lblSub = new JLabel("Tổng hợp theo nhóm từ dữ liệu khách hàng và đặt phòng.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -330,7 +329,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         lblTitle.setFont(SECTION_FONT);
         lblTitle.setForeground(TEXT_PRIMARY);
 
-        JLabel lblSub = new JLabel("Dữ liệu để mở rộng sang booking thật khi bổ sung DAO.");
+        JLabel lblSub = new JLabel("Xếp hạng theo số lần đặt và doanh thu thực thu.");
         lblSub.setFont(BODY_FONT);
         lblSub.setForeground(TEXT_MUTED);
 
@@ -389,10 +388,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
         LocalDate fromDate = resolveFromDate(filterMode);
         LocalDate toDate = resolveToDate(filterMode);
 
-        for (CustomerProfile profile : sourceData) {
-            if (profile.registeredDate.isBefore(fromDate) || profile.registeredDate.isAfter(toDate)) {
-                continue;
-            }
+        for (CustomerProfile profile : loadCustomerProfiles(fromDate, toDate)) {
             if (!matchesGroup(profile, selectedGroup)) {
                 continue;
             }
@@ -499,72 +495,28 @@ public class BaoCaoKhachHangGUI extends JFrame {
         tblTopKhach.setRowSelectionInterval(0, 0);
     }
 
-    private List<CustomerProfile> loadCustomerProfiles() {
+    private List<CustomerProfile> loadCustomerProfiles(LocalDate fromDate, LocalDate toDate) {
         List<CustomerProfile> profiles = new ArrayList<CustomerProfile>();
-        try {
-            List<KhachHang> customers = new KhachHangDAO().getAll();
-            for (int i = 0; i < customers.size(); i++) {
-                CustomerProfile profile = mapFromEntity(customers.get(i), i);
-                if (profile != null) {
-                    profiles.add(profile);
-                }
-            }
-        } catch (Exception ignored) {
-        }
-
-        if (profiles.isEmpty()) {
-            profiles.addAll(createSampleProfiles());
+        List<BaoCaoDAO.CustomerStat> customers = baoCaoDAO.getTopCustomers(fromDate, toDate);
+        for (BaoCaoDAO.CustomerStat customer : customers) {
+            String group = safeValue(customer.getGroup(), "Thường");
+            boolean vip = normalize(group).contains("vip");
+            boolean foreign = normalize(group).contains("nuoc ngoai") || normalize(group).contains("nước ngoài");
+            profiles.add(new CustomerProfile(
+                    "KH" + customer.getCustomerId(),
+                    safeValue(customer.getCustomerName(), "Khách hàng"),
+                    foreign ? "Nước ngoài" : "Việt Nam",
+                    group,
+                    vip,
+                    foreign,
+                    false,
+                    fromDate,
+                    customer.getBookingCount(),
+                    Math.round(customer.getRevenue()),
+                    customer.getBookingCount() > 0 ? "Có đặt phòng trong kỳ" : "Có thanh toán trong kỳ"
+            ));
         }
         return profiles;
-    }
-
-    private CustomerProfile mapFromEntity(KhachHang khachHang, int index) {
-        if (khachHang == null) {
-            return null;
-        }
-
-        String id = safeValue(khachHang.getMaKhachHang(), "KH" + (100 + index));
-        int numericId = extractNumber(id, index + 1);
-        LocalDate registeredDate = LocalDate.of(2026, 1, 1).plusDays((numericId * 7L) % 95L);
-        String nationality = safeValue(khachHang.getQuocTich(), "Viet Năm");
-        String rank = safeValue(khachHang.getHangKhach(), "Thường");
-        String type = safeValue(khachHang.getLoaiKhach(), "Khách lẻ");
-
-        boolean foreign = !normalize(nationality).contains("viet");
-        boolean vip = normalize(rank).contains("vip") || normalize(rank).contains("kim cuong") || normalize(type).contains("vip");
-        int bookingCount = 1 + (numericId % 6);
-        long totalSpent = 1800000L + (long) numericId * 240000L;
-        boolean isNew = bookingCount <= 2 || registeredDate.isAfter(LocalDate.of(2026, 2, 15));
-        String group = resolveGroup(type, vip, foreign);
-
-        return new CustomerProfile(
-                id,
-                safeValue(khachHang.getHoTen(), "Khach " + id),
-                nationality,
-                group,
-                vip,
-                foreign,
-                isNew,
-                registeredDate,
-                bookingCount,
-                totalSpent,
-                vip ? "Khách giá trị cao" : (foreign ? "Can uu tien ho tro ngoai ngu" : "Khách ổn định")
-        );
-    }
-
-    private List<CustomerProfile> createSampleProfiles() {
-        List<CustomerProfile> data = new ArrayList<CustomerProfile>();
-        data.add(new CustomerProfile("KH101", "Nguyen Thi Minh", "Viet Năm", "Thường", false, false, true, LocalDate.of(2026, 4, 2), 2, 4200000L, "Khách mới, tiep can goi uu dai"));
-        data.add(new CustomerProfile("KH102", "Tran Quoc Bao", "Viet Năm", "VIP", true, false, false, LocalDate.of(2026, 2, 15), 7, 28600000L, "Khách quay lại thường xuyên"));
-        data.add(new CustomerProfile("KH103", "Anna Lee", "Singapore", "Nước ngoài", false, true, true, LocalDate.of(2026, 4, 4), 1, 5600000L, "Cần ưu tiên check-in nhanh"));
-        data.add(new CustomerProfile("KH104", "Pham Gia Han", "Viet Năm", "Doanh nghiệp", false, false, false, LocalDate.of(2026, 1, 28), 5, 17100000L, "Đặt phòng theo công tác"));
-        data.add(new CustomerProfile("KH105", "David Kim", "Korea", "VIP", true, true, false, LocalDate.of(2026, 1, 12), 6, 32400000L, "Khách VIP nước ngoài"));
-        data.add(new CustomerProfile("KH106", "Le Quang Hủy", "Viet Năm", "Thường", false, false, true, LocalDate.of(2026, 3, 30), 1, 2300000L, "Mới phát sinh giao dịch"));
-        data.add(new CustomerProfile("KH107", "Hoang My Linh", "Viet Năm", "VIP", true, false, false, LocalDate.of(2025, 12, 20), 8, 40100000L, "Khách thân thiết cần giữ chân"));
-        data.add(new CustomerProfile("KH108", "Sokha Chan", "Cambodia", "Nước ngoài", false, true, true, LocalDate.of(2026, 4, 1), 2, 6100000L, "Tỷ lệ quay lại có thể tăng"));
-        data.add(new CustomerProfile("KH109", "Vo Thanh Dat", "Viet Năm", "Doanh nghiệp", false, false, false, LocalDate.of(2026, 2, 8), 4, 15800000L, "Công tác theo tháng"));
-        data.add(new CustomerProfile("KH110", "Mai Thu Trang", "Viet Năm", "Thường", false, false, false, LocalDate.of(2026, 1, 5), 3, 8900000L, "Khách cá nhân ổn định"));
-        return data;
     }
 
     private void addGroupCount(Map<String, GroupMetric> groupCounts, String groupName, CustomerProfile profile) {
@@ -637,7 +589,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
     }
 
     private LocalDate resolveFromDate(String filterMode) {
-        LocalDate today = LocalDate.of(2026, 4, 6);
+        LocalDate today = LocalDate.now();
         if ("Theo ngày".equalsIgnoreCase(filterMode)) {
             return parseDateOrFallback(txtTuNgay == null ? null : txtTuNgay.getText(), today);
         }
@@ -654,7 +606,7 @@ public class BaoCaoKhachHangGUI extends JFrame {
     }
 
     private LocalDate resolveToDate(String filterMode) {
-        LocalDate today = LocalDate.of(2026, 4, 6);
+        LocalDate today = LocalDate.now();
         if ("Theo ngày".equalsIgnoreCase(filterMode)) {
             return parseDateOrFallback(txtTuNgay == null ? null : txtTuNgay.getText(), today);
         }
@@ -681,13 +633,30 @@ public class BaoCaoKhachHangGUI extends JFrame {
         }
     }
 
+    private void resetDateInputsToCurrentMonth() {
+        LocalDate today = LocalDate.now();
+        setComboValue(cboThang, String.format("%02d", today.getMonthValue()));
+        setComboValue(cboNam, String.valueOf(today.getYear()));
+        txtTuNgay.setDateValue(today.withDayOfMonth(1));
+        txtDenNgay.setDateValue(today);
+    }
+
+    private void setComboValue(JComboBox<String> comboBox, String value) {
+        if (comboBox == null || value == null) {
+            return;
+        }
+        for (int i = 0; i < comboBox.getItemCount(); i++) {
+            if (value.equals(String.valueOf(comboBox.getItemAt(i)))) {
+                comboBox.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
     private void resetFilters() {
         cboCheDoLoc.setSelectedIndex(0);
-        cboThang.setSelectedIndex(3);
-        cboNam.setSelectedIndex(0);
+        resetDateInputsToCurrentMonth();
         cboNhomKhach.setSelectedIndex(0);
-        txtTuNgay.setText("01/04/2026");
-        txtDenNgay.setText("30/04/2026");
         txtTuKhoa.setText("");
         loadCustomerReport(false);
     }

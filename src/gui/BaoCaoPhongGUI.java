@@ -1,5 +1,6 @@
 package gui;
 
+import dao.BaoCaoDAO;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
@@ -31,6 +32,8 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -52,7 +55,7 @@ public class BaoCaoPhongGUI extends JFrame {
 
     private final String username;
     private final String role;
-    private final List<RoomReportRecord> roomRecords = createSampleData();
+    private final BaoCaoDAO baoCaoDAO = new BaoCaoDAO();
 
     private JPanel rootPanel;
     private JComboBox<String> cboNgay;
@@ -92,6 +95,7 @@ public class BaoCaoPhongGUI extends JFrame {
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
         initUI();
+        resetDateInputsToCurrentMonth();
         loadRoomData(false);
         registerShortcuts();
     }
@@ -175,8 +179,8 @@ public class BaoCaoPhongGUI extends JFrame {
         cboNgay = createComboBox(new String[]{"Hôm nay", "Tuần này", "Tháng này"});
         cboThang = createComboBox(new String[]{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"});
         cboNam = createComboBox(new String[]{"2026", "2025", "2024"});
-        txtTuNgay = new AppDatePickerField("01/04/2026", true);
-        txtDenNgay = new AppDatePickerField("30/04/2026", true);
+        txtTuNgay = new AppDatePickerField("", true);
+        txtDenNgay = new AppDatePickerField("", true);
 
         left.add(createFieldGroup("Kỳ xem", cboNgay));
         left.add(createFieldGroup("Tháng", cboThang));
@@ -368,20 +372,43 @@ public class BaoCaoPhongGUI extends JFrame {
     }
 
     private void loadRoomData(boolean showMessage) {
-        List<RoomReportRecord> filtered = filterRecords();
+        ReportDateRange range = resolveSelectedDateRange(showMessage);
+        if (range == null) {
+            clearReportData();
+            return;
+        }
+
+        List<RoomReportRecord> filtered = filterRecords(loadRoomRecords(range));
         updateSummary(filtered);
         reloadTable(filtered);
         updateOccupancyArea(filtered);
         chartPanel.setRecords(filtered);
         if (showMessage) {
-            showInfo("Đã cập nhật báo cáo phòng.");
+            String error = baoCaoDAO.getLastErrorMessage();
+            showInfo(error.isEmpty() ? "Đã cập nhật báo cáo phòng." : "Không thể tải báo cáo phòng: " + error);
         }
     }
 
-    private List<RoomReportRecord> filterRecords() {
+    private List<RoomReportRecord> loadRoomRecords(ReportDateRange range) {
+        List<RoomReportRecord> records = new ArrayList<RoomReportRecord>();
+        List<BaoCaoDAO.RoomTypeStat> stats = baoCaoDAO.getRoomTypeStats(range.fromDate, range.toDate);
+        for (BaoCaoDAO.RoomTypeStat stat : stats) {
+            records.add(new RoomReportRecord(
+                    stat.getRoomType(),
+                    stat.getActiveRooms(),
+                    stat.getOccupiedRooms(),
+                    stat.getBookedRooms(),
+                    stat.getMaintenanceRooms(),
+                    stat.getOccupancyPercent()
+            ));
+        }
+        return records;
+    }
+
+    private List<RoomReportRecord> filterRecords(List<RoomReportRecord> records) {
         List<RoomReportRecord> filtered = new ArrayList<RoomReportRecord>();
         String keyword = txtTuKhoa == null ? "" : txtTuKhoa.getText().trim().toLowerCase();
-        for (RoomReportRecord record : roomRecords) {
+        for (RoomReportRecord record : records) {
             if (!keyword.isEmpty() && !record.loaiPhong.toLowerCase().contains(keyword)) {
                 continue;
             }
@@ -442,6 +469,11 @@ public class BaoCaoPhongGUI extends JFrame {
 
     private void reloadTable(List<RoomReportRecord> records) {
         tableModel.setRowCount(0);
+        if (records.isEmpty()) {
+            tableModel.addRow(new Object[]{"Không có dữ liệu trong khoảng thời gian này.", 0, 0, 0, 0, "0%"});
+            tblTrangThaiPhong.setRowSelectionInterval(0, 0);
+            return;
+        }
         for (RoomReportRecord record : records) {
             tableModel.addRow(new Object[]{
                     record.loaiPhong,
@@ -459,10 +491,7 @@ public class BaoCaoPhongGUI extends JFrame {
 
     private void resetFilters() {
         cboNgay.setSelectedIndex(0);
-        cboThang.setSelectedIndex(3);
-        cboNam.setSelectedIndex(0);
-        txtTuNgay.setText("01/04/2026");
-        txtDenNgay.setText("30/04/2026");
+        resetDateInputsToCurrentMonth();
         txtTuKhoa.setText("");
         loadRoomData(false);
     }
@@ -626,13 +655,99 @@ public class BaoCaoPhongGUI extends JFrame {
         JOptionPane.showMessageDialog(this, message, "Báo cáo phòng", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private List<RoomReportRecord> createSampleData() {
-        List<RoomReportRecord> data = new ArrayList<RoomReportRecord>();
-        data.add(new RoomReportRecord("Standard", 20, 13, 4, 1, 85));
-        data.add(new RoomReportRecord("Deluxe", 22, 17, 3, 1, 91));
-        data.add(new RoomReportRecord("Suite", 10, 8, 1, 1, 90));
-        data.add(new RoomReportRecord("Family", 6, 5, 1, 0, 100));
-        return data;
+    private void clearReportData() {
+        List<RoomReportRecord> empty = new ArrayList<RoomReportRecord>();
+        updateSummary(empty);
+        reloadTable(empty);
+        updateOccupancyArea(empty);
+        chartPanel.setRecords(empty);
+    }
+
+    private void resetDateInputsToCurrentMonth() {
+        LocalDate today = LocalDate.now();
+        setComboValue(cboThang, String.format("%02d", today.getMonthValue()));
+        setComboValue(cboNam, String.valueOf(today.getYear()));
+        txtTuNgay.setDateValue(today.withDayOfMonth(1));
+        txtDenNgay.setDateValue(today);
+    }
+
+    private void setComboValue(JComboBox<String> comboBox, String value) {
+        if (comboBox == null || value == null) {
+            return;
+        }
+        for (int i = 0; i < comboBox.getItemCount(); i++) {
+            if (value.equals(String.valueOf(comboBox.getItemAt(i)))) {
+                comboBox.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private ReportDateRange resolveSelectedDateRange(boolean showMessage) {
+        LocalDate today = LocalDate.now();
+        int mode = cboNgay == null ? 0 : cboNgay.getSelectedIndex();
+        LocalDate fromDate;
+        LocalDate toDate;
+
+        if (mode == 0) {
+            fromDate = today;
+            toDate = today;
+        } else if (mode == 1) {
+            fromDate = today.minusDays(6L);
+            toDate = today;
+        } else if (mode == 2) {
+            int month = parseInt(String.valueOf(cboThang.getSelectedItem()), today.getMonthValue());
+            int year = parseInt(String.valueOf(cboNam.getSelectedItem()), today.getYear());
+            YearMonth selectedMonth = YearMonth.of(year, month);
+            fromDate = selectedMonth.atDay(1);
+            toDate = selectedMonth.atEndOfMonth();
+        } else {
+            if (hasInvalidDateText(txtTuNgay) || hasInvalidDateText(txtDenNgay)) {
+                if (showMessage) {
+                    showInfo("Ngày lọc không hợp lệ. Định dạng đúng là dd/MM/yyyy.");
+                }
+                return null;
+            }
+            fromDate = txtTuNgay.getDateValue();
+            toDate = txtDenNgay.getDateValue();
+            if (fromDate == null) {
+                fromDate = today.withDayOfMonth(1);
+            }
+            if (toDate == null) {
+                toDate = today;
+            }
+        }
+
+        if (fromDate.isAfter(toDate)) {
+            if (showMessage) {
+                showInfo("Từ ngày không được lớn hơn đến ngày.");
+            }
+            return null;
+        }
+        return new ReportDateRange(fromDate, toDate);
+    }
+
+    private boolean hasInvalidDateText(AppDatePickerField field) {
+        return field != null && field.getDateValue() == null
+                && field.getText() != null && !field.getText().trim().isEmpty();
+    }
+
+    private int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (Exception ex) {
+            return fallback;
+        }
+    }
+
+    private static final class ReportDateRange {
+        private final LocalDate fromDate;
+        private final LocalDate toDate;
+
+        private ReportDateRange(LocalDate fromDate, LocalDate toDate) {
+            this.fromDate = fromDate;
+            this.toDate = toDate;
+        }
     }
 
     public JPanel buildPanel() {

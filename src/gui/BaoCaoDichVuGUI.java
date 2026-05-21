@@ -1,5 +1,6 @@
 package gui;
 
+import dao.BaoCaoDAO;
 import gui.common.AppBranding;
 import gui.common.AppDatePickerField;
 import gui.common.ScreenUIHelper;
@@ -32,6 +33,9 @@ import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.text.DecimalFormat;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -51,11 +55,11 @@ public class BaoCaoDichVuGUI extends JFrame {
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 13);
     private static final Font LABEL_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final DecimalFormat MONEY_FORMAT = new DecimalFormat("#,##0");
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final String username;
     private final String role;
-    private final List<ServiceUsageRecord> serviceRecords = createTopServiceData();
-    private final List<ServiceRevenueRecord> revenueRecords = createRevenueData();
+    private final BaoCaoDAO baoCaoDAO = new BaoCaoDAO();
 
     private JPanel rootPanel;
     private JComboBox<String> cboCheDoLoc;
@@ -93,6 +97,7 @@ public class BaoCaoDichVuGUI extends JFrame {
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
         initUI();
+        resetDateInputsToCurrentMonth();
         loadServiceData(false);
         registerShortcuts();
     }
@@ -176,8 +181,8 @@ public class BaoCaoDichVuGUI extends JFrame {
         cboCheDoLoc = createComboBox(new String[]{"Theo khoảng thời gian", "Theo ngày", "Theo tháng", "Theo năm"});
         cboThang = createComboBox(new String[]{"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"});
         cboNam = createComboBox(new String[]{"2026", "2025", "2024"});
-        txtTuNgay = new AppDatePickerField("01/04/2026", true);
-        txtDenNgay = new AppDatePickerField("30/04/2026", true);
+        txtTuNgay = new AppDatePickerField("", true);
+        txtDenNgay = new AppDatePickerField("", true);
 
         left.add(createFieldGroup("Chế độ lọc", cboCheDoLoc));
         left.add(createFieldGroup("Tháng", cboThang));
@@ -348,21 +353,57 @@ public class BaoCaoDichVuGUI extends JFrame {
     }
 
     private void loadServiceData(boolean showMessage) {
-        List<ServiceUsageRecord> filteredUsage = filterUsageRecords();
-        List<ServiceRevenueRecord> filteredRevenue = filterRevenueRecords();
-        updateSummary(filteredUsage, filteredRevenue);
+        ReportDateRange range = resolveSelectedDateRange(showMessage);
+        if (range == null) {
+            clearReportData();
+            return;
+        }
+
+        BaoCaoDAO.ServiceSummary summary = baoCaoDAO.getServiceSummary(range.fromDate, range.toDate);
+        List<ServiceUsageRecord> filteredUsage = filterUsageRecords(loadUsageRecords(range));
+        List<ServiceRevenueRecord> filteredRevenue = loadRevenueRecords(range);
+        updateSummary(summary, filteredUsage);
         reloadTopServiceTable(filteredUsage);
         reloadRevenueTable(filteredRevenue);
         chartPanel.setRecords(filteredUsage);
         if (showMessage) {
-            showInfo("Đã cập nhật báo cáo dịch vụ.");
+            String error = baoCaoDAO.getLastErrorMessage();
+            showInfo(error.isEmpty() ? "Đã cập nhật báo cáo dịch vụ." : "Không thể tải báo cáo dịch vụ: " + error);
         }
     }
 
-    private List<ServiceUsageRecord> filterUsageRecords() {
+    private List<ServiceUsageRecord> loadUsageRecords(ReportDateRange range) {
+        List<ServiceUsageRecord> records = new ArrayList<ServiceUsageRecord>();
+        List<BaoCaoDAO.ServiceUsageStat> stats = baoCaoDAO.getServiceUsageStats(range.fromDate, range.toDate);
+        for (BaoCaoDAO.ServiceUsageStat stat : stats) {
+            records.add(new ServiceUsageRecord(
+                    stat.getServiceName(),
+                    stat.getUsageCount(),
+                    stat.getQuantity(),
+                    Math.round(stat.getRevenue())
+            ));
+        }
+        return records;
+    }
+
+    private List<ServiceRevenueRecord> loadRevenueRecords(ReportDateRange range) {
+        List<ServiceRevenueRecord> records = new ArrayList<ServiceRevenueRecord>();
+        List<BaoCaoDAO.ServiceRevenueDateStat> stats = baoCaoDAO.getServiceRevenueByDate(range.fromDate, range.toDate);
+        for (BaoCaoDAO.ServiceRevenueDateStat stat : stats) {
+            records.add(new ServiceRevenueRecord(
+                    formatDate(stat.getDate()),
+                    stat.getUsageCount(),
+                    Math.round(stat.getRevenue()),
+                    ""
+            ));
+        }
+        return records;
+    }
+
+    private List<ServiceUsageRecord> filterUsageRecords(List<ServiceUsageRecord> records) {
         List<ServiceUsageRecord> filtered = new ArrayList<ServiceUsageRecord>();
         String keyword = txtTuKhoa == null ? "" : txtTuKhoa.getText().trim().toLowerCase();
-        for (ServiceUsageRecord record : serviceRecords) {
+        for (ServiceUsageRecord record : records) {
             if (!keyword.isEmpty() && !record.tenDichVu.toLowerCase().contains(keyword)) {
                 continue;
             }
@@ -371,18 +412,12 @@ public class BaoCaoDichVuGUI extends JFrame {
         return filtered;
     }
 
-    private List<ServiceRevenueRecord> filterRevenueRecords() {
-        return new ArrayList<ServiceRevenueRecord>(revenueRecords);
-    }
-
-    private void updateSummary(List<ServiceUsageRecord> usageRecords, List<ServiceRevenueRecord> revenueRecords) {
-        int tongLuotSuDung = 0;
-        long tongDoanhThu = 0L;
+    private void updateSummary(BaoCaoDAO.ServiceSummary summary, List<ServiceUsageRecord> usageRecords) {
+        int tongLuotSuDung = summary.getTotalUsage();
+        long tongDoanhThu = Math.round(summary.getTotalRevenue());
         ServiceUsageRecord topService = null;
 
         for (ServiceUsageRecord record : usageRecords) {
-            tongLuotSuDung += record.luotSuDung;
-            tongDoanhThu += record.doanhThu;
             if (topService == null || record.luotSuDung > topService.luotSuDung) {
                 topService = record;
             }
@@ -407,6 +442,11 @@ public class BaoCaoDichVuGUI extends JFrame {
 
     private void reloadTopServiceTable(List<ServiceUsageRecord> records) {
         topServiceModel.setRowCount(0);
+        if (records.isEmpty()) {
+            topServiceModel.addRow(new Object[]{"Không có dữ liệu", 0, 0, formatMoney(0L)});
+            tblTopDichVu.setRowSelectionInterval(0, 0);
+            return;
+        }
         for (ServiceUsageRecord record : records) {
             topServiceModel.addRow(new Object[]{
                     record.tenDichVu,
@@ -422,6 +462,11 @@ public class BaoCaoDichVuGUI extends JFrame {
 
     private void reloadRevenueTable(List<ServiceRevenueRecord> records) {
         revenueModel.setRowCount(0);
+        if (records.isEmpty()) {
+            revenueModel.addRow(new Object[]{"Không có dữ liệu trong khoảng thời gian này.", 0, formatMoney(0L), ""});
+            tblDoanhThuDichVu.setRowSelectionInterval(0, 0);
+            return;
+        }
         for (ServiceRevenueRecord record : records) {
             revenueModel.addRow(new Object[]{
                     record.thoiGian,
@@ -437,10 +482,7 @@ public class BaoCaoDichVuGUI extends JFrame {
 
     private void resetFilters() {
         cboCheDoLoc.setSelectedIndex(0);
-        cboThang.setSelectedIndex(3);
-        cboNam.setSelectedIndex(0);
-        txtTuNgay.setText("01/04/2026");
-        txtDenNgay.setText("30/04/2026");
+        resetDateInputsToCurrentMonth();
         txtTuKhoa.setText("");
         loadServiceData(false);
     }
@@ -574,6 +616,10 @@ public class BaoCaoDichVuGUI extends JFrame {
         return MONEY_FORMAT.format(value) + " đ";
     }
 
+    private String formatDate(LocalDate date) {
+        return date == null ? "-" : date.format(DATE_FORMAT);
+    }
+
     private String safeValue(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
     }
@@ -582,24 +628,104 @@ public class BaoCaoDichVuGUI extends JFrame {
         JOptionPane.showMessageDialog(this, message, "Báo cáo dịch vụ", JOptionPane.INFORMATION_MESSAGE);
     }
 
-    private List<ServiceUsageRecord> createTopServiceData() {
-        List<ServiceUsageRecord> data = new ArrayList<ServiceUsageRecord>();
-        data.add(new ServiceUsageRecord("Bữa sáng", 120, 184, 92000000L));
-        data.add(new ServiceUsageRecord("Giặt ủi", 80, 126, 41500000L));
-        data.add(new ServiceUsageRecord("Mini bar", 64, 99, 36000000L));
-        data.add(new ServiceUsageRecord("Spa", 38, 52, 28000000L));
-        data.add(new ServiceUsageRecord("Đưa đón sân bay", 24, 24, 18000000L));
-        return data;
+    private void clearReportData() {
+        List<ServiceUsageRecord> emptyUsage = new ArrayList<ServiceUsageRecord>();
+        List<ServiceRevenueRecord> emptyRevenue = new ArrayList<ServiceRevenueRecord>();
+        updateSummary(new BaoCaoDAO.ServiceSummary(), emptyUsage);
+        reloadTopServiceTable(emptyUsage);
+        reloadRevenueTable(emptyRevenue);
+        chartPanel.setRecords(emptyUsage);
     }
 
-    private List<ServiceRevenueRecord> createRevenueData() {
-        List<ServiceRevenueRecord> data = new ArrayList<ServiceRevenueRecord>();
-        data.add(new ServiceRevenueRecord("01/04/2026", 58, 24500000L, "Tăng mạnh nhóm ăn sáng"));
-        data.add(new ServiceRevenueRecord("02/04/2026", 62, 26800000L, "Khách đoàn dùng thêm spa"));
-        data.add(new ServiceRevenueRecord("03/04/2026", 55, 23100000L, "Mini bar ổn định"));
-        data.add(new ServiceRevenueRecord("04/04/2026", 70, 30200000L, "Cuối tuần tăng cao"));
-        data.add(new ServiceRevenueRecord("05/04/2026", 74, 31800000L, "Top doanh thu trong kỳ"));
-        return data;
+    private void resetDateInputsToCurrentMonth() {
+        LocalDate today = LocalDate.now();
+        setComboValue(cboThang, String.format("%02d", today.getMonthValue()));
+        setComboValue(cboNam, String.valueOf(today.getYear()));
+        txtTuNgay.setDateValue(today.withDayOfMonth(1));
+        txtDenNgay.setDateValue(today);
+    }
+
+    private void setComboValue(JComboBox<String> comboBox, String value) {
+        if (comboBox == null || value == null) {
+            return;
+        }
+        for (int i = 0; i < comboBox.getItemCount(); i++) {
+            if (value.equals(String.valueOf(comboBox.getItemAt(i)))) {
+                comboBox.setSelectedIndex(i);
+                return;
+            }
+        }
+    }
+
+    private ReportDateRange resolveSelectedDateRange(boolean showMessage) {
+        LocalDate today = LocalDate.now();
+        int mode = cboCheDoLoc == null ? 0 : cboCheDoLoc.getSelectedIndex();
+        LocalDate fromDate;
+        LocalDate toDate;
+
+        if (mode == 1) {
+            fromDate = txtTuNgay.getDateValue();
+            if (fromDate == null) {
+                fromDate = today;
+            }
+            toDate = fromDate;
+        } else if (mode == 2) {
+            int month = parseInt(String.valueOf(cboThang.getSelectedItem()), today.getMonthValue());
+            int year = parseInt(String.valueOf(cboNam.getSelectedItem()), today.getYear());
+            YearMonth selectedMonth = YearMonth.of(year, month);
+            fromDate = selectedMonth.atDay(1);
+            toDate = selectedMonth.atEndOfMonth();
+        } else if (mode == 3) {
+            int year = parseInt(String.valueOf(cboNam.getSelectedItem()), today.getYear());
+            fromDate = LocalDate.of(year, 1, 1);
+            toDate = LocalDate.of(year, 12, 31);
+        } else {
+            if (hasInvalidDateText(txtTuNgay) || hasInvalidDateText(txtDenNgay)) {
+                if (showMessage) {
+                    showInfo("Ngày lọc không hợp lệ. Định dạng đúng là dd/MM/yyyy.");
+                }
+                return null;
+            }
+            fromDate = txtTuNgay.getDateValue();
+            toDate = txtDenNgay.getDateValue();
+            if (fromDate == null) {
+                fromDate = today.withDayOfMonth(1);
+            }
+            if (toDate == null) {
+                toDate = today;
+            }
+        }
+
+        if (fromDate.isAfter(toDate)) {
+            if (showMessage) {
+                showInfo("Từ ngày không được lớn hơn đến ngày.");
+            }
+            return null;
+        }
+        return new ReportDateRange(fromDate, toDate);
+    }
+
+    private boolean hasInvalidDateText(AppDatePickerField field) {
+        return field != null && field.getDateValue() == null
+                && field.getText() != null && !field.getText().trim().isEmpty();
+    }
+
+    private int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (Exception ex) {
+            return fallback;
+        }
+    }
+
+    private static final class ReportDateRange {
+        private final LocalDate fromDate;
+        private final LocalDate toDate;
+
+        private ReportDateRange(LocalDate fromDate, LocalDate toDate) {
+            this.fromDate = fromDate;
+            this.toDate = toDate;
+        }
     }
 
     public JPanel buildPanel() {

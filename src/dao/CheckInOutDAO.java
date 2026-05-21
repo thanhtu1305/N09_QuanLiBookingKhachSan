@@ -532,7 +532,6 @@ public class CheckInOutDAO {
 
         ensureDetailScheduleSchema(con);
 
-        // DatPhong cũ có thể chỉ lưu DATE, nên mốc 00:00 được hiểu là 12:00 theo quy ước hệ thống.
         LocalDateTime normalizedExpectedCheckOut = normalizeLegacyBookingBoundary(thoiGianTraDuKien);
         if (!normalizedExpectedCheckOut.isAfter(thoiDiemDoi)) {
             return result;
@@ -542,6 +541,15 @@ public class CheckInOutDAO {
         Timestamp expectedCheckOutTimestamp = Timestamp.valueOf(normalizedExpectedCheckOut);
         String detailHoldCheckInExpr = buildDetailCheckInExpr("ctdpHold", "dpHold");
         String detailHoldCheckOutExpr = buildDetailCheckOutExpr("ctdpHold", "dpHold");
+        String bookingBlockingStatusSql = "(N'" + STATUS_BOOKED + "', N'" + STATUS_CONFIRMED + "', N'" + STATUS_DEPOSITED
+                + "', N'" + STATUS_PENDING_CHECKIN + "', N'" + STATUS_ACTIVE + "', N'" + STATUS_ACTIVE_STAY + "', N'"
+                + STATUS_PARTIAL_CHECKOUT + "', N'" + STATUS_CHECKED_IN + "', N'" + STATUS_WAIT_PAYMENT + "')";
+        String paidInvoiceExistsSql = "EXISTS ("
+                + "SELECT 1 FROM dbo.HoaDon hdDone "
+                + "WHERE ISNULL(hdDone.trangThai, N'') = N'" + STATUS_PAID + "' "
+                + "AND ((hdDone.maDatPhong = dpHold.maDatPhong AND hdDone.maChiTietDatPhong IS NULL) "
+                + "     OR hdDone.maChiTietDatPhong = ctdpHold.maChiTietDatPhong)"
+                + ")";
 
         String sql = "SELECT p.maPhong, p.soPhong, ISNULL(p.tang, N'-') AS tang, ISNULL(p.khuVuc, N'-') AS khuVuc, "
                 + "ISNULL(p.sucChuaToiDa, 0) AS sucChuaToiDa, lp.maLoaiPhong, "
@@ -552,10 +560,21 @@ public class CheckInOutDAO {
                 + "AND ISNULL(p.trangThai, N'') IN (N'" + STATUS_ROOM_ACTIVE + "', N'" + STATUS_ROOM_EMPTY + "', N'" + STATUS_ROOM_READY + "') "
                 + "AND NOT EXISTS ( "
                 + "    SELECT 1 "
-                + "    FROM dbo.ChiTietDatPhong ctdpSameBooking "
-                + "    WHERE ctdpSameBooking.maDatPhong = ? "
-                + "      AND ctdpSameBooking.maPhong = p.maPhong "
-                + "      AND ctdpSameBooking.maChiTietDatPhong <> ? "
+                + "    FROM ( "
+                + "        SELECT ltClosed.maChiTietDatPhong, ltClosed.maDatPhong, "
+                + "               ROW_NUMBER() OVER (ORDER BY ltClosed.checkOut DESC, ltClosed.maLuuTru DESC) AS rn "
+                + "        FROM dbo.LuuTru ltClosed "
+                + "        WHERE ltClosed.maPhong = p.maPhong AND ltClosed.checkOut IS NOT NULL "
+                + "    ) latestClosedStay "
+                + "    LEFT JOIN dbo.HoaDon hdRoom ON hdRoom.maChiTietDatPhong = latestClosedStay.maChiTietDatPhong "
+                + "    LEFT JOIN dbo.HoaDon hdBooking ON hdBooking.maDatPhong = latestClosedStay.maDatPhong AND hdBooking.maChiTietDatPhong IS NULL "
+                + "    LEFT JOIN dbo.DatPhong dpClosed ON dpClosed.maDatPhong = latestClosedStay.maDatPhong "
+                + "    WHERE latestClosedStay.rn = 1 "
+                + "      AND ( "
+                + "           ISNULL(dpClosed.trangThai, N'') IN (N'" + STATUS_WAIT_PAYMENT + "', N'" + STATUS_CHECKED_OUT + "') "
+                + "        OR (hdRoom.maHoaDon IS NOT NULL AND ISNULL(hdRoom.trangThai, N'" + STATUS_WAIT_PAYMENT + "') <> N'" + STATUS_PAID + "') "
+                + "        OR (hdBooking.maHoaDon IS NOT NULL AND ISNULL(hdBooking.trangThai, N'" + STATUS_WAIT_PAYMENT + "') <> N'" + STATUS_PAID + "') "
+                + "      ) "
                 + ") "
                 + "AND NOT EXISTS ( "
                 + "    SELECT 1 "
@@ -568,24 +587,24 @@ public class CheckInOutDAO {
                 + "    SELECT 1 "
                 + "    FROM dbo.ChiTietDatPhong ctdpHold "
                 + "    JOIN dbo.DatPhong dpHold ON dpHold.maDatPhong = ctdpHold.maDatPhong "
+                + "    OUTER APPLY ( "
+                + "        SELECT TOP 1 ltHistory.maLuuTru, ltHistory.checkOut "
+                + "        FROM dbo.LuuTru ltHistory "
+                + "        WHERE ltHistory.maChiTietDatPhong = ctdpHold.maChiTietDatPhong "
+                + "        ORDER BY CASE WHEN ltHistory.checkOut IS NULL THEN 0 ELSE 1 END, "
+                + "                 COALESCE(ltHistory.checkOut, ltHistory.checkIn) DESC, ltHistory.maLuuTru DESC "
+                + "    ) latestLt "
                 + "    WHERE ctdpHold.maPhong = p.maPhong "
-                + "      AND ctdpHold.maDatPhong <> ? "
-                + "      AND ISNULL(dpHold.trangThai, N'') IN ("
-                + "N'" + STATUS_BOOKED + "', "
-                + "N'" + STATUS_CONFIRMED + "', "
-                + "N'" + STATUS_DEPOSITED + "', "
-                + "N'" + STATUS_PENDING_CHECKIN + "', "
-                + "N'" + STATUS_ACTIVE + "', "
-                + "N'" + STATUS_ACTIVE_STAY + "', "
-                + "N'" + STATUS_PARTIAL_CHECKOUT + "', "
-                + "N'" + STATUS_CHECKED_IN + "') "
+                + "      AND ctdpHold.maChiTietDatPhong <> ? "
+                + "      AND ISNULL(dpHold.trangThai, N'') IN " + bookingBlockingStatusSql + " "
+                + "      AND NOT " + paidInvoiceExistsSql + " "
                 + "      AND " + detailHoldCheckInExpr + " < ? "
                 + "      AND " + detailHoldCheckOutExpr + " > ? "
-                + "      AND NOT EXISTS ( "
-                + "          SELECT 1 "
-                + "          FROM dbo.LuuTru ltBooked "
-                + "          WHERE ltBooked.maChiTietDatPhong = ctdpHold.maChiTietDatPhong "
-                + "      ) "
+                + "      AND ((ctdpHold.maDatPhong = ? AND (latestLt.maLuuTru IS NULL OR latestLt.checkOut IS NULL)) "
+                + "        OR (ctdpHold.maDatPhong <> ? AND (latestLt.maLuuTru IS NULL "
+                + "           OR latestLt.checkOut IS NULL "
+                + "           OR latestLt.checkOut > ? "
+                + "           OR ISNULL(dpHold.trangThai, N'') = N'" + STATUS_WAIT_PAYMENT + "'))) "
                 + ") "
                 + "ORDER BY CASE WHEN lp.maLoaiPhong = ? THEN 0 ELSE 1 END, "
                 + "CASE WHEN TRY_CAST(REPLACE(p.tang, N'Tầng ', '') AS INT) IS NULL THEN 1 ELSE 0 END, "
@@ -594,11 +613,12 @@ public class CheckInOutDAO {
         try (PreparedStatement stmt = con.prepareStatement(sql)) {
             int index = 1;
             stmt.setInt(index++, maPhongHienTai);
-            stmt.setInt(index++, maDatPhong);
-            stmt.setInt(index++, maChiTietDatPhong);
             stmt.setInt(index++, maLuuTru);
-            stmt.setInt(index++, maDatPhong);
+            stmt.setInt(index++, maChiTietDatPhong);
             stmt.setTimestamp(index++, expectedCheckOutTimestamp);
+            stmt.setTimestamp(index++, changeTimestamp);
+            stmt.setInt(index++, maDatPhong);
+            stmt.setInt(index++, maDatPhong);
             stmt.setTimestamp(index++, changeTimestamp);
             stmt.setInt(index, maLoaiPhongUuTien);
 
@@ -1247,6 +1267,91 @@ public class CheckInOutDAO {
             resetAutoCommit(con);
         }
     }
+
+    /**
+     * Gia hạn thời gian trả dự kiến cho một hồ sơ lưu trú đang ở.
+     *
+     * Hệ thống cập nhật đúng dòng ChiTietDatPhong của hồ sơ đang chọn rồi đồng bộ
+     * lại ngày trả ở DatPhong theo mốc check-out lớn nhất của toàn booking.
+     *
+     * @param maLuuTru mã lưu trú đang ở cần gia hạn.
+     * @param thoiGianTraMoi thời gian trả dự kiến mới.
+     * @return true nếu gia hạn thành công, false nếu thất bại.
+     */
+    public boolean extendStayExpectedCheckout(int maLuuTru, LocalDateTime thoiGianTraMoi) {
+        clearLastError();
+        Connection con = ConnectDB.getConnection();
+        if (con == null) {
+            setLastError("Không thể kết nối cơ sở dữ liệu.");
+            return false;
+        }
+        if (maLuuTru <= 0 || thoiGianTraMoi == null) {
+            setLastError("Dữ liệu gia hạn không hợp lệ.");
+            return false;
+        }
+
+        try {
+            con.setAutoCommit(false);
+            ensureDetailScheduleSchema(con);
+
+            ActiveStayExtensionContext context = loadActiveStayExtensionContext(con, maLuuTru);
+            if (context == null) {
+                con.rollback();
+                setLastError("Không tìm thấy hồ sơ lưu trú đang ở.");
+                return false;
+            }
+
+            LocalDateTime currentExpectedCheckOut = normalizeLegacyBookingBoundary(context.expectedCheckOut);
+            LocalDateTime currentCheckIn = context.checkIn;
+            LocalDateTime normalizedNewExpectedCheckOut = normalizeLegacyBookingBoundary(thoiGianTraMoi);
+
+            if (currentCheckIn == null) {
+                con.rollback();
+                setLastError("Không xác định được thời gian nhận phòng.");
+                return false;
+            }
+            if (currentExpectedCheckOut == null) {
+                con.rollback();
+                setLastError("Không xác định được thời gian trả dự kiến hiện tại.");
+                return false;
+            }
+            if (!normalizedNewExpectedCheckOut.isAfter(currentCheckIn)) {
+                con.rollback();
+                setLastError("Thời gian trả mới phải lớn hơn thời gian nhận phòng.");
+                return false;
+            }
+            if (!normalizedNewExpectedCheckOut.isAfter(currentExpectedCheckOut)) {
+                con.rollback();
+                setLastError("Thời gian trả mới phải lớn hơn thời gian trả dự kiến hiện tại.");
+                return false;
+            }
+
+            try (PreparedStatement updateDetail = con.prepareStatement(
+                    "UPDATE ChiTietDatPhong "
+                            + "SET checkOutDuKien = ? "
+                            + "WHERE maChiTietDatPhong = ? AND maDatPhong = ?")) {
+                updateDetail.setTimestamp(1, toTimestamp(normalizedNewExpectedCheckOut));
+                updateDetail.setInt(2, context.maChiTietDatPhong);
+                updateDetail.setInt(3, context.maDatPhong);
+                if (updateDetail.executeUpdate() <= 0) {
+                    con.rollback();
+                    setLastError("Không thể cập nhật thời gian trả dự kiến của phòng đang ở.");
+                    return false;
+                }
+            }
+
+            updateBookingScheduleSummaryFromDetails(con, context.maDatPhong);
+            con.commit();
+            return true;
+        } catch (Exception e) {
+            rollbackQuietly(con);
+            setLastError(e.getMessage());
+            e.printStackTrace();
+            return false;
+        } finally {
+            resetAutoCommit(con);
+        }
+    }
     /**
      * Đồng bộ trạng thái vận hành sau các thao tác check-in/check-out.
      *
@@ -1450,6 +1555,42 @@ public class CheckInOutDAO {
             stmt.setInt(2, maDatPhong);
             stmt.executeUpdate();
         }
+    }
+
+    /**
+     * Tải dữ liệu lõi của hồ sơ lưu trú đang ở để phục vụ nghiệp vụ gia hạn.
+     *
+     * @param con kết nối cơ sở dữ liệu.
+     * @param maLuuTru mã lưu trú đang ở.
+     * @return thông tin lưu trú hiện hành hoặc null nếu không tìm thấy.
+     * @throws SQLException nếu xảy ra lỗi truy vấn.
+     */
+    private ActiveStayExtensionContext loadActiveStayExtensionContext(Connection con, int maLuuTru) throws SQLException {
+        if (con == null || maLuuTru <= 0) {
+            return null;
+        }
+        String sql = "SELECT lt.maLuuTru, lt.maChiTietDatPhong, lt.maDatPhong, lt.maPhong, lt.checkIn, "
+                + buildDetailCheckOutExpr("ctdp", "dp") + " AS expectedCheckOut "
+                + "FROM LuuTru lt "
+                + "JOIN ChiTietDatPhong ctdp ON ctdp.maChiTietDatPhong = lt.maChiTietDatPhong "
+                + "JOIN DatPhong dp ON dp.maDatPhong = lt.maDatPhong "
+                + "WHERE lt.maLuuTru = ? AND lt.checkOut IS NULL";
+        try (PreparedStatement stmt = con.prepareStatement(sql)) {
+            stmt.setInt(1, maLuuTru);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new ActiveStayExtensionContext(
+                            rs.getInt("maLuuTru"),
+                            rs.getInt("maChiTietDatPhong"),
+                            rs.getInt("maDatPhong"),
+                            rs.getInt("maPhong"),
+                            toLocalDateTime(rs.getTimestamp("checkIn")),
+                            toLocalDateTime(rs.getTimestamp("expectedCheckOut"))
+                    );
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -2637,6 +2778,29 @@ public class CheckInOutDAO {
 
         public void setGiaThamChieu(double giaThamChieu) {
             this.giaThamChieu = giaThamChieu;
+        }
+    }
+
+    private static final class ActiveStayExtensionContext {
+        private final int maLuuTru;
+        private final int maChiTietDatPhong;
+        private final int maDatPhong;
+        private final int maPhong;
+        private final LocalDateTime checkIn;
+        private final LocalDateTime expectedCheckOut;
+
+        private ActiveStayExtensionContext(int maLuuTru,
+                                           int maChiTietDatPhong,
+                                           int maDatPhong,
+                                           int maPhong,
+                                           LocalDateTime checkIn,
+                                           LocalDateTime expectedCheckOut) {
+            this.maLuuTru = maLuuTru;
+            this.maChiTietDatPhong = maChiTietDatPhong;
+            this.maDatPhong = maDatPhong;
+            this.maPhong = maPhong;
+            this.checkIn = checkIn;
+            this.expectedCheckOut = expectedCheckOut;
         }
     }
 }
